@@ -1,0 +1,13 @@
+[package]
+name = "retok"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Lossless, token-counted compaction of tool output"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order", "raw_value"] }
+tiktoken-rs = "0.12"
