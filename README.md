@@ -154,6 +154,20 @@ numbers (including `-0`), fractions, and exponents are invalid. Empty strings an
 arrays are allowed. Restored text is bounded to 64 MiB. The complete candidate
 competes with raw and the other encodings by exact token count.
 
+Additional reference candidates share common prefixes across nonadjacent lines.
+A prefix is simply an earlier literal fragment in the same format:
+`["src/components/","A.rs\n",0,"B.rs\r\n"]` restores two complete paths.
+The encoder preserves worthwhile whole-line references, considers up to 32
+prefixes ranked by potential byte savings, and emits at most a prefix and suffix
+per segment. Actual complete token counts decide whether to use the result;
+every existing candidate remains available, and ties retain the earlier choice.
+
+Two segmentations compete independently: literal LF bytes and the two literal
+characters backslash and `n`. The second can compact repeated paths or logs
+inside serialized strings. It does not decode JSON or interpret source-code
+escapes: every separator and byte stays in the fragment stream. Both use the
+same `text-refs-v1` restoration rule and 64 MiB source/restoration bound.
+
 JSON table conversion applies to uniform arrays of objects. Duplicate keys,
 including escaped spellings of the same key, are unsupported and are not
 normalized. JSON compaction/restoration is bounded to 16 MiB and nesting depth

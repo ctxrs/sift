@@ -47,7 +47,7 @@ enum PrefixEntry<S> {
     Group((S, Vec<S>)),
 }
 
-fn common_prefix<'a>(left: &'a str, right: &str) -> &'a str {
+pub(crate) fn common_prefix<'a>(left: &'a str, right: &str) -> &'a str {
     let mut length = left
         .bytes()
         .zip(right.bytes())

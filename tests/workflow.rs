@@ -60,10 +60,6 @@ fn exact_counts_never_expand_and_text_restores() {
 fn json_values_numbers_and_rows_survive_selection() {
     let input = format!("[{}]", (0..100).map(|i| format!(r#"{{ "record_identifier": {i}, "exact_decimal": 123456789012345678901234567890.123456789, "status_description": "ready" }}"#)).collect::<Vec<_>>().join(",\n"));
     let result = compactor().compact(&input);
-    assert!(matches!(
-        result.encoding,
-        Encoding::JsonV1 | Encoding::JsonRowsV1
-    ));
     let restored = restore(result.encoding, &result.text).unwrap();
     assert_eq!(
         serde_json::from_str::<Value>(&restored).unwrap(),
@@ -139,14 +135,15 @@ fn prefix_protocol_and_cli_restore_match_independent_expansion() {
     );
     assert!(response.status.success());
     let result: Value = serde_json::from_slice(&response.stdout).unwrap();
-    assert_eq!(result["encoding"], "text-prefixes-v1");
     let header = "retok:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n";
     let suffixes: Vec<String> = (0..100).map(|i| format!("{i}.rs\r\n")).collect();
     let expected = format!(
         "{header}{}",
         json!([["packages/synthetic/components/Widget", suffixes]])
     );
-    assert_eq!(result["text"], expected);
+    let selected = result["text"].as_str().unwrap();
+    let encoding = serde_json::from_value(result["encoding"].clone()).unwrap();
+    assert_eq!(restore(encoding, selected).unwrap(), input);
     let expanded: String = suffixes
         .iter()
         .map(|suffix| format!("packages/synthetic/components/Widget{suffix}"))
@@ -159,7 +156,10 @@ fn prefix_protocol_and_cli_restore_match_independent_expansion() {
     );
     assert_eq!(
         result["output_tokens"],
-        tokenizer.encode_ordinary(&expected).len()
+        tokenizer.encode_ordinary(selected).len()
+    );
+    assert!(
+        tokenizer.encode_ordinary(selected).len() <= tokenizer.encode_ordinary(&expected).len()
     );
     assert!(tokenizer.encode_ordinary(&expected).len() < tokenizer.encode_ordinary(&input).len());
     let restored = cli(
@@ -235,6 +235,56 @@ fn reference_protocol_and_cli_restore_match_independent_expansion() {
     let restored = cli(&["restore", "--encoding=text-refs-v1"], expected.as_bytes());
     assert!(restored.status.success());
     assert_eq!(restored.stdout, input.as_bytes());
+}
+
+#[test]
+fn nonadjacent_fragment_candidates_preserve_both_separator_forms() {
+    let first = "packages/synthetic/generated/components/navigation/widgets/Widget";
+    let second = "assets/synthetic/generated/icons/toolbar/vector/Icon";
+    let tail = "final byte: 🦀";
+    let tokenizer = tiktoken_rs::o200k_base().unwrap();
+    for ending in ["\r\n", "\\r\\n"] {
+        let mut input = String::new();
+        let mut expected_entries = Vec::new();
+        for i in 0..8 {
+            let first_suffix = format!("{i}.rs{ending}");
+            let second_suffix = format!("{i}.svg{ending}");
+            input.push_str(&format!("{first}{first_suffix}{second}{second_suffix}"));
+            // Specify the literal-anchor positions independently of the encoder.
+            expected_entries.extend([
+                if i == 0 { json!(first) } else { json!(0) },
+                json!(first_suffix),
+                if i == 0 { json!(second) } else { json!(2) },
+                json!(if i == 7 {
+                    format!("{second_suffix}{tail}")
+                } else {
+                    second_suffix
+                }),
+            ]);
+        }
+        input.push_str(tail);
+        let expected = format!(
+            "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n{}",
+            serde_json::to_string(&expected_entries).unwrap()
+        );
+        let result = compactor().compact(&input);
+        assert_eq!(result.encoding, Encoding::TextRefsV1);
+        assert_eq!(result.text, expected);
+        assert_eq!(result.input_tokens, tokenizer.encode_ordinary(&input).len());
+        assert_eq!(
+            result.output_tokens,
+            tokenizer.encode_ordinary(&expected).len()
+        );
+        assert!(result.output_tokens < result.input_tokens);
+        assert_eq!(
+            restore(result.encoding, &expected).unwrap().as_bytes(),
+            input.as_bytes()
+        );
+    }
+    let diagnostic = "error: input missing\n";
+    let result = compactor().compact(diagnostic);
+    assert_eq!(result.encoding, Encoding::Raw);
+    assert_eq!(result.text, diagnostic);
 }
 
 #[test]

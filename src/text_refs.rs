@@ -7,11 +7,12 @@
 use anyhow::{Context, Result, bail, ensure};
 use serde::de::{Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 const HEADER: &str = "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n";
 const MAX_RESTORED_BYTES: usize = 64 * 1024 * 1024;
+const PREFIX_BUDGET: usize = 32;
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -60,15 +61,19 @@ pub(crate) fn candidate(input: &str) -> Option<String> {
     if input.len() > MAX_RESTORED_BYTES {
         return None;
     }
+    encode_fragments(input.split_inclusive('\n'))
+}
+
+fn encode_fragments<'a>(fragments: impl Iterator<Item = &'a str> + Clone) -> Option<String> {
     let mut counts: HashMap<&str, usize> = HashMap::new();
-    for line in input.split_inclusive('\n') {
+    for line in fragments.clone() {
         *counts.entry(line).or_default() += 1;
     }
     let mut anchors: HashMap<&str, u64> = HashMap::new();
     let mut entries = Vec::new();
     let mut pending = String::new();
     let mut used_reference = false;
-    for line in input.split_inclusive('\n') {
+    for line in fragments {
         if let Some(&index) = anchors.get(line) {
             flush_literal(&mut entries, &mut pending);
             entries.push(Entry::Reference(index));
@@ -78,15 +83,13 @@ pub(crate) fn candidate(input: &str) -> Option<String> {
 
         let count = counts[line];
         if count > 1 {
-            let index = u64::try_from(entries.len() + usize::from(!pending.is_empty())).ok()?;
-            let escaped_bytes = serde_json::to_string(line).ok()?.len() - 2;
-            // Conservative byte prefilter: isolating the first literal costs
-            // at most six framing bytes; each later reference can add four.
-            // The caller still compares complete candidates by actual tokens.
-            let saving = escaped_bytes
-                .saturating_sub(index.to_string().len() + 4)
-                .saturating_mul(count - 1);
-            if saving > 6 {
+            let index = u64::try_from(
+                entries
+                    .len()
+                    .checked_add(usize::from(!pending.is_empty()))?,
+            )
+            .ok()?;
+            if byte_saving(line, count, index.to_string().len())? > 0 {
                 flush_literal(&mut entries, &mut pending);
                 entries.push(Entry::Literal(line.to_owned()));
                 anchors.insert(line, index);
@@ -101,6 +104,112 @@ pub(crate) fn candidate(input: &str) -> Option<String> {
     }
     flush_literal(&mut entries, &mut pending);
     Some(format!("{HEADER}{}", serde_json::to_string(&entries).ok()?))
+}
+
+// A conservative byte prefilter, never a token estimate. Isolating an anchor
+// costs at most six framing bytes; allow four plus index digits per reference.
+fn byte_saving(text: &str, count: usize, digits: usize) -> Option<usize> {
+    let escaped = serde_json::to_string(text).ok()?.len().checked_sub(2)?;
+    Some(
+        escaped
+            .saturating_sub(digits.saturating_add(4))
+            .saturating_mul(count.saturating_sub(1))
+            .saturating_sub(6),
+    )
+}
+
+/// Two competing segmentations, with every separator retained verbatim. The
+/// second recognizes literal backslash+n bytes; it never interprets JSON/code.
+pub(crate) fn fragment_candidates(input: &str) -> impl Iterator<Item = String> + '_ {
+    ["\n", "\\n"]
+        .into_iter()
+        .filter_map(move |separator| fragment_candidate(input, separator))
+}
+
+fn fragment_candidate(input: &str, separator: &str) -> Option<String> {
+    if input.len() > MAX_RESTORED_BYTES {
+        return None;
+    }
+    let lines: Vec<&str> = input.split_inclusive(separator).collect();
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for &line in &lines {
+        *counts.entry(line).or_default() += 1;
+    }
+    let digits = lines
+        .len()
+        .saturating_mul(2)
+        .saturating_sub(1)
+        .to_string()
+        .len();
+    let mut whole = HashSet::new();
+    let mut ordered = Vec::new();
+    for (&line, &count) in &counts {
+        if count > 1 && byte_saving(line, count, digits)? > 0 {
+            whole.insert(line);
+        } else {
+            ordered.push((line, count));
+        }
+    }
+    ordered.sort_unstable_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    let mut cumulative = vec![0usize];
+    for &(_, count) in &ordered {
+        cumulative.push(cumulative.last()?.checked_add(count)?);
+    }
+    let mut prefixes = HashSet::new();
+    for pair in ordered.windows(2) {
+        let prefix = crate::text_codec::common_prefix(pair[0].0, pair[1].0);
+        if !prefix.is_empty() {
+            prefixes.insert(prefix);
+        }
+    }
+    let mut ranked = Vec::new();
+    for prefix in prefixes {
+        let mut upper = prefix.as_bytes().to_vec();
+        // Valid UTF-8 never ends in 0xff. This exclusive byte-order sentinel
+        // need not itself be UTF-8; it is not part of any emitted string.
+        let last = upper.last_mut()?;
+        *last = last.checked_add(1)?;
+        let start = ordered.partition_point(|(line, _)| line.as_bytes() < prefix.as_bytes());
+        let end = ordered.partition_point(|(line, _)| line.as_bytes() < upper.as_slice());
+        let count = cumulative[end].checked_sub(cumulative[start])?;
+        let score = byte_saving(prefix, count, digits)?;
+        if score > 0 {
+            ranked.push((score, prefix));
+        }
+    }
+    ranked.sort_unstable_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then_with(|| a.1.as_bytes().cmp(b.1.as_bytes()))
+    });
+    ranked.truncate(PREFIX_BUDGET);
+    // Matching prefixes are nested, so byte length and character length choose
+    // the same longest match. All tie ordering uses UTF-8 bytes explicitly.
+    ranked.sort_unstable_by(|a, b| {
+        b.1.len()
+            .cmp(&a.1.len())
+            .then_with(|| a.1.as_bytes().cmp(b.1.as_bytes()))
+    });
+    let mut fragments = Vec::new();
+    for line in lines {
+        let prefix = if whole.contains(line) {
+            None
+        } else {
+            ranked
+                .iter()
+                .map(|&(_, prefix)| prefix)
+                .find(|prefix| line.starts_with(prefix))
+        };
+        if let Some(prefix) = prefix {
+            fragments.push(prefix);
+            let suffix = &line[prefix.len()..];
+            if !suffix.is_empty() {
+                fragments.push(suffix);
+            }
+        } else {
+            fragments.push(line);
+        }
+    }
+    encode_fragments(fragments.iter().copied())
 }
 
 fn literal_at(entries: &[Entry], position: usize) -> Result<&str> {
@@ -188,6 +297,77 @@ mod tests {
         let encoded = candidate(&input).unwrap();
         assert_eq!(encoded, format!("{HEADER}{expected_body}"));
         assert_eq!(restore(&encoded).unwrap(), input);
+    }
+
+    #[test]
+    fn nonadjacent_prefixes_use_existing_literal_anchors() {
+        let first = "資料/🦀/コンポーネント/";
+        let second = "assets/generated/vectors/";
+        for (separator, ending) in [("\n", "\r\n"), ("\\n", "\\r\\n")] {
+            let input = format!(
+                "{first}A.rs{ending}{second}A.svg{ending}{first}B.rs{ending}{second}B.svg{ending}{first}C.rs{ending}{second}C.svg{ending}tail 🦀"
+            );
+            let expected = format!(
+                "{HEADER}{}",
+                serde_json::json!([
+                    first,
+                    format!("A.rs{ending}"),
+                    second,
+                    format!("A.svg{ending}"),
+                    0,
+                    format!("B.rs{ending}"),
+                    2,
+                    format!("B.svg{ending}"),
+                    0,
+                    format!("C.rs{ending}"),
+                    2,
+                    format!("C.svg{ending}tail 🦀")
+                ])
+            );
+            assert_eq!(fragment_candidate(&input, separator).unwrap(), expected);
+            assert_eq!(restore(&expected).unwrap().as_bytes(), input.as_bytes());
+        }
+    }
+
+    #[test]
+    fn whole_line_anchors_remain_whole_when_prefixes_are_available() {
+        let repeated = "a complete recurring diagnostic that must stay a whole fragment\n";
+        let prefix = "packages/generated/components/";
+        let input =
+            format!("{repeated}{prefix}A.rs\n{repeated}{prefix}B.rs\n{repeated}{prefix}C.rs\n");
+        let expected = format!(
+            "{HEADER}{}",
+            serde_json::json!([repeated, prefix, "A.rs\n", 0, 1, "B.rs\n", 0, 1, "C.rs\n"])
+        );
+        assert_eq!(fragment_candidate(&input, "\n").unwrap(), expected);
+        assert_eq!(restore(&expected).unwrap(), input);
+    }
+
+    #[test]
+    fn fragment_candidates_keep_short_and_large_controls_unchanged() {
+        for input in [
+            "",
+            "one line",
+            "a\nb\na\n",
+            "  a\n  b\n  c\n",
+            "literal \\n with no repeated prefix",
+            "é\nê\n🦀\n🦁\n",
+        ] {
+            assert!(fragment_candidates(input).next().is_none(), "{input:?}");
+        }
+        let input = "x".repeat(MAX_RESTORED_BYTES + 1);
+        assert!(fragment_candidates(&input).next().is_none());
+    }
+
+    #[test]
+    fn escaped_segments_are_not_interpreted_as_source_escapes() {
+        // These are source characters, not a request to interpret a string literal.
+        let prefix = r#"C:\\new\\names\\generated\\components\\"#;
+        let input = format!("const text = \"{prefix}A.rs\\n{prefix}B.rs\\n{prefix}C.rs\";\r\n");
+        for encoded in fragment_candidates(&input) {
+            assert_eq!(restore(&encoded).unwrap().as_bytes(), input.as_bytes());
+        }
+        assert!(fragment_candidate(&input, "\\n").is_some());
     }
 
     #[test]

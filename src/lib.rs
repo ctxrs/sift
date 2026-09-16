@@ -61,7 +61,11 @@ impl Compactor {
                 text_codec::prefix_candidate(text)
                     .map(|candidate| (Encoding::TextPrefixesV1, candidate)),
             )
-            .chain(text_refs::candidate(text).map(|candidate| (Encoding::TextRefsV1, candidate)));
+            .chain(text_refs::candidate(text).map(|candidate| (Encoding::TextRefsV1, candidate)))
+            .chain(
+                text_refs::fragment_candidates(text)
+                    .map(|candidate| (Encoding::TextRefsV1, candidate)),
+            );
         for (encoding, candidate) in candidates {
             let tokens = self.tokenizer.encode_ordinary(&candidate).len();
             if tokens < result.output_tokens {
