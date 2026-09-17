@@ -1,4 +1,4 @@
-//! Execute argv directly, buffering only short, bounded, noninteractive output.
+//! Execute argv directly with bounded output capture and optional completion wait.
 use std::ffi::OsString;
 #[cfg(not(any(unix, windows)))]
 use std::io::Write;
@@ -36,19 +36,72 @@ pub struct Observation<'a> {
     pub status: i32,
 }
 
-/// Run a program without interpreting any argument as shell syntax.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Options {
+    /// Inherit output unchanged. Takes precedence over capture.
+    pub raw: bool,
+    /// Wait for complete output, even with terminal stdin/stdout. Intended for
+    /// finite commands: progress/prompts are delayed until both pipes close or
+    /// the combined 8 MiB limit switches output to raw streaming. Stdin remains
+    /// inherited; this does not allocate a pseudo-terminal for the child.
+    pub capture: bool,
+}
+
+/// Run argv directly. Windows batch files use Rust's standard batch escaping;
+/// unsupported batch arguments return an error rather than being reinterpreted.
 #[allow(dead_code)] // Convenience entry point when the caller does not record observations.
 pub fn run(args: &[OsString], raw: bool) -> anyhow::Result<i32> {
-    run_observed(args, raw, |_| {})
+    run_with_options(
+        args,
+        Options {
+            raw,
+            capture: false,
+        },
+    )
+}
+
+#[allow(dead_code)] // Convenience entry point without observations.
+pub fn run_with_options(args: &[OsString], options: Options) -> anyhow::Result<i32> {
+    run_observed_with_options(args, options, |_| {})
 }
 
 /// Observe one completed invocation. The callback borrows bounded originals;
 /// streaming/raw-inherited output never accumulates a retrievable transcript.
 /// Setup/I/O errors returning Err do not invoke the callback. Spawn statuses
 /// 126/127 do invoke it, with both streams unmeasured.
+#[allow(dead_code)] // Preserve the original API for callers without options.
 pub fn run_observed(
     args: &[OsString],
     raw: bool,
+    observer: impl FnOnce(Observation<'_>),
+) -> anyhow::Result<i32> {
+    run_observed_with_options(
+        args,
+        Options {
+            raw,
+            capture: false,
+        },
+        observer,
+    )
+}
+
+/// Like `run_observed`, with explicit complete-capture control. Unix signal
+/// termination/cancellation returns numeric 128 + signal; it does not re-raise
+/// the signal in the caller (normal exit and signal termination differ to wait()).
+pub fn run_observed_with_options(
+    args: &[OsString],
+    options: Options,
+    observer: impl FnOnce(Observation<'_>),
+) -> anyhow::Result<i32> {
+    run_transformed(args, options, |_, _| None, observer)
+}
+
+/// Apply an explicitly requested view only to complete bounded streams. A
+/// custom view has no CompactResult/token accounting; overflow stays raw.
+pub fn run_transformed(
+    args: &[OsString],
+    options: Options,
+    mut transform: impl FnMut(&[u8], bool) -> Option<Vec<u8>>,
     observer: impl FnOnce(Observation<'_>),
 ) -> anyhow::Result<i32> {
     let started = Instant::now();
@@ -56,11 +109,16 @@ pub fn run_observed(
         .split_first()
         .ok_or_else(|| anyhow::anyhow!("missing command"))?;
     let interactive = io::stdin().is_terminal() || io::stdout().is_terminal();
-    let capture = !raw && !interactive;
+    let capture = !options.raw && (options.capture || !interactive);
     #[cfg(unix)]
     let signals = Signals::new()?;
     #[cfg(windows)]
     let windows = windows::State::new()?;
+    #[cfg(windows)]
+    let resolved = windows::resolve_program(program);
+    #[cfg(windows)]
+    let mut command = Command::new(&resolved);
+    #[cfg(not(windows))]
     let mut command = Command::new(program);
     command.args(args).stdin(Stdio::inherit());
     if capture {
@@ -153,7 +211,10 @@ pub fn run_observed(
             if status.is_some() && eof {
                 break;
             }
-            if !passthrough && first.is_some_and(|time: Instant| time.elapsed() >= WINDOW) {
+            if !passthrough
+                && !options.capture
+                && first.is_some_and(|time: Instant| time.elapsed() >= WINDOW)
+            {
                 // A descendant can keep the pipes open after the direct child exits.
                 // The same deadline applies until both pipes close.
                 flush_pending(&mut process, &mut pending)?;
@@ -163,7 +224,7 @@ pub fn run_observed(
                 std::thread::sleep(TICK);
                 continue;
             }
-            let timeout = if passthrough {
+            let timeout = if passthrough || options.capture {
                 TICK
             } else {
                 first.map_or(TICK, |time: Instant| {
@@ -194,6 +255,11 @@ pub fn run_observed(
             let mut compactor = None;
             for (index, bytes) in originals.as_ref().unwrap().iter().enumerate() {
                 process.check()?;
+                if let Some(output) = transform(bytes, index == 1) {
+                    process.write(index == 1, &output)?;
+                    process.check()?;
+                    continue;
+                }
                 // Tiny responses cannot amortize tokenizer startup or framing.
                 let candidate = if bytes.len() >= 256 {
                     std::str::from_utf8(bytes).ok().and_then(|text| {
@@ -511,9 +577,18 @@ impl Process {
         self.windows_io(move || {
             let mut remaining = bytes.as_slice();
             while !remaining.is_empty() {
-                let n = if stderr && io::stderr().is_terminal() {
-                    // Retain Rust's Unicode console conversion for terminal stderr.
-                    io::stderr().write(remaining)?
+                let n = if (stderr && io::stderr().is_terminal())
+                    || (!stderr && io::stdout().is_terminal())
+                {
+                    // Capture can explicitly target a terminal. Retain Rust's
+                    // Unicode console conversion on either output stream.
+                    if stderr {
+                        io::stderr().write(remaining)?
+                    } else {
+                        let n = io::stdout().write(remaining)?;
+                        io::stdout().flush()?;
+                        n
+                    }
                 } else {
                     let handle = unsafe {
                         GetStdHandle(if stderr {
@@ -605,6 +680,7 @@ impl Process {
 #[cfg(windows)]
 mod windows {
     use super::*;
+    use std::ffi::OsStr;
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
@@ -620,6 +696,64 @@ mod windows {
         SetInformationJobObject, TerminateJobObject,
     };
     use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+
+    pub(super) fn resolve_program(program: &OsStr) -> OsString {
+        use std::path::Path;
+
+        // Command finds native executables, but not extensionless batch shims.
+        // Resolve only directly runnable Windows formats, in PATH/PATHEXT order;
+        // script associations (e.g. .ps1) still require an explicit interpreter.
+        // Hand the path and untouched argv to std, including its batch escaping.
+        let Ok(cwd) = std::env::current_dir() else {
+            return program.to_owned();
+        };
+        let path = Path::new(program);
+        if path.file_name().is_none() {
+            return program.to_owned();
+        }
+        let executable_extension = path.extension().is_some_and(|extension| {
+            ["com", "exe", "bat", "cmd"].iter().any(|supported| {
+                extension
+                    .as_encoded_bytes()
+                    .eq_ignore_ascii_case(supported.as_bytes())
+            })
+        });
+        let pathext =
+            std::env::var_os("PATHEXT").unwrap_or_else(|| OsString::from(".COM;.EXE;.BAT;.CMD"));
+        let pathext = pathext.to_string_lossy();
+        let extensions: Vec<_> = pathext
+            .split(';')
+            .filter(|ext| {
+                [".com", ".exe", ".bat", ".cmd"]
+                    .iter()
+                    .any(|supported| ext.eq_ignore_ascii_case(supported))
+            })
+            .collect();
+        let mut directories = vec![cwd.clone()];
+        if path.components().count() == 1
+            && let Some(search) = std::env::var_os("PATH")
+        {
+            directories.extend(std::env::split_paths(&search).map(|dir| cwd.join(dir)));
+        }
+        for directory in directories {
+            let base = directory.join(path);
+            if path.extension().is_some() && base.is_file() {
+                return base.into_os_string();
+            }
+            if executable_extension {
+                continue;
+            }
+            for extension in &extensions {
+                let mut candidate = base.clone().into_os_string();
+                candidate.push(extension);
+                if Path::new(&candidate).is_file() {
+                    return candidate;
+                }
+            }
+        }
+        // Preserve std's native executable lookup and spawn error classification.
+        program.to_owned()
+    }
 
     static ACTIVE: AtomicBool = AtomicBool::new(false);
     static INTERRUPTED: AtomicU32 = AtomicU32::new(0);

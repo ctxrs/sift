@@ -1,0 +1,13 @@
+name: retok-rewrite
+version: "0.1.0"
+requires_hermes: ">=2026.9.14"
+description: Compress completed terminal output through Retok.
+license: MIT
+hooks:
+  - transform_tool_result
+provides_hooks:
+  - transform_tool_result
+config_schema:
+  enabled:
+    type: bool
+    default: true

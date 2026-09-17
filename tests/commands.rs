@@ -47,6 +47,56 @@ impl Drop for Sandbox {
 }
 
 #[test]
+fn explicit_read_json_and_filter_workflows_keep_their_contracts() {
+    let root = Sandbox::new();
+    let text = "worker completed a repeated checkpoint\r\n".repeat(80);
+    let compact = root.output(&["compact"], text.as_bytes());
+    let read = root.output(&["read"], text.as_bytes());
+    assert!(read.status.success());
+    assert_eq!(read.stdout, compact.stdout);
+    let read = root.output(
+        &["read", "--from", "2", "--lines", "1"],
+        b"one\r\ntwo\r\nthree",
+    );
+    assert!(read.status.success());
+    assert_eq!(read.stdout, b"two\r\n");
+    let selected = root.output(
+        &["json", "--pointer", "/rows", "--limit", "1", "--field", "n"],
+        br#"{"rows":[{"n":-0e+9999,"x":true},{"n":2}]}"#,
+    );
+    assert!(
+        selected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&selected.stderr)
+    );
+    assert_eq!(selected.stdout, b"[{\"n\":-0e+9999}]\n");
+    let filtered = root.output(&["filter", "--capture"], text.as_bytes());
+    assert!(filtered.status.success());
+    assert_eq!(filtered.stdout, compact.stdout);
+}
+
+#[cfg(unix)]
+#[test]
+fn command_views_execute_once_and_keep_both_streams_and_exit_status() {
+    let root = Sandbox::new();
+    let result = root.output(&["test", "--context", "0", "--", "sh", "-c", "printf 'run\\n' >> marker; printf 'prefix\\nFAIL example\\nfooter\\n'; printf 'warning detail\\n' >&2; exit 17"], b"");
+    assert_eq!(result.status.code(), Some(17));
+    assert_eq!(fs::read(root.0.join("marker")).unwrap(), b"run\n");
+    let stdout = String::from_utf8(result.stdout).unwrap();
+    assert!(stdout.contains("FAIL example"));
+    assert!(!stdout.contains("prefix"));
+    assert_eq!(result.stderr, b"warning detail\n");
+    let stats = root.output(&["gain", "--json", "--history"], b"");
+    assert!(stats.status.success());
+    // Explicit excerpt output is not assigned lossless compaction token counts.
+    let stats: serde_json::Value = serde_json::from_slice(&stats.stdout).unwrap();
+    assert!(stats["history"][0]["input_tokens"].is_null());
+    assert_eq!(stats["history"][0]["source"], "view");
+    let normal = root.output(&["run", "--", "test", "-f", "marker"], b"");
+    assert!(normal.status.success());
+}
+
+#[test]
 fn plugin_protocol_respects_disabled_recording_and_config_without_changing_wire_contract() {
     let root = Sandbox::new();
     root.settings(r#"{"enabled":false,"record_usage":false}"#);

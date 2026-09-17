@@ -2,85 +2,166 @@
 
 ```sh
 retok init                         # Set up detected user-level agents
-retok init --agent claude           # Select one agent
-retok init --agent pi --project     # Current project only
-retok init --replace-rtk            # Migrate recognized RTK integrations
-retok init --replace-rtk --dry-run   # Preview without writing
+retok init --agent codex           # Select one agent
+retok init --agent pi --project    # Current project only
+retok init --replace-rtk --dry-run # Preview migration
+retok init --replace-rtk
 retok doctor
 retok init --agent claude --uninstall
 ```
 
-Setup writes only the selected integration files, keeps exact backups before
+Setup writes selected integration files, backs up exact original bytes before
 replacement, and preserves unrelated settings and hooks. Repeating setup is a
-no-op when the installed content is current. Uninstall removes Retok-owned
-entries; it does not restore an old backup over settings you changed later.
+no-op when the installed content is current. Ordinary symlink-managed settings
+remain symlinks; setup edits and backs up the resolved target. JSON settings may
+start with a UTF-8 BOM. Hermes YAML edits retain unrelated formatting and values. OpenClaw JSON5 changes
+can normalize formatting/comments; setup reports this and retains the original backup.
+Uninstall removes unchanged Retok-owned entries, preserving customized content.
+It does not restore an old backup over later edits.
 
-`--replace-rtk` recognizes stock RTK hooks and supported stock plugin versions.
-It does not remove a file merely because its name or contents mention RTK.
-Custom or unrecognized integrations are reported for manual migration. RTK's
-binary, history and saved output remain available. Review the printed paths and
-restart the affected agent after setup.
+`--replace-rtk` recognizes specific stock RTK hooks, plugins and instruction
+blocks. It does not remove a file merely because it mentions RTK. Unknown or
+modified integrations need manual migration. Existing automatic RTK coverage is
+preserved when the replacement is unsupported; `--instructions-only --agent HOST`
+explicitly chooses guidance where that host has a supported instruction target.
+RTK's executable, analytics and saved output remain available. Hermes/OpenClaw
+stock plugin migration changes activation and retains the RTK plugin files.
 
-## Automatic output replacement
+Review the printed changes, restart the affected host, and complete its normal
+hook/plugin trust flow. **Configured does not mean loaded.** `doctor` checks
+registration, executable availability and Retok settings; it does not verify
+host discovery, version, trust, runtime loading or effective permission policy.
 
-| Agent | Installed integration | Scope |
+## Completion adapters
+
+| Agent | Installed integration | Output scope |
 | --- | --- | --- |
-| Claude Code | `PostToolUse`, `retok hook claude` | Requires Claude Code 2.1.121 or newer; completed Bash/PowerShell text fields. |
-| Copilot CLI | Native `postToolUse`, `retok hook copilot` | Current `modifiedResult` contract; completed Bash/PowerShell text results. This is distinct from VS Code Copilot. |
+| Claude Code | `PostToolUse`, `retok hook claude` | Requires 2.1.121 or newer; completed Bash/PowerShell text fields. Failed commands do not reach this success-only event. |
+| Copilot CLI | `postToolUse`, `retok hook copilot` | `modifiedResult` contract; completed Bash/PowerShell text. Distinct from the VS Code route below. |
+| Hermes, user scope | `transform_tool_result` plugin | Requires Hermes 2026.9.14 or newer; completed `terminal` output after native result finalization, retaining exit code, error, hints and other metadata. |
 | Pi / Oh My Pi | `tool_result` extension | Completed Bash/PowerShell text blocks; images and metadata retained. |
-| OpenCode | `tool.execute.after` plugin | Completed Bash output; title and metadata retained. |
-| Current Kilo | `tool.execute.after` plugin | Current-generation plugin API; not a claim about legacy Kilo extensions. |
+| OpenCode / current Kilo | `tool.execute.after` plugin | Completed Bash output, plus OpenCode `shell`; title and metadata retained. Legacy Kilo extensions are a separate integration. |
 
-The command runs normally under the host's existing permissions. Retok receives
-the completed result and replaces only eligible text. It never executes that
-command a second time or returns a permission decision. Failure diagnostics are
-retained. Claude's success-only `PostToolUse` hook leaves failed commands unchanged; non-text content, unsupported shapes, interruption, oversized inputs,
-missing executables and compressor errors pass through. Hook/plugin timeouts
-also leave the host's original output available.
+These adapters receive results after execution and replace only eligible text.
+They do not rerun commands or change execution permissions. Unsupported shapes,
+non-text content, oversized input and compressor failures pass through. They
+cannot recover output the host already truncated, alter earlier streamed output,
+or cover every background/interactive path. The JSON hook accepts up to 16 MiB
+of input and selects at most 8 MiB of text; JavaScript completion plugins bound
+selected text to 8 MiB and allow three seconds for compaction.
 
-Hooks see what the host supplies. They cannot recover output the host already
-truncated, change earlier streamed terminal output, or cover every background
-and interactive path. The JSON hook accepts up to 16 MiB of input and selects at
-most 8 MiB of text. JavaScript plugins also bound selected text to 8 MiB and
-allow three seconds for the local compressor. Other tools are left unchanged.
+Completion adapters remain available on Windows. The POSIX restriction below
+applies to pre-execution rewriting, not to every Retok integration.
 
-## Instruction-only hosts
+## Pre-execution adapters
 
-Codex, Cursor, Gemini, VS Code Copilot, Droid, Windsurf, Cline, Roo and
-Antigravity, Kimi, Hermes, Mistral Vibe and OpenClaw use small host-specific
-instructions where a documented location is available. Setup labels these **instructions only**. The agent chooses when to
-use `retok run`; this is not an automatic hook. Some hosts expose only project
-instructions; setup reports unsupported scopes instead of inventing a path.
+| Agent | Installed integration | Supported tool |
+| --- | --- | --- |
+| Codex | `PreToolUse` in `hooks.json` | POSIX shell requests: POSIX default or explicit Bash/sh. The canonical Bash payload omits the actual requested shell; see below. |
+| Mistral Vibe | `pre_tool` in `hooks.toml` | `bash`; project hooks require an already trusted folder. |
+| OpenClaw, user scope | `before_tool_call` plugin | Foreground gateway shell `exec` with Bash, Zsh or Ksh selected; code-mode, node, sandbox and background/PTY calls pass through. Automatic target selection requires sandbox mode off. |
 
-This distinction is deliberate. Current Codex output hooks do not expose enough
-metadata to safely replace unified-exec results, and nested code-mode calls
-retain their original programmatic result. Cursor and several other hosts do
-not document neutral shell-output replacement. Gemini's documented replacement
-path has denial semantics. Retok does not disguise these limitations by
-rewriting commands or asking the agent to retry them. OpenClaw's current live
-middleware normalizes even unmatched tool results, potentially truncating text or
-removing images before Retok runs; its integration therefore stays instructions
-only. Use `--project` from the OpenClaw workspace.
+Gemini and VS Code automatic rewrites are withheld: host tests found that
+rewriting could bypass whole-request or whole-command approval rules. Cursor and
+Droid rewrites await native permission qualification. Setup preserves their RTK
+automation; guidance and explicit `retok run` remain available. Copilot CLI
+completion is a separate supported route.
 
-Use an explicit wrapper only for output intended for the model:
+These adapters change only the supported command input and retain other tool
+arguments. The current rewrite accepts literal plain POSIX commands from a
+fixed executable set. For example, with Retok installed at `/abs/retok`:
 
 ```sh
-retok run -- git status
-retok run -- sh -c 'git log | tail -5'
+# Original
+git status --short
+# Replacement
+command true || git status --short; command '/abs/retok' run --capture -- git status --short
 ```
 
-Keep ordinary commands when another program needs their original bytes. Do not
-add a broad `retok *` approval rule: it can run arbitrary executables.
+The first branch is inert: `command true` succeeds, so that copy of the original
+command never executes. Keeping its executable and arguments visible lets a
+host parser inspect the original operation. The second invocation executes it
+once through Retok. Recognized finite commands use `--capture`; other supported
+commands use the runner's normal bounded buffering. Supported literal command
+lists retain their separators and receive an inert check for each wrapped command.
 
-## Configuration and qualification
+Variable expansions, assignments, pipelines, redirects, control-flow constructs,
+quoted executable names and unknown command forms are left unchanged. A request
+identified as PowerShell also passes through, including `rewrite --shell powershell`.
+The rewrite does not evaluate scripts or introduce a nested shell. Preview it
+without executing anything:
 
-Setup respects supported host home overrides such as `CODEX_HOME` and
-`COPILOT_HOME`. The installed executable path is recorded directly, so adding it
-to PATH is not required for a native hook/plugin. Instruction-only setup also
-records its absolute path for the agent to use. Setup does not alter shell
-profiles, permission rules or host trust stores.
+```sh
+retok rewrite --json --shell posix -- 'git status --short'
+```
 
-Synthetic tests cover protocol shapes, exact metadata preservation, migration,
-backups and compressor failure. Native qualification additionally records the
-host version and integration path exercised; protocol fixture tests alone are
-not proof that every host release or operating system loads the adapter.
+JSON reports `changed` and the resulting command (the original when unchanged).
+Exit 0 means rewritten; exit 1 means unchanged. Plain mode prints only a rewrite.
+For an explicit complex command, use `retok run -- sh -c 'git log | tail -5'`;
+place compaction after the whole pipeline so downstream programs read native bytes.
+
+**Permission behavior needs qualification in each host.** Keeping approval fields
+or the original executable visible is not a blanket guarantee of equivalent
+policy. Opaque wrappers, nested shells and quoted command forms can prevent host
+parsers from recognizing the original operation. Do not add a broad `retok *`
+approval rule: Retok can execute arbitrary programs. Setup does not grant command permissions,
+change sandbox settings or trust hooks on the user's behalf. In Codex, approve
+the installed hook through the host's native trust flow before expecting it to run.
+
+A frozen development candidate passed native Linux Codex checks for automatic
+compaction and restoration, execution once, forbidden rules, prompt rules under
+approval-never, concurrent-hook denial, Bash/dash exit status and hook trust.
+These results apply to that candidate and host build. Release artifacts,
+setup-generated registration, project-layer trust and broader command-list or
+quoting combinations still need qualification; they do not establish support
+across Codex versions or other hosts.
+
+Vibe’s tested denylist remains effective, but a previously allowed command may
+now require confirmation for the wrapper. Setup does not add `command *` or
+other broad approval rules.
+
+Hermes uses a completed-result hook instead of command rewriting; its earlier
+pre-execution prototype was discarded after native deny-rule tests. OpenClaw
+uses a pre-execution route undergoing separate policy qualification. Full native session coverage
+remains distinct from source and native-module fixtures. Setup activates
+only the Retok plugin and preserves explicit disables/denies. OpenClaw with an
+existing restrictive plugin allowlist may require explicit `--agent openclaw` to
+add that one plugin; this is separate from command approval. See the
+[Hermes](integrations/hermes/README.md) and
+[OpenClaw](integrations/openclaw/README.md) adapter details for target restrictions.
+Project setup for these two hosts installs instructions, not a project plugin or
+its separate host opt-in.
+
+**Codex on Unix cannot detect every unsupported shell request.** Its canonical
+Bash hook payload contains the command but omits the actual shell selection.
+An explicit `shell=pwsh` request can therefore look identical to a POSIX request.
+The pre-hook supports POSIX shell requests only; before requesting a non-POSIX
+shell, disable the Retok pre-hook in the host and use manual `retok run` instead.
+For example, explicitly invoke an installed PowerShell with
+`retok run -- pwsh -NoProfile -Command 'Get-Location'`. The adapter does not infer
+the missing shell or duplicate the host's runtime policy.
+
+On native Windows these pre-execution rewrites pass through. Migration preserves
+working RTK automation instead of silently replacing it with an inactive adapter.
+Shared Copilot migration preserves RTK activation when removing it would also
+remove VS Code coverage. Fresh Copilot CLI setup installs its completion route.
+
+## Instruction scopes and configuration
+
+Roo, Kimi, Windsurf, Antigravity and project Cline use instructions. Setup reports
+unsupported scopes rather than inventing a location. Explicit
+`--instructions-only --agent HOST` is also available where a guidance target
+exists. Instructions ask the agent to choose `retok run`; they are not automatic
+compaction. Keep ordinary commands when another program needs their original bytes.
+
+Setup records the absolute Retok executable path, so native adapters do not need
+it on PATH. Supported relocated homes include `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+`COPILOT_HOME`, `PI_CODING_AGENT_DIR` (Pi/OMP), `FACTORY_HOME_OVERRIDE` (with
+`.factory` appended), `VIBE_HOME`, `KIMI_CODE_HOME`, `HERMES_HOME`,
+`OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH`. Project setup stays in its selected
+project scope. No shell profiles or host trust stores are edited.
+
+Protocol, setup and migration fixtures check declared shapes and failure cases.
+They are distinct from running the installed adapter through an actual host's
+loader, trust and permission checks. A native pass applies only to the recorded
+host version, platform and integration path.

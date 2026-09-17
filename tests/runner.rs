@@ -3,6 +3,26 @@
 #[path = "../src/runner.rs"]
 mod runner;
 
+struct Scratch(std::path::PathBuf);
+impl Scratch {
+    fn new() -> Self {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "retok runner {} {}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+}
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 fn record_observation(observation: runner::Observation<'_>) {
     let Some(path) = std::env::var_os("RETOK_TEST_OBSERVATION") else {
         return;
@@ -39,9 +59,12 @@ mod unix {
         let args: Vec<String> = serde_json::from_str(&args).unwrap();
         std::io::stdout().write_all(MARKER).unwrap();
         std::io::stdout().flush().unwrap();
-        let result = runner::run_observed(
+        let result = runner::run_observed_with_options(
             &args.into_iter().map(Into::into).collect::<Vec<_>>(),
-            std::env::var_os("RETOK_TEST_RAW").is_some(),
+            runner::Options {
+                raw: std::env::var_os("RETOK_TEST_RAW").is_some(),
+                capture: std::env::var_os("RETOK_TEST_CAPTURE").is_some(),
+            },
             super::record_observation,
         );
         match result {
@@ -64,6 +87,7 @@ mod unix {
             .args(["--exact", "unix::runner_entry", "--nocapture"])
             .env("RETOK_TEST_ARGV", serde_json::to_string(args).unwrap())
             .env_remove("RETOK_TEST_RAW")
+            .env_remove("RETOK_TEST_CAPTURE")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -137,6 +161,7 @@ mod unix {
     #[test]
     fn missing_permission_empty_and_signal_exit() {
         assert!(runner::run(&[], false).is_err());
+        assert!(runner::run_observed(&[], false, |_| panic!("no invocation")).is_err());
         assert_eq!(
             output(&["/retok-synthetic-no-such-program"], false)
                 .status
@@ -245,23 +270,193 @@ mod unix {
         );
         let _master = unsafe { std::fs::File::from_raw_fd(master) };
         let slave = unsafe { std::fs::File::from_raw_fd(slave) };
-        let result = clean(
+        for (raw, capture) in [(false, false), (false, true), (true, true)] {
+            let mut cmd = command(
+                &[
+                    "python3",
+                    "-c",
+                    "import sys; assert sys.stdin.isatty(); print('same diagnostic\\n'*300, end='')",
+                ],
+                raw,
+            );
+            if capture {
+                cmd.env("RETOK_TEST_CAPTURE", "1");
+            }
+            let result = clean(cmd.stdin(slave.try_clone().unwrap()).output().unwrap());
+            assert!(result.status.success());
+            let expected = "same diagnostic\n".repeat(300);
+            if capture && !raw {
+                assert!(result.stdout.len() < expected.len());
+                assert_eq!(
+                    retok::restore(
+                        retok::Encoding::TextRunsV1,
+                        std::str::from_utf8(&result.stdout).unwrap()
+                    )
+                    .unwrap(),
+                    expected
+                );
+            } else {
+                assert_eq!(result.stdout, expected.as_bytes());
+            }
+        }
+    }
+
+    #[test]
+    fn complete_capture_retains_slow_early_output_and_final_burst() {
+        for capture in [false, true] {
+            for early in [false, true] {
+                let expected = format!(
+                    "{}{}",
+                    if early { "starting\n" } else { "" },
+                    "synthetic repeated diagnostic\n".repeat(300),
+                );
+                let script = format!(
+                    "import sys,time; text='synthetic repeated diagnostic\\n'*300; \
+                     sys.stdout.write('starting\\n' if {early} else ''); sys.stdout.flush(); \
+                     time.sleep(2); sys.stdout.write(text)",
+                    early = if early { "True" } else { "False" },
+                );
+                let (output, event) =
+                    observed_with_capture(&["python3", "-c", &script], false, capture);
+                assert!(output.status.success());
+                assert_eq!(event["stdout"]["read_bytes"], expected.len());
+                if capture || !early {
+                    assert!(output.stdout.len() < expected.len());
+                    assert_eq!(
+                        retok::restore(
+                            retok::Encoding::TextRunsV1,
+                            std::str::from_utf8(&output.stdout).unwrap()
+                        )
+                        .unwrap(),
+                        expected
+                    );
+                    assert_eq!(
+                        event["stdout"]["original"],
+                        serde_json::json!(expected.as_bytes())
+                    );
+                } else {
+                    assert_eq!(output.stdout, expected.as_bytes());
+                    assert!(event["stdout"]["original"].is_null());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn complete_capture_combined_cap_streams_every_byte_without_an_original() {
+        let (output, event) = observed_with_capture(
+            &[
+                "python3",
+                "-c",
+                "import os; os.write(1,b'x\\n'*(2*1024*1024)); os.write(2,b'y\\n'*(2*1024*1024)); os.write(1,b'after cap\\n')",
+            ],
+            false,
+            true,
+        );
+        assert!(output.status.success());
+        let mut expected = b"x\n".repeat(2 * 1024 * 1024);
+        expected.extend_from_slice(b"after cap\n");
+        assert_eq!(output.stdout, expected);
+        assert_eq!(output.stderr, b"y\n".repeat(2 * 1024 * 1024));
+        for (name, bytes) in [("stdout", &output.stdout), ("stderr", &output.stderr)] {
+            assert!(event[name]["original"].is_null());
+            assert!(event[name]["compacted"].is_null());
+            assert_eq!(event[name]["read_bytes"], bytes.len());
+            assert_eq!(event[name]["emitted_bytes"], bytes.len());
+        }
+    }
+
+    #[test]
+    fn complete_capture_cancels_buffered_output_and_detects_closed_consumer() {
+        for signal in [libc::SIGTERM, 0] {
+            let scratch = super::Scratch::new();
+            let ready = scratch.0.join("ready");
+            let mut child = command(
+                &["python3", "-c", "import os,sys,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print('buffered diagnostic',flush=True); open(sys.argv[1],'w').write(str(os.getpid())); time.sleep(60)", ready.to_str().unwrap()],
+                false,
+            ).env("RETOK_TEST_CAPTURE", "1").spawn().unwrap();
+            let reader = start_lines(&mut child);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let pid: i32 = loop {
+                if let Ok(value) = std::fs::read_to_string(&ready)
+                    && let Ok(pid) = value.parse()
+                {
+                    break pid;
+                }
+                if Instant::now() >= deadline {
+                    unsafe {
+                        libc::kill(child.id() as i32, libc::SIGTERM);
+                    }
+                    finish(&mut child);
+                    panic!("child did not become ready");
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            if signal == 0 {
+                drop(reader);
+            } else {
+                assert_eq!(unsafe { libc::kill(child.id() as i32, signal) }, 0);
+            }
+            let status = finish(&mut child);
+            assert_eq!(
+                status.code(),
+                Some(if signal == 0 { 0 } else { 128 + signal })
+            );
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(status.signal(), None, "runner exits with a numeric status");
+            assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "child still exists");
+        }
+    }
+
+    #[test]
+    fn terminal_stdout_capture_compacts_and_preserves_unicode() {
+        use std::os::fd::FromRawFd;
+        let (mut master, mut slave) = (-1, -1);
+        assert_eq!(
+            unsafe {
+                libc::openpty(
+                    &mut master,
+                    &mut slave,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                )
+            },
+            0
+        );
+        let mut master = unsafe { std::fs::File::from_raw_fd(master) };
+        let slave = unsafe { std::fs::File::from_raw_fd(slave) };
+        let mut child =
             command(
                 &[
                     "python3",
                     "-c",
-                    "import sys; assert sys.stdin.isatty(); print('same diagnostic '*40)",
+                    "import sys; assert not sys.stdout.isatty(); print('synthetic café 診断\\n'*300, end='')",
                 ],
                 false,
             )
-            .stdin(slave)
-            .output()
-            .unwrap(),
-        );
-        assert!(result.status.success());
+            .env("RETOK_TEST_CAPTURE", "1").stdout(slave).spawn().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let result = master.read_to_end(&mut bytes);
+            // Linux signals the last PTY slave closing with EIO; macOS uses EOF.
+            if let Err(error) = result {
+                assert_eq!(error.raw_os_error(), Some(libc::EIO));
+            }
+            bytes
+        });
+        assert!(finish(&mut child).success());
+        let bytes = handle.join().unwrap();
+        let text = String::from_utf8(bytes).unwrap().replace("\r\n", "\n");
+        let captured = text
+            .split_once(std::str::from_utf8(MARKER).unwrap())
+            .unwrap()
+            .1;
+        let expected = "synthetic café 診断\n".repeat(300);
+        assert!(captured.len() < expected.len());
         assert_eq!(
-            result.stdout,
-            format!("{}\n", "same diagnostic ".repeat(40)).as_bytes()
+            retok::restore(retok::Encoding::TextRunsV1, captured).unwrap(),
+            expected
         );
     }
 
@@ -358,28 +553,39 @@ mod unix {
 
     #[test]
     fn cancellation_survives_output_backpressure() {
-        let mut child = command(
-            &[
-                "python3",
-                "-c",
-                "import os; print(os.getpid(),flush=True); b=b'x'*65536\nwhile True: os.write(1,b)",
-            ],
-            false,
-        )
-        .spawn()
-        .unwrap();
-        let mut reader = start_lines(&mut child);
-        let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
-        let pid: i32 = line.trim().parse().unwrap();
-        // Keep the consumer open but deliberately stop draining it.
-        std::thread::sleep(Duration::from_millis(100));
-        assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
-        assert_eq!(finish(&mut child).code(), Some(143));
-        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
-        drop(reader);
+        for capture in [false, true] {
+            let mut cmd = command(
+                &[
+                    "python3",
+                    "-c",
+                    "import os; print(os.getpid(),flush=True); b=b'x'*65536\nwhile True: os.write(1,b)",
+                ],
+                false,
+            );
+            if capture {
+                cmd.env("RETOK_TEST_CAPTURE", "1");
+            }
+            let mut child = cmd.spawn().unwrap();
+            let mut reader = start_lines(&mut child);
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let pid: i32 = line.trim().parse().unwrap();
+            // Keep the consumer open but deliberately stop draining it.
+            std::thread::sleep(Duration::from_millis(100));
+            assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
+            assert_eq!(finish(&mut child).code(), Some(143));
+            assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+            drop(reader);
+        }
     }
     fn observed(args: &[&str], raw: bool) -> (Output, serde_json::Value) {
+        observed_with_capture(args, raw, false)
+    }
+    fn observed_with_capture(
+        args: &[&str],
+        raw: bool,
+        capture: bool,
+    ) -> (Output, serde_json::Value) {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
@@ -387,12 +593,11 @@ mod unix {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        let output = clean(
-            command(args, raw)
-                .env("RETOK_TEST_OBSERVATION", &path)
-                .output()
-                .unwrap(),
-        );
+        let mut cmd = command(args, raw);
+        if capture {
+            cmd.env("RETOK_TEST_CAPTURE", "1");
+        }
+        let output = clean(cmd.env("RETOK_TEST_OBSERVATION", &path).output().unwrap());
         let event = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         std::fs::remove_file(path).unwrap();
         (output, event)
@@ -493,9 +698,12 @@ mod windows {
         };
         let args: Vec<String> = serde_json::from_str(&args).unwrap();
         let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
-        let result = runner::run_observed(
+        let result = runner::run_observed_with_options(
             &args,
-            std::env::var_os("RETOK_TEST_RAW").is_some(),
+            runner::Options {
+                raw: std::env::var_os("RETOK_TEST_RAW").is_some(),
+                capture: std::env::var_os("RETOK_TEST_CAPTURE").is_some(),
+            },
             super::record_observation,
         );
         match result {
@@ -517,6 +725,12 @@ mod windows {
         let Ok(mode) = std::env::var("RETOK_TEST_CHILD") else {
             return;
         };
+        if mode == "argv" {
+            let args: Vec<_> = std::env::args().skip(5).collect();
+            println!("ARGUMENTS {}", serde_json::to_string(&args).unwrap());
+            eprintln!("separate diagnostic");
+            std::process::exit(23);
+        }
         if mode == "detached" {
             // Windows Command inherits other inheritable handles as well as the
             // selected stdio. Null leaf stdio alone would still leak these pipe
@@ -580,10 +794,230 @@ mod windows {
             .env("RETOK_TEST_ARGV", serde_json::to_string(&args).unwrap())
             .env("RETOK_TEST_CHILD", mode)
             .env_remove("RETOK_TEST_RAW")
+            .env_remove("RETOK_TEST_CAPTURE")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         command
+    }
+
+    fn shim_command(scratch: &super::Scratch, args: &[&str], pathext: &str) -> Command {
+        let mut cmd = command("argv");
+        cmd.env("RETOK_TEST_ARGV", serde_json::to_string(args).unwrap())
+            .env("PATH", scratch.0.join("tool bin"))
+            .env("PATHEXT", pathext)
+            .env("RETOK_SYNTHETIC", "must not expand")
+            .current_dir(&scratch.0);
+        cmd
+    }
+
+    fn write_shim(scratch: &super::Scratch, name: &str) -> std::path::PathBuf {
+        let dir = scratch.0.join("tool bin");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, format!(
+            "@echo off\r\n\"{}\" --exact windows::child_entry --nocapture -- %*\r\nexit /b %errorlevel%\r\n",
+            std::env::current_exe().unwrap().display(),
+        )).unwrap();
+        path
+    }
+
+    fn assert_arguments(output: std::process::Output, expected: &[&str]) {
+        assert_eq!(
+            output.status.code(),
+            Some(23),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let args = stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("ARGUMENTS "))
+            .unwrap();
+        assert_eq!(serde_json::from_str::<Vec<String>>(args).unwrap(), expected);
+        assert_eq!(output.stderr, b"separate diagnostic\n");
+    }
+
+    #[test]
+    fn path_batch_shims_preserve_arguments_streams_and_status() {
+        let scratch = super::Scratch::new();
+        let expected = [
+            "",
+            "two words",
+            "trailing\\",
+            "a&b|c<d>e^f",
+            "!literal!",
+            "%RETOK_SYNTHETIC%",
+            "$(Write-Output no); * ' café",
+        ];
+        for extension in ["cmd", "BAT"] {
+            let path = write_shim(&scratch, &format!("synthetic shim.{extension}"));
+            for name in ["synthetic shim", path.to_str().unwrap()] {
+                let mut args = vec![name];
+                args.extend_from_slice(&expected);
+                let output = shim_command(&scratch, &args, ".EXE;.CMD;.BAT")
+                    .env("RETOK_TEST_CAPTURE", "1")
+                    .output()
+                    .unwrap();
+                assert_arguments(output, &expected);
+            }
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn native_exe_lookup_retains_literal_quotes_and_empty_arguments() {
+        let scratch = super::Scratch::new();
+        std::fs::create_dir(scratch.0.join("tool bin")).unwrap();
+        std::fs::copy(
+            std::env::current_exe().unwrap(),
+            scratch.0.join("tool bin/native.exe"),
+        )
+        .unwrap();
+        let expected = [
+            "",
+            "two words",
+            "embedded\"quote",
+            "trailing\\",
+            "%RETOK_SYNTHETIC%",
+            "$(no); & | café",
+        ];
+        let mut args = vec![
+            "native",
+            "--exact",
+            "windows::child_entry",
+            "--nocapture",
+            "--",
+        ];
+        args.extend_from_slice(&expected);
+        assert_arguments(
+            shim_command(&scratch, &args, ".CMD;.EXE").output().unwrap(),
+            &expected,
+        );
+        std::fs::write(scratch.0.join("tool bin/native.cmd"), "@exit /b 31\r\n").unwrap();
+        assert_arguments(
+            shim_command(&scratch, &args, ".EXE;.CMD").output().unwrap(),
+            &expected,
+        );
+        assert_eq!(
+            shim_command(&scratch, &args, ".CMD;.EXE")
+                .output()
+                .unwrap()
+                .status
+                .code(),
+            Some(31)
+        );
+    }
+
+    #[test]
+    fn windows_lookup_honors_pathext_path_order_and_explicit_relative_paths() {
+        let scratch = super::Scratch::new();
+        let cmd = write_shim(&scratch, "choose.cmd");
+        let bat = write_shim(&scratch, "choose.bat");
+        std::fs::write(&cmd, "@exit /b 31\r\n").unwrap();
+        std::fs::write(&bat, "@exit /b 32\r\n").unwrap();
+        for (pathext, expected) in [(".CMD;.BAT", 31), (".bat;.cmd", 32)] {
+            assert_eq!(
+                shim_command(&scratch, &["choose"], pathext)
+                    .output()
+                    .unwrap()
+                    .status
+                    .code(),
+                Some(expected)
+            );
+        }
+        assert_eq!(
+            shim_command(&scratch, &["choose"], "")
+                .env_remove("PATHEXT")
+                .output()
+                .unwrap()
+                .status
+                .code(),
+            Some(32)
+        );
+        std::fs::write(scratch.0.join("choose.cmd"), "@exit /b 34\r\n").unwrap();
+        assert_eq!(
+            shim_command(&scratch, &["choose"], ".CMD;.BAT")
+                .output()
+                .unwrap()
+                .status
+                .code(),
+            Some(34)
+        );
+        std::fs::remove_file(scratch.0.join("choose.cmd")).unwrap();
+        let first = scratch.0.join("first bin");
+        std::fs::create_dir(&first).unwrap();
+        std::fs::write(first.join("choose.bat"), "@exit /b 33\r\n").unwrap();
+        let search = std::env::join_paths([&first, &scratch.0.join("tool bin")]).unwrap();
+        assert_eq!(
+            shim_command(&scratch, &["choose"], ".CMD;.BAT")
+                .env("PATH", search)
+                .output()
+                .unwrap()
+                .status
+                .code(),
+            Some(33)
+        );
+        assert_eq!(
+            shim_command(&scratch, &[r".\tool bin\choose"], ".CMD;.BAT")
+                .env("PATH", "")
+                .output()
+                .unwrap()
+                .status
+                .code(),
+            Some(31)
+        );
+        assert_eq!(
+            shim_command(&scratch, &[r".\missing\choose"], ".CMD;.BAT")
+                .output()
+                .unwrap()
+                .status
+                .code(),
+            Some(127)
+        );
+        assert_eq!(
+            shim_command(&scratch, &["retok-missing-program"], ".CMD;.BAT")
+                .output()
+                .unwrap()
+                .status
+                .code(),
+            Some(127)
+        );
+        std::fs::write(
+            scratch.0.join("tool bin/missing.cmd.cmd"),
+            "@exit /b 35\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            shim_command(&scratch, &["missing.cmd"], ".CMD")
+                .output()
+                .unwrap()
+                .status
+                .code(),
+            Some(127)
+        );
+        // Ignore file associations: do not reinterpret .ps1 through PowerShell.
+        std::fs::write(scratch.0.join("tool bin/script.ps1"), "exit 45").unwrap();
+        assert_eq!(
+            shim_command(&scratch, &["script"], ".PS1;.CMD;.EXE")
+                .output()
+                .unwrap()
+                .status
+                .code(),
+            Some(127)
+        );
+    }
+
+    #[test]
+    fn batch_arguments_rejected_by_std_do_not_execute_a_partial_command() {
+        let scratch = super::Scratch::new();
+        let shim = write_shim(&scratch, "reject.cmd");
+        std::fs::write(shim, "@echo ran>executed\r\n").unwrap();
+        let output = shim_command(&scratch, &["reject", "line\nbreak"], ".CMD")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(!scratch.0.join("executed").exists());
     }
     fn handles(
         child: &mut Child,
