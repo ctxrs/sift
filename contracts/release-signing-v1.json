@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "product": {"name": "Retok", "url": "https://github.com/ctxrs/retok", "binary_identifier": "retok"},
+  "signed_artifacts": ["retok-macos-x64", "retok-macos-arm64", "retok-windows-x64.exe"],
+  "unsigned_artifacts": ["retok-linux-x64", "retok-linux-aarch64"],
+  "credential": {"project_id": "590927ab-758e-41b0-9e15-4cf070e87cf4", "environment": "prod", "path": "/"},
+  "apple": {
+    "authority": "apple-developer-id-application",
+    "publisher": "ctx engineering inc",
+    "team_id_sha256": "013a2701d0f3400afe5257f41fce0e2d4276ef37981e443b1d3aeb442a95763c",
+    "ca_file": "apple-developer-id-g2-ca.pem",
+    "ca_der_sha256": "f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a",
+    "ca_url": "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer",
+    "credential_keys": ["APPLE_CODESIGN_CERT_P12_B64", "APPLE_CODESIGN_CERT_PASSWORD", "NOTARY_ISSUER", "NOTARY_KEY_ID", "NOTARY_KEY_P8_B64"],
+    "rcodesign": {
+      "version": "0.29.0",
+      "url": "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002"
+    }
+  },
+  "windows": {
+    "authority": "microsoft-azure-artifact-signing-public-trust-v1",
+    "account": "ctxsignkimmy",
+    "certificate_profile": "ctx-public-release",
+    "code_signing_endpoint": "https://eus.codesigning.azure.net/",
+    "expected_common_name": "CTX ENGINEERING, INC.",
+    "expected_organization": "CTX ENGINEERING, INC.",
+    "timestamp_url": "http://timestamp.acs.microsoft.com/",
+    "credential_keys": ["AZURE_ARTIFACT_SIGNING_TENANT_ID", "AZURE_ARTIFACT_SIGNING_CLIENT_ID", "AZURE_ARTIFACT_SIGNING_CLIENT_SECRET"],
+    "jsign": {
+      "version": "7.5",
+      "url": "https://github.com/ebourg/jsign/releases/download/7.5/jsign-7.5.jar",
+      "sha256": "602a51c3545a6dc4fb99bd2ea7152b26d1345916d0c93ddfbd5936cb735af91c"
+    }
+  }
+}

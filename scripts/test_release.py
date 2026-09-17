@@ -86,7 +86,7 @@ def synthetic_metadata(binary):
     start, end = metadata.runtime_notice_markers(runtime_entry, runtime_entry["notices"][0])
     notices += start + runtime_text + end
     runtime_manifest = metadata.canonical_runtime_manifest([runtime_entry], target)
-    root = {"type": "application", "name": "retok", "version": "0.1.0", "bom-ref": "root",
+    root = {"type": "application", "name": "retok", "version": release.VERSION, "bom-ref": "root",
             "hashes": metadata.hashes(metadata.sha256(binary)),
             "properties": metadata.properties({
                 "target": metadata.TRIPLES[binary.name][0], "source-commit": "4" * 40,
@@ -113,6 +113,8 @@ class ReleaseTests(unittest.TestCase):
         self.source = self.root / "inputs"
         self.source.mkdir()
         self.output = self.root / "release"
+        self.evidence = self.root / "signing-evidence"
+        self.evidence.mkdir()
         self.names = []
         for name in BINARIES:
             (self.source / name).write_bytes(executable(name))
@@ -124,12 +126,17 @@ class ReleaseTests(unittest.TestCase):
         self.system = self.enterContext(patch("release.platform.system", return_value="Unknown"))
         self.machine = self.enterContext(patch("release.platform.machine", return_value="unknown"))
         self.run = self.enterContext(patch("release.subprocess.run"))
-        self.run.return_value = subprocess.CompletedProcess([], 0, b"Retok 0.1.0\n", b"")
+        self.run.return_value = subprocess.CompletedProcess(
+            [], 0, f"Retok {release.VERSION}\n".encode(), b""
+        )
+        self.verify_signing = self.enterContext(
+            patch("release.release_signing.verify_release_evidence")
+        )
 
     def test_stage_reproducible_bytes_inventory_modes_and_verify(self):
-        release.stage(self.source, self.output)
+        release.stage(self.source, self.output, self.evidence)
         second = self.root / "second"
-        release.stage(self.source, second)
+        release.stage(self.source, second, self.evidence)
         self.assertEqual({p.name for p in self.output.iterdir()}, set(self.names) | {"SHA256SUMS"})
         expected = "".join(
             f"{hashlib.sha256((self.source / name).read_bytes()).hexdigest()}  {name}\n"
@@ -158,7 +165,7 @@ class ReleaseTests(unittest.TestCase):
                 self.system.return_value = system
                 self.machine.return_value = machine
                 self.run.reset_mock()
-                release.stage(self.source, self.root / name)
+                release.stage(self.source, self.root / name, self.evidence)
                 self.run.assert_called_once()
                 args = self.run.call_args.args[0]
                 self.assertEqual(Path(args[0]).name, name)
@@ -168,59 +175,95 @@ class ReleaseTests(unittest.TestCase):
         self.system.return_value = "Linux"
         self.machine.return_value = "x86_64"
         for code, stdout, stderr in (
-            (0, b"Retok 0.2.0\n", b""), (1, b"Retok 0.1.0\n", b""),
-            (0, b"retok 0.1.0\n", b""), (0, b"Retok 0.1.0\nextra\n", b""),
-            (0, b"Retok 0.1.0\n", b"warning"),
+            (0, b"Retok 9.9.9\n", b""),
+            (1, f"Retok {release.VERSION}\n".encode(), b""),
+            (0, f"retok {release.VERSION}\n".encode(), b""),
+            (0, f"Retok {release.VERSION}\nextra\n".encode(), b""),
+            (0, f"Retok {release.VERSION}\n".encode(), b"warning"),
         ):
             with self.subTest(code=code, stdout=stdout, stderr=stderr):
                 self.run.return_value = subprocess.CompletedProcess([], code, stdout, stderr)
                 with self.assertRaisesRegex(ValueError, "--version"):
-                    release.stage(self.source, self.output)
+                    release.stage(self.source, self.output, self.evidence)
                 self.assertFalse(self.output.exists())
                 self.assertEqual(list(self.root.glob(".retok-stage-*")), [])
         for failure in (OSError("cannot execute"), subprocess.TimeoutExpired("retok", 10)):
             self.run.side_effect = failure
             with self.assertRaises(type(failure)):
-                release.stage(self.source, self.output)
+                release.stage(self.source, self.output, self.evidence)
             self.assertFalse(self.output.exists())
 
     def test_crlf_version_output_is_accepted(self):
         self.system.return_value = "Windows"
         self.machine.return_value = "AMD64"
-        self.run.return_value.stdout = b"Retok 0.1.0\r\n"
-        release.stage(self.source, self.output)
+        self.run.return_value.stdout = f"Retok {release.VERSION}\r\n".encode()
+        release.stage(self.source, self.output, self.evidence)
 
     def test_exact_inventory_rejects_missing_and_extra_files(self):
         extra = self.source / "unexpected"
         extra.write_text("extra")
         with self.assertRaisesRegex(ValueError, "unexpected"):
-            release.stage(self.source, self.output)
+            release.stage(self.source, self.output, self.evidence)
         extra.unlink()
         (self.source / self.names[-1]).unlink()
         with self.assertRaisesRegex(ValueError, "missing"):
-            release.stage(self.source, self.output)
+            release.stage(self.source, self.output, self.evidence)
 
     def test_symlinks_and_directories_rejected(self):
         path = self.source / BINARIES[0]
         path.unlink()
         path.mkdir()
         with self.assertRaisesRegex(ValueError, "regular file"):
-            release.stage(self.source, self.output)
+            release.stage(self.source, self.output, self.evidence)
         path.rmdir()
         path.symlink_to(self.source / BINARIES[1])
         with self.assertRaisesRegex(ValueError, "symlink"):
-            release.stage(self.source, self.output)
+            release.stage(self.source, self.output, self.evidence)
 
     def test_existing_destination_is_preserved(self):
         self.output.mkdir()
         marker = self.output / "keep"
         marker.write_text("keep")
         with self.assertRaisesRegex(ValueError, "already exist"):
-            release.stage(self.source, self.output)
+            release.stage(self.source, self.output, self.evidence)
         self.assertEqual(marker.read_text(), "keep")
 
+    def test_signing_evidence_is_required_before_staging(self):
+        self.verify_signing.side_effect = ValueError("invalid signing evidence")
+        with self.assertRaisesRegex(ValueError, "signing evidence"):
+            release.stage(self.source, self.output, self.evidence)
+        self.assertFalse(self.output.exists())
+
+    def test_copied_bytes_are_rechecked_against_signing_evidence(self):
+        signed_name = "retok-macos-x64"
+        calls = 0
+
+        def verify(directory, _evidence):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                binary = self.source / signed_name
+                raw = binary.read_bytes()
+                binary.write_bytes(raw[:-len(TEST_VOCAB)] + b"changed after first check" + TEST_VOCAB)
+                document, notices = synthetic_metadata(binary)
+                (self.source / (signed_name + ".cdx.json")).write_text(
+                    json.dumps(document), encoding="utf-8"
+                )
+                (self.source / (signed_name + ".third-party-notices.txt")).write_text(
+                    notices, encoding="utf-8"
+                )
+                return
+            self.assertNotEqual(directory, self.source)
+            raise ValueError("copied bytes do not match signing evidence")
+
+        self.verify_signing.side_effect = verify
+        with self.assertRaisesRegex(ValueError, "copied bytes"):
+            release.stage(self.source, self.output, self.evidence)
+        self.assertEqual(calls, 2)
+        self.assertFalse(self.output.exists())
+
     def test_tampering_and_noncanonical_checksums_rejected(self):
-        release.stage(self.source, self.output)
+        release.stage(self.source, self.output, self.evidence)
         sums = self.output / "SHA256SUMS"
         original = sums.read_bytes()
         for altered in (original.replace(b"\n", b"\r\n"),
@@ -247,7 +290,7 @@ class ReleaseTests(unittest.TestCase):
                 with self.subTest(name=name, size=len(invalid)):
                     path.write_bytes(invalid)
                     with self.assertRaises(ValueError):
-                        release.stage(self.source, self.output)
+                        release.stage(self.source, self.output, self.evidence)
                     self.assertFalse(self.output.exists())
             path.write_bytes(original)
 
@@ -255,21 +298,21 @@ class ReleaseTests(unittest.TestCase):
         path = self.source / (BINARIES[0] + ".cdx.json")
         original = path.read_bytes()
         for invalid in (b"not json", b"[]", b"{}",
-                        original.replace(b"0.1.0", b"0.2.0"),
+                        original.replace(release.VERSION.encode(), b"9.9.9"),
                         original.replace(b'"name": "retok"', b'"name": 123'),
                         original.replace(b'"version": "1.2.3"', b'"version": ""')):
             path.write_bytes(invalid)
             with self.assertRaises(ValueError):
-                release.stage(self.source, self.output)
+                release.stage(self.source, self.output, self.evidence)
         path.write_bytes(original)
         notices = self.source / (BINARIES[0] + ".third-party-notices.txt")
         notices.write_text(" \n")
         with self.assertRaisesRegex(ValueError, "empty notices"):
-            release.stage(self.source, self.output)
+            release.stage(self.source, self.output, self.evidence)
 
     @unittest.skipIf(os.name == "nt", "POSIX execute permissions")
     def test_native_execution_cannot_be_skipped_by_removing_permissions(self):
-        release.stage(self.source, self.output)
+        release.stage(self.source, self.output, self.evidence)
         self.system.return_value = "Linux"
         self.machine.return_value = "x86_64"
         (self.output / BINARIES[0]).chmod(0o644)

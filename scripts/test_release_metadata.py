@@ -47,7 +47,9 @@ class MetadataTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.project = self.root / "project"
         self.project.mkdir()
-        (self.project / "Cargo.toml").write_text('[package]\nname="retok"\nversion="0.1.0"\n')
+        (self.project / "Cargo.toml").write_text(
+            f'[package]\nname="retok"\nversion="{metadata.VERSION}"\n'
+        )
         (self.project / "LICENSE").write_text(MIT)
         self.binary = self.root / "retok-linux-x64"
         self.binary.write_bytes(b"Synthetic binary\0" + VOCAB + b"suffix")
@@ -55,7 +57,7 @@ class MetadataTests(unittest.TestCase):
         self.supplement.write_text(MIT)
         self.runtime_path = self.root / "runtimes.json"
         self.write_runtime_manifest("x86_64-unknown-linux-gnu", ["rust-std"])
-        self.packages = [{"id": "root", "name": "retok", "version": "0.1.0"}]
+        self.packages = [{"id": "root", "name": "retok", "version": metadata.VERSION}]
         self.lock_entries = []
         self.archives = {}
         self.full_texts = []

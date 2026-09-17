@@ -41,7 +41,9 @@ import tarfile
 import tomllib
 
 
-VERSION = "0.1.0"
+VERSION = tomllib.loads(
+    (Path(__file__).resolve().parent.parent / "Cargo.toml").read_text(encoding="utf-8")
+)["package"]["version"]
 TRIPLES = {
     "retok-linux-x64": ("x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"),
     "retok-linux-aarch64": ("aarch64-unknown-linux-gnu", "aarch64-unknown-linux-musl"),
@@ -103,7 +105,8 @@ def normal_graph(metadata):
     nodes = {n["id"]: n for n in metadata["resolve"]["nodes"]}
     root = metadata["resolve"]["root"]
     require(root in packages and packages[root]["name"] == "retok"
-            and packages[root]["version"] == VERSION, "expected Retok 0.1.0 Cargo root")
+            and packages[root]["version"] == VERSION,
+            f"expected Retok {VERSION} Cargo root")
     graph = {}
     pending = [root]
     while pending:

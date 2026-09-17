@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Stage and verify already-built Retok 0.1.0 release assets (Python 3.11+ stdlib).
+"""Stage and verify already-built Retok release assets (Python 3.11+ stdlib).
 
 Usage:
-  python3 scripts/release.py stage INPUT_DIR NEW_OUTPUT_DIR
+  python3 scripts/release.py stage INPUT_DIR NEW_OUTPUT_DIR \
+      --signing-evidence SIGNING_EVIDENCE_DIR
   python3 scripts/release.py verify OUTPUT_DIR
   python3 scripts/release.py metadata BINARY --project SOURCE_DIR --target TRIPLE \
       --source-commit FULL_HASH --tiktoken-license LOCAL_LICENSE --openai-license LOCAL_LICENSE \
@@ -13,7 +14,7 @@ INPUT_DIR must contain exactly these binaries:
   retok-macos-arm64, retok-windows-x64.exe
 Each binary requires an
 appended .cdx.json and .third-party-notices.txt sidecar (including after .exe).
-Generate the sidecars for each final binary using the metadata command. It uses
+Generate the sidecars for each final, signed binary using the metadata command. It uses
 offline locked Cargo metadata and authenticated local .crate archives, including
 complete licenses, Unicode data notices, and the embedded o200k vocabulary.
 Supply the actual build target and source commit; default Cargo features are
@@ -35,7 +36,9 @@ Notice paths may be absolute or relative to the manifest. Complete UTF-8 file
 contents are copied; local paths are replaced by public labels and file hashes
 in the canonical manifest embedded in the SBOM. Its SHA256 is bound to the root.
 
-Staging preserves asset bytes, normalizes modes to 755/644, and adds sorted,
+Staging requires signing evidence for both macOS binaries and the Windows
+binary. The evidence stays outside the public asset directory. Staging preserves
+asset bytes, normalizes modes to 755/644, and adds sorted,
 LF-terminated SHA256SUMS. Identical inputs produce identical asset/checksum
 bytes; this does not make the upstream binary builds reproducible.
 Only binaries matching the host OS and architecture are executed (--version).
@@ -55,9 +58,10 @@ import subprocess
 import tempfile
 
 import release_metadata
+import release_signing
 
 
-VERSION = "0.1.0"
+VERSION = release_metadata.VERSION
 TARGETS = {
     "retok-linux-x64": ("Linux", "x64"),
     "retok-linux-aarch64": ("Linux", "arm64"),
@@ -199,7 +203,9 @@ def validate(directory, with_checksums, project=None):
                                     stdin=subprocess.DEVNULL, capture_output=True,
                                     timeout=10, check=False)
             require(result.returncode == 0
-                    and result.stdout in (b"Retok 0.1.0\n", b"Retok 0.1.0\r\n")
+                    and result.stdout in (
+                        f"Retok {VERSION}\n".encode(), f"Retok {VERSION}\r\n".encode()
+                    )
                     and not result.stderr,
                     f"{name}: --version must succeed and report only Retok {VERSION}")
             print(f"{name}: version verified ({VERSION})")
@@ -207,8 +213,9 @@ def validate(directory, with_checksums, project=None):
             print(f"{name}: structure verified; version not run (foreign target)")
 
 
-def stage(source, destination):
+def stage(source, destination, signing_evidence):
     inventory(source, checksums=False)
+    release_signing.verify_release_evidence(source, signing_evidence)
     require(not destination.exists() and not destination.is_symlink(),
             f"{destination}: output must not already exist")
     # Publish only a complete validated directory; leave failed staging private.
@@ -219,6 +226,7 @@ def stage(source, destination):
             shutil.copyfile(source / name, staged / name)
             (staged / name).chmod(0o755 if name in TARGETS else 0o644)
         validate(staged, with_checksums=False)
+        release_signing.verify_release_evidence(staged, signing_evidence)
         (staged / "SHA256SUMS").write_bytes(checksums(staged))
         (staged / "SHA256SUMS").chmod(0o644)
         staged.rename(destination)
@@ -231,6 +239,8 @@ def main():
     staging = commands.add_parser("stage", help="stage 15 inputs into a new directory")
     staging.add_argument("source", type=Path)
     staging.add_argument("destination", type=Path)
+    staging.add_argument("--signing-evidence", type=Path, required=True,
+                         help="sanitized evidence emitted by release_signing.py")
     verification = commands.add_parser("verify", help="verify 15 assets and SHA256SUMS")
     verification.add_argument("directory", type=Path)
     verification.add_argument("--project", type=Path,
@@ -247,7 +257,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "stage":
-            stage(args.source, args.destination)
+            stage(args.source, args.destination, args.signing_evidence)
         elif args.command == "metadata":
             require(args.binary.name in TARGETS, "unknown binary asset name")
             binary_header(args.binary, *TARGETS[args.binary.name])

@@ -45,8 +45,10 @@ The installers download release files and `SHA256SUMS` from that same repository
 over HTTPS. This trusts GitHub, HTTPS, and the repository's maintainers: the
 checksums detect mismatched or corrupted downloads, but are not an independent
 signature and cannot protect against a compromised release and checksum file.
-The v0.1 binaries are unsigned. macOS Gatekeeper or Windows SmartScreen may
-warn or block execution. The installers do not disable these protections.
+Starting with v0.1.1, macOS binaries carry a notarized Apple Developer ID
+signature and the Windows binary carries a timestamped Authenticode signature.
+The v0.1.0 binaries remain unsigned. The installers do not disable Gatekeeper,
+SmartScreen, or other operating-system protections.
 
 To select v0.1.0 or a different directory, set the environment variables for the
 installer (either variable can be used on its own):
