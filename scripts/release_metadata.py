@@ -9,6 +9,8 @@ All license/notice files from each authenticated crate archive are copied in
 full. The published tiktoken-rs crate lacks LICENSE, so a reviewed local copy
 is required. A reviewed OpenAI/tiktoken MIT license is also required. Never
 substitute a license identifier or a generated copyright for either document.
+The known winapi-x86_64-pc-windows-gnu 0.4.0 archive omits its licenses;
+its supplement comes only from authenticated normal-parent winapi 0.3.9.
 
 The reviewed runtime manifest is UTF-8 JSON, for example (replace placeholders):
 {"target":"x86_64-unknown-linux-musl","components":[
@@ -60,6 +62,7 @@ SPECIAL_MARKERS = (
     "===== regex-syntax Unicode data =====", "===== unicode-ident Unicode data =====",
 )
 REGEX_LICENSE = "(MIT OR Apache-2.0) AND Unicode-DFS-2016"
+WINAPI_REVISION = "796a8e6c2971dc2ff1bcff166e6671284f9b5b6b"
 
 
 def require(condition, message):
@@ -278,7 +281,36 @@ def validate_runtimes(document, notices=None):
 
 
 def effective_license(name, cargo_expression):
-    return REGEX_LICENSE if name == "regex-syntax" else cargo_expression
+    if name == "regex-syntax":
+        return REGEX_LICENSE
+    return "MIT OR Apache-2.0" if cargo_expression == "MIT/Apache-2.0" else cargo_expression
+
+
+def winapi_import_licenses(package, packages, graph, lock):
+    """Offline supplement for the reviewed import archive, never unrelated crates."""
+    parents = [p for p in packages.values() if p["name"] == "winapi" and p["version"] == "0.3.9"
+               and package["id"] in graph[p["id"]]]
+    require(len(parents) == 1, "winapi import licenses require normal-parent winapi 0.3.9")
+    parent = parents[0]
+    require(parent["source"] == package["source"]
+            and parent["license"] == package["license"] == "MIT/Apache-2.0",
+            "winapi parent source/license mismatch")
+    digest, files = checked_archive(parent, lock)
+    require(json.loads(files.get(".cargo_vcs_info.json", b"{}"))
+            .get("git", {}).get("sha1") == WINAPI_REVISION, "winapi parent source revision mismatch")
+    names = ("LICENSE-MIT", "LICENSE-APACHE")
+    require(all(name in files for name in names), "winapi parent missing full license files")
+    texts = {name: license_text(files[name], "winapi " + name) for name in names}
+    # Reviewed root and x86_64 license files at this revision are byte-identical
+    # to the two license files in the Cargo.lock-authenticated winapi archive.
+    texts["NOTICE (license provenance)"] = (
+        "The winapi-x86_64-pc-windows-gnu 0.4.0 package omits its license files.\n"
+        "License texts supplied by Cargo.lock-authenticated winapi 0.3.9.\n"
+        f"winapi archive SHA-256: {digest}\n"
+        "Reviewed upstream x86_64/LICENSE-MIT and x86_64/LICENSE-APACHE match these texts.\n"
+        f"Source: https://github.com/retep998/winapi-rs/tree/{WINAPI_REVISION}/x86_64\n"
+    )
+    return texts
 
 
 def generate(project, binary, target, commit, tiktoken_license, openai_license, runtime_path):
@@ -307,6 +339,8 @@ def generate(project, binary, target, commit, tiktoken_license, openai_license, 
                  if path not in ("Cargo.toml", ".cargo_vcs_info.json", VOCAB_PATH)}
         if package["name"] == "tiktoken-rs" and not texts:
             texts["LICENSE (upstream supplement)"] = mit_text(tiktoken_license, "tiktoken-rs")
+        if (package["name"], package["version"]) == ("winapi-x86_64-pc-windows-gnu", "0.4.0") and not texts:
+            texts = winapi_import_licenses(package, packages, graph, lock)
         require(texts, f"{package['name']}: no complete license texts in cached crate")
         marker = f"===== crate {package['name']} {package['version']} ====="
         notices += section(marker, "License expression: " + expression)

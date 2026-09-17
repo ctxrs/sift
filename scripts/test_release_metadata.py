@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -80,11 +81,10 @@ class MetadataTests(unittest.TestCase):
         return {"id": name, "deps": [{"pkg": dep, "dep_kinds": [{"kind": kind, "target": None}]}
                                      for dep, kind in deps]}
 
-    def add_crate(self, name):
-        version = "1.2.3"
+    def add_crate(self, name, version="1.2.3", declared=None, overrides=None):
         directory = self.root / "registry" / "src" / "example" / (name + "-" + version)
         directory.mkdir(parents=True)
-        declared = {"regex-syntax": "MIT OR Apache-2.0",
+        declared = declared or {"regex-syntax": "MIT OR Apache-2.0",
                     "unicode-ident": "(MIT OR Apache-2.0) AND Unicode-3.0"}.get(name, "MIT")
         manifest = f'[package]\nname="{name}"\nversion="{version}"\nlicense="{declared}"\n'
         (directory / "Cargo.toml").write_text(manifest)
@@ -101,6 +101,11 @@ class MetadataTests(unittest.TestCase):
         if name == "normal":
             files["NOTICE"] = b"Synthetic attribution that must not be dropped.\n"
             self.full_texts.append(files["NOTICE"].decode())
+        for path, raw in (overrides or {}).items():
+            if raw is None:
+                files.pop(path, None)
+            else:
+                files[path] = raw
         archive = self.root / "registry" / "cache" / "example" / (name + "-" + version + ".crate")
         archive.parent.mkdir(parents=True, exist_ok=True)
         with tarfile.open(archive, "w:gz") as output:
@@ -116,6 +121,75 @@ class MetadataTests(unittest.TestCase):
 
     def write_lock(self):
         (self.project / "Cargo.lock").write_text("version=4\n" + "\n".join(self.lock_entries))
+
+    def add_winapi(self, parent=True, parent_edge=None, overrides=None, import_version="0.4.0"):
+        self.add_crate("winapi-x86_64-pc-windows-gnu", import_version, "MIT/Apache-2.0",
+                       {"LICENSE-MIT": None})
+        self.nodes.append(self.node("winapi-x86_64-pc-windows-gnu", []))
+        self.nodes[0]["deps"].append(self.node("root", [("winapi-x86_64-pc-windows-gnu", None)])["deps"][0])
+        if parent:
+            files = {"LICENSE-APACHE": b"Synthetic Apache license and attribution fixture.\n",
+                     ".cargo_vcs_info.json": json.dumps({"git": {"sha1": metadata.WINAPI_REVISION}}).encode()}
+            files.update(overrides or {})
+            self.add_crate("winapi", "0.3.9", "MIT/Apache-2.0", files)
+            self.nodes.append(self.node("winapi", [("winapi-x86_64-pc-windows-gnu", parent_edge)]))
+            self.nodes[0]["deps"].append(self.node("root", [("winapi", None)])["deps"][0])
+        self.write_lock()
+
+    def test_winapi_import_license_fallback_and_legacy_spdx(self):
+        self.add_winapi()
+        document, notices = self.generate()
+        for name in ("winapi", "winapi-x86_64-pc-windows-gnu"):
+            component = next(c for c in document["components"] if c["name"] == name)
+            self.assertEqual(component["licenses"], [{"expression": "MIT OR Apache-2.0"}])
+            self.assertEqual(metadata.property_map(component)["retok:cargo-license-expression"], "MIT/Apache-2.0")
+            self.assertEqual(component["hashes"][0]["content"], metadata.sha256(self.archives[name]))
+        section = notices.split("===== crate winapi-x86_64-pc-windows-gnu 0.4.0 =====", 1)[1].split("=====", 1)[0]
+        self.assertIn(MIT, section)
+        self.assertIn("Synthetic Apache license and attribution fixture.", section)
+        self.assertIn(metadata.sha256(self.archives["winapi"]), section)
+        self.assertIn("https://github.com/retep998/winapi-rs/tree/" + metadata.WINAPI_REVISION + "/x86_64", section)
+        metadata.validate_project(document, self.project)
+
+    def test_winapi_fallback_requires_normal_parent(self):
+        self.add_winapi(parent=False)
+        with self.assertRaisesRegex(ValueError, "normal-parent winapi"):
+            self.generate()
+
+    def test_winapi_fallback_rejects_build_only_parent_edge(self):
+        self.add_winapi(parent_edge="build")
+        with self.assertRaisesRegex(ValueError, "normal-parent winapi"):
+            self.generate()
+
+    def test_winapi_fallback_reauthenticates_parent_archive(self):
+        self.add_winapi()
+        _, packages, graph = metadata.normal_graph(self.cargo)
+        lock = {(p["name"], p["version"], p.get("source")): p
+                for p in tomllib.loads((self.project / "Cargo.lock").read_text())["package"]}
+        with self.archives["winapi"].open("ab") as stream:
+            stream.write(b"corrupt archive")
+        with self.assertRaisesRegex(ValueError, "cached crate checksum"):
+            metadata.winapi_import_licenses(packages["winapi-x86_64-pc-windows-gnu"], packages, graph, lock)
+
+    def test_winapi_fallback_rejects_missing_parent_license(self):
+        self.add_winapi(overrides={"LICENSE-APACHE": None})
+        with self.assertRaisesRegex(ValueError, "missing full license"):
+            self.generate()
+
+    def test_winapi_fallback_rejects_empty_parent_license(self):
+        self.add_winapi(overrides={"LICENSE-APACHE": b" \n"})
+        with self.assertRaisesRegex(ValueError, "missing license text"):
+            self.generate()
+
+    def test_winapi_fallback_requires_reviewed_revision(self):
+        self.add_winapi(overrides={".cargo_vcs_info.json": b'{"git":{"sha1":"different"}}'})
+        with self.assertRaisesRegex(ValueError, "source revision mismatch"):
+            self.generate()
+
+    def test_winapi_fallback_does_not_extend_to_other_versions(self):
+        self.add_winapi(import_version="0.4.1")
+        with self.assertRaisesRegex(ValueError, "no complete license texts"):
+            self.generate()
 
     def write_runtime_manifest(self, target, names):
         manifest = {"target": target, "components": [
