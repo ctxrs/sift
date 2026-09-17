@@ -10,6 +10,62 @@ every value, type, numeric lexeme, row, and key association; JSON whitespace may
 change. Other content passes through. No telemetry, model calls, shell execution,
 background services, or automatic agent/settings changes are involved.
 
+## Install
+
+Install the latest [GitHub release](https://github.com/ctxrs/retok/releases).
+Linux and macOS (x64 or ARM64; requires `curl` and `sha256sum` or `shasum`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ctxrs/retok/main/install.sh | sh
+```
+
+Windows x64, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/ctxrs/retok/main/install.ps1 | iex
+```
+
+Supported release targets are Linux x64 and aarch64, macOS 13 or newer on x64
+and arm64, and Windows x64. Windows ARM64 and 32-bit systems are not supported.
+The Linux assets are statically linked musl executables and do not require
+glibc. Retok v0.1 does not claim compatibility with a specific older Linux
+kernel.
+
+Both installers download the binary and its `.third-party-notices.txt` sidecar,
+verify both against the release's `SHA256SUMS`, and stage both in the installation
+directory before replacing files. Notices are installed beside the binary as
+`retok.third-party-notices.txt` on Unix or `retok.exe.third-party-notices.txt` on
+Windows. The default directory is `~/.local/bin` on Unix and
+`%LOCALAPPDATA%\Programs\Retok` on Windows. Add that directory to your PATH,
+then run `retok --help`. No administrator access is needed; the installers do
+not change PATH, shell profiles, or agent settings.
+
+These commands execute the installer from `ctxrs/retok` on GitHub over HTTPS.
+The installers download release files and `SHA256SUMS` from that same repository
+over HTTPS. This trusts GitHub, HTTPS, and the repository's maintainers: the
+checksums detect mismatched or corrupted downloads, but are not an independent
+signature and cannot protect against a compromised release and checksum file.
+The v0.1 binaries are unsigned. macOS Gatekeeper or Windows SmartScreen may
+warn or block execution. The installers do not disable these protections.
+
+To select v0.1.0 or a different directory, set the environment variables for the
+installer (either variable can be used on its own):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ctxrs/retok/main/install.sh | RETOK_VERSION=v0.1.0 RETOK_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+```powershell
+$env:RETOK_VERSION = 'v0.1.0'
+$env:RETOK_INSTALL_DIR = "$env:LOCALAPPDATA\Programs\Retok"
+irm https://raw.githubusercontent.com/ctxrs/retok/main/install.ps1 | iex
+```
+
+Installer checks use synthetic releases and make no network requests:
+`python3 tests/test_install.py` on Unix and
+`powershell -NoProfile -File tests/install.Tests.ps1` on Windows
+(`pwsh` also works).
+
 ## Build and use
 
 Requires Rust 1.88 or newer. Dependencies and the tokenizer are downloaded at
