@@ -128,15 +128,16 @@ fn uninstall_preserves_later_additions_and_backups_do_not_overwrite() {
     );
 }
 
+#[cfg(not(windows))]
 #[test]
-fn codex_migration_is_guidance_only_and_project_stays_local() {
+fn codex_migration_installs_prehook_and_project_stays_local() {
     let f = Fixture::new();
     let global = f.write(".codex/hooks.json", r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"command":"rtk hook codex"},{"command":"audit"}]}]}}"#);
     let before = fs::read(&global).unwrap();
     fs::create_dir_all(f.roots.project.join(".codex")).unwrap();
     fs::write(f.roots.project.join(".codex/hooks.json"), &before).unwrap();
     let p = f.plan(&["--agent", "codex", "--project", "--replace-rtk"]);
-    assert!(p.messages.join(" ").contains("guidance only"));
+    assert!(p.messages.join(" ").contains("native pre-execution hook"));
     p.apply().unwrap();
     assert_eq!(fs::read(&global).unwrap(), before);
     let v = value(&f.roots.project.join(".codex/hooks.json"));
@@ -154,27 +155,29 @@ fn codex_migration_is_guidance_only_and_project_stays_local() {
 }
 
 #[test]
-fn copilot_migrates_other_file_and_installs_native_exec() {
-    let f = Fixture::new();
-    let legacy = f.write(".copilot/hooks/rtk-rewrite.json", r#"{"version":1,"hooks":{"PreToolUse":[{"type":"command","bash":"rtk hook copilot"},{"command":"audit"}]}}"#);
-    let p = f.plan(&["--replace-rtk"]);
-    assert_eq!(p.changes.len(), 2);
-    p.apply().unwrap();
-    assert_eq!(
-        value(&legacy)["hooks"]["PreToolUse"],
-        json!([{"command":"audit"}])
-    );
-    let v = value(&f.roots.copilot.join("hooks/retok.json"));
-    assert_eq!(v["version"], 1);
-    assert_eq!(
-        v["hooks"]["postToolUse"][0]["exec"],
-        f.roots.executable.to_str().unwrap()
-    );
-    assert_eq!(
-        v["hooks"]["postToolUse"][0]["args"],
-        json!(["hook", "copilot"])
-    );
-    assert!(v["hooks"].get("PreToolUse").is_none());
+fn fresh_shared_copilot_installs_only_the_qualified_cli_completion_route() {
+    for agent in ["copilot", "vscode"] {
+        let mut f = Fixture::new();
+        f.roots.executable = std::env::current_exe().unwrap();
+        let p = f.plan(&["--agent", agent]);
+        assert!(p.messages.join(" ").contains("native rewrite unavailable"));
+        p.apply().unwrap();
+        let v = value(&f.roots.copilot.join("hooks/retok.json"));
+        assert_eq!(v["version"], 1);
+        assert_eq!(
+            v["hooks"]["postToolUse"][0]["exec"],
+            f.roots.executable.to_str().unwrap()
+        );
+        assert_eq!(
+            v["hooks"]["postToolUse"][0]["args"],
+            json!(["hook", "copilot"])
+        );
+        assert!(v["hooks"].get("PreToolUse").is_none());
+        assert!(f.plan(&["--agent", agent]).changes.is_empty());
+        let doctor = f.plan(&["--agent", agent, "--show"]).messages.join(" ");
+        assert!(doctor.contains("CLI post-output configured"));
+        assert!(doctor.contains("VS Code native rewrite unavailable"));
+    }
 }
 
 #[test]
@@ -188,7 +191,7 @@ fn corrupted_or_malformed_config_prevents_every_write() {
     ] {
         let f = Fixture::new();
         let good = f.write(".claude/settings.json", "{}");
-        let bad_path = f.write(".codex/hooks.json", bad);
+        let bad_path = f.write(".copilot/hooks/bad.json", bad);
         assert!(plan(&[], &f.roots).is_err());
         assert_eq!(fs::read_to_string(good).unwrap(), "{}");
         assert_eq!(fs::read_to_string(bad_path).unwrap(), bad);
@@ -230,7 +233,7 @@ fn dry_run_and_status_do_not_create_directories() {
 fn concurrent_modification_after_planning_is_preserved() {
     let f = Fixture::new();
     let a = f.write(".claude/settings.json", "{}");
-    let b = f.write(".codex/AGENTS.md", "{}");
+    let b = f.write(".copilot/hooks/retok.json", "{}");
     let p = f.plan(&[]);
     fs::write(&b, "{\"user\":true}").unwrap();
     assert!(p.apply().is_err());
@@ -240,24 +243,47 @@ fn concurrent_modification_after_planning_is_preserved() {
 
 #[cfg(unix)]
 #[test]
-fn symlink_file_parent_and_late_replacement_are_rejected() {
+fn symlink_managed_files_preserve_links_back_up_targets_and_reject_retargeting() {
     use std::os::unix::fs::symlink;
     let f = Fixture::new();
-    let target = f.write("outside.json", "{}");
+    let original = b"{\"user\":42}\n";
+    let target = f.write(
+        "dotfiles/settings.json",
+        std::str::from_utf8(original).unwrap(),
+    );
     fs::create_dir_all(f.roots.home.join(".claude")).unwrap();
     let path = f.roots.home.join(".claude/settings.json");
-    symlink(&target, &path).unwrap();
-    assert!(plan(&["--agent".into(), "claude".into()], &f.roots).is_err());
-    assert_eq!(fs::read_to_string(&target).unwrap(), "{}");
+    symlink("../dotfiles/settings.json", &path).unwrap();
+    let backups = f.plan(&["--agent", "claude"]).apply().unwrap();
+    assert_eq!(
+        fs::read_link(&path).unwrap(),
+        Path::new("../dotfiles/settings.json")
+    );
+    assert_eq!(backups.len(), 1);
+    assert_eq!(backups[0].parent(), target.parent());
+    assert_eq!(fs::read(&backups[0]).unwrap(), original);
+    assert_eq!(value(&target)["user"], 42);
+    assert!(f.plan(&["--agent", "claude"]).changes.is_empty());
+    let removal = f.plan(&["--agent", "claude", "--uninstall"]);
+    let same_bytes = f.write("other.json", &fs::read_to_string(&target).unwrap());
     fs::remove_file(&path).unwrap();
-    fs::write(&path, "{}").unwrap();
-    let p = f.plan(&["--agent", "claude"]);
-    fs::remove_file(&path).unwrap();
-    symlink(&target, &path).unwrap();
-    assert!(p.apply().is_err());
+    symlink(&same_bytes, &path).unwrap();
+    assert!(removal.apply().is_err());
+    assert_eq!(fs::read(&target).unwrap(), fs::read(&same_bytes).unwrap());
     fs::remove_file(&path).unwrap();
     fs::remove_dir(f.roots.home.join(".claude")).unwrap();
-    symlink(&f.roots.project, f.roots.home.join(".claude")).unwrap();
+    symlink(target.parent().unwrap(), f.roots.home.join(".claude")).unwrap();
+    f.plan(&["--agent", "claude", "--uninstall"])
+        .apply()
+        .unwrap();
+    assert!(
+        fs::symlink_metadata(f.roots.home.join(".claude"))
+            .unwrap()
+            .is_symlink()
+    );
+    assert_eq!(value(&target)["hooks"]["PostToolUse"], json!([]));
+    fs::remove_file(&target).unwrap();
+    symlink("missing.json", &target).unwrap();
     assert!(plan(&["--agent".into(), "claude".into()], &f.roots).is_err());
 }
 
@@ -265,24 +291,28 @@ fn symlink_file_parent_and_late_replacement_are_rejected() {
 fn instructions_remove_only_unchanged_owned_block() {
     let f = Fixture::new();
     let path = f.write(".gemini/GEMINI.md", "Keep these instructions.\n");
-    f.plan(&["--agent", "gemini"]).apply().unwrap();
+    f.plan(&["--instructions-only", "--agent", "gemini"])
+        .apply()
+        .unwrap();
     let mut text = fs::read_to_string(&path).unwrap();
     text.push_str("Later user guidance.\n");
     fs::write(&path, text).unwrap();
-    f.plan(&["--agent", "gemini", "--uninstall"])
+    f.plan(&["--instructions-only", "--agent", "gemini", "--uninstall"])
         .apply()
         .unwrap();
     assert_eq!(
         fs::read_to_string(&path).unwrap(),
         "Keep these instructions.\nLater user guidance.\n"
     );
-    f.plan(&["--agent", "gemini"]).apply().unwrap();
+    f.plan(&["--instructions-only", "--agent", "gemini"])
+        .apply()
+        .unwrap();
     let text = fs::read_to_string(&path)
         .unwrap()
         .replace("suitable", "approved");
     fs::write(&path, &text).unwrap();
     assert!(
-        f.plan(&["--agent", "gemini", "--uninstall"])
+        f.plan(&["--instructions-only", "--agent", "gemini", "--uninstall"])
             .changes
             .is_empty()
     );
@@ -469,6 +499,104 @@ fn stock_plugins_migrate_by_exact_digest_and_repeat_without_changes() {
     assert!(path.exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn symlink_plugin_removal_preserves_targets_and_repeats_uninstall_and_install() {
+    use std::os::unix::fs::symlink;
+    for layout in ["regular", "file-link", "directory-link"] {
+        let f = Fixture::new();
+        f.plan(&["--agent", "pi"]).apply().unwrap();
+        let plugin = f.roots.pi.join("extensions/retok.ts");
+        let original = fs::read(&plugin).unwrap();
+        let target = f.roots.home.join("dotfiles/retok.ts");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        if layout == "file-link" {
+            fs::rename(&plugin, &target).unwrap();
+            symlink("../../../dotfiles/retok.ts", &plugin).unwrap();
+        } else if layout == "directory-link" {
+            let dir = plugin.parent().unwrap();
+            fs::remove_dir(target.parent().unwrap()).unwrap();
+            fs::rename(dir, target.parent().unwrap()).unwrap();
+            symlink(target.parent().unwrap(), dir).unwrap();
+        }
+        let backups = f.plan(&["--agent", "pi", "--uninstall"]).apply().unwrap();
+        assert!(backups.iter().any(|p| fs::read(p).unwrap() == original));
+        assert!(fs::symlink_metadata(&plugin).is_err());
+        if layout == "file-link" {
+            assert_eq!(fs::read(&target).unwrap(), original);
+        } else {
+            assert!(!target.exists());
+        }
+        assert!(f.plan(&["--agent", "pi", "--uninstall"]).changes.is_empty());
+        f.plan(&["--agent", "pi"]).apply().unwrap();
+        assert_eq!(fs::read(&plugin).unwrap(), original);
+        assert!(f.plan(&["--agent", "pi"]).changes.is_empty());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_stock_plugin_migration_preserves_target_and_repeats() {
+    use std::os::unix::fs::symlink;
+    for linked in [false, true] {
+        let f = Fixture::new();
+        let plugin = f.write(".pi/agent/extensions/rtk.ts", SYNTHETIC_PI);
+        let target = f.roots.home.join("stock-plugin.ts");
+        if linked {
+            fs::rename(&plugin, &target).unwrap();
+            symlink(&target, &plugin).unwrap();
+        }
+        stock_plan(&f, &["--replace-rtk"]).unwrap().apply().unwrap();
+        assert!(fs::symlink_metadata(&plugin).is_err());
+        if linked {
+            assert_eq!(fs::read_to_string(&target).unwrap(), SYNTHETIC_PI);
+        }
+        assert!(
+            stock_plan(&f, &["--replace-rtk"])
+                .unwrap()
+                .changes
+                .is_empty()
+        );
+        assert!(f.plan(&["--agent", "pi"]).changes.is_empty());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_removal_checks_link_identity_and_rolls_back_on_later_failure() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new();
+    f.plan(&["--agent", "pi"]).apply().unwrap();
+    f.plan(&["--agent", "omp"]).apply().unwrap();
+    let pi = f.roots.pi.join("extensions/retok.ts");
+    let omp = f.roots.omp.join("extensions/retok.ts");
+    let target = f.roots.home.join("plugin.ts");
+    fs::rename(&pi, &target).unwrap();
+    let relative = Path::new("../../../plugin.ts");
+    symlink(relative, &pi).unwrap();
+    let p = f.plan(&["--agent", "pi", "--uninstall"]);
+    fs::remove_file(&pi).unwrap();
+    symlink(&target, &pi).unwrap();
+    assert!(
+        p.apply().is_err(),
+        "same target but different link must be detected"
+    );
+    fs::remove_file(&pi).unwrap();
+    symlink(relative, &pi).unwrap();
+    // The second backup name exceeds NAME_MAX, failing even for privileged runners.
+    let long_target = f.roots.home.join("x".repeat(240));
+    fs::rename(&omp, &long_target).unwrap();
+    symlink(&long_target, &omp).unwrap();
+    let original = fs::read(&target).unwrap();
+    let mut p = f.plan(&["--agent", "pi", "--uninstall"]);
+    p.changes
+        .extend(f.plan(&["--agent", "omp", "--uninstall"]).changes);
+    assert!(p.apply().is_err());
+    assert_eq!(fs::read_link(&pi).unwrap(), relative);
+    assert_eq!(fs::read(&target).unwrap(), original);
+    assert_eq!(fs::read_link(&omp).unwrap(), long_target);
+}
+
 #[test]
 fn stock_claude_guidance_and_imports_are_removed_without_touching_other_text() {
     let f = Fixture::new();
@@ -495,6 +623,7 @@ fn stock_claude_guidance_and_imports_are_removed_without_touching_other_text() {
     );
 }
 
+#[cfg(not(windows))]
 #[test]
 fn codex_absolute_stock_import_is_replaced_in_one_backed_up_write() {
     let f = Fixture::new();
@@ -502,7 +631,7 @@ fn codex_absolute_stock_import_is_replaced_in_one_backed_up_write() {
     let text = format!("User instructions.\n@{}\n", dedicated.display());
     let shared = f.write(".codex/AGENTS.md", &text);
     let p = stock_plan(&f, &["--replace-rtk"]).unwrap();
-    assert_eq!(p.changes.len(), 2);
+    assert_eq!(p.changes.len(), 3);
     let backups = p.apply().unwrap();
     assert_eq!(backups.len(), 2);
     assert!(
@@ -513,7 +642,7 @@ fn codex_absolute_stock_import_is_replaced_in_one_backed_up_write() {
     let now = fs::read_to_string(shared).unwrap();
     assert!(now.starts_with("User instructions.\n<!-- retok managed"));
     assert!(!now.contains("@"));
-    assert!(!f.roots.codex.join("hooks.json").exists());
+    assert!(f.roots.codex.join("hooks.json").exists());
     assert!(
         stock_plan(&f, &["--replace-rtk"])
             .unwrap()
@@ -557,10 +686,13 @@ fn modified_guidance_aborts_whole_migration_and_keeps_hooks() {
     let path = f.write(".codex/RTK.md", "Custom RTK instructions.\n");
     f.write(".codex/AGENTS.md", "@RTK.md\n");
     assert!(
-        stock_plan(&f, &["--replace-rtk"])
-            .unwrap_err()
-            .to_string()
-            .contains("unknown RTK.md")
+        stock_plan(
+            &f,
+            &["--replace-rtk", "--agent", "codex", "--instructions-only"]
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("unknown RTK.md")
     );
     assert!(path.exists());
 }
@@ -612,19 +744,27 @@ fn rules_frontmatter_is_active_and_plain_stock_suffix_preserves_user_rules() {
         }
     }
     let f = Fixture::new();
-    f.plan(&["--agent", "cursor", "--project"]).apply().unwrap();
+    f.plan(&["--instructions-only", "--agent", "cursor", "--project"])
+        .apply()
+        .unwrap();
     let rule = f.roots.project.join(".cursor/rules/retok.mdc");
     let bytes = fs::read_to_string(&rule).unwrap();
     assert!(bytes.starts_with("---\ndescription:"));
     assert!(bytes.contains("\nalwaysApply: true\n---\n"));
     assert!(
-        f.plan(&["--agent", "cursor", "--project"])
+        f.plan(&["--instructions-only", "--agent", "cursor", "--project"])
             .changes
             .is_empty()
     );
-    f.plan(&["--agent", "cursor", "--project", "--uninstall"])
-        .apply()
-        .unwrap();
+    f.plan(&[
+        "--instructions-only",
+        "--agent",
+        "cursor",
+        "--project",
+        "--uninstall",
+    ])
+    .apply()
+    .unwrap();
     assert!(!rule.exists());
 }
 
@@ -731,8 +871,9 @@ fn native_hooks_invoke_absolute_executable_with_empty_path_and_literal_metachara
     );
 }
 
+#[cfg(not(windows))]
 #[test]
-fn gemini_stock_script_registration_and_awareness_migrate_together() {
+fn gemini_stock_script_and_awareness_downgrade_only_when_explicitly_selected() {
     let f = Fixture::new();
     let script = f.write(".gemini/hooks/rtk-hook-gemini.sh", SYNTHETIC_SCRIPT);
     let settings = json!({"hooks":{"BeforeTool":[{"matcher":"run_shell_command","hooks":[{"type":"command","command":script.to_str().unwrap()},{"command":format!("echo {}",script.display())}]}]}});
@@ -741,7 +882,13 @@ fn gemini_stock_script_registration_and_awareness_migrate_together() {
         &serde_json::to_string(&settings).unwrap(),
     );
     let instructions = f.write(".gemini/GEMINI.md", SYNTHETIC_AWARENESS);
-    stock_plan(&f, &["--replace-rtk"]).unwrap().apply().unwrap();
+    stock_plan(
+        &f,
+        &["--agent", "gemini", "--replace-rtk", "--instructions-only"],
+    )
+    .unwrap()
+    .apply()
+    .unwrap();
     assert_eq!(
         value(&path)["hooks"]["BeforeTool"][0]["hooks"]
             .as_array()
@@ -754,10 +901,13 @@ fn gemini_stock_script_registration_and_awareness_migrate_together() {
     assert!(!text.contains("synthetic RTK"));
     assert!(text.contains("retok run"));
     assert!(
-        stock_plan(&f, &["--replace-rtk"])
-            .unwrap()
-            .changes
-            .is_empty()
+        stock_plan(
+            &f,
+            &["--agent", "gemini", "--replace-rtk", "--instructions-only"]
+        )
+        .unwrap()
+        .changes
+        .is_empty()
     );
 }
 
@@ -786,7 +936,9 @@ fn mixed_rtk_and_custom_invocations_require_manual_migration_without_writes() {
     }
     let f = Fixture::new();
     let path = f.write(".copilot/hooks/rtk-rewrite.json", r#"{"version":1,"hooks":{"PreToolUse":[{"type":"command","bash":"rtk hook copilot","powershell":"rtk hook copilot"}]}}"#);
-    f.plan(&["--replace-rtk"]).apply().unwrap();
+    f.plan(&["--agent", "copilot", "--replace-rtk", "--instructions-only"])
+        .apply()
+        .unwrap();
     assert_eq!(value(&path)["hooks"]["PreToolUse"], json!([]));
 }
 
@@ -829,7 +981,12 @@ fn unchanged_plugins_remain_owned_after_executable_moves_but_code_edits_do_not()
         let old = fs::read(&path).unwrap();
         f.roots.executable = f.root.join("install B ' __RETOK_SOURCE__/retok");
         let status = f.plan(&["--agent", host, "--show"]);
-        assert!(status.messages.iter().any(|m| m.contains("; installed;")));
+        assert!(
+            status
+                .messages
+                .iter()
+                .any(|m| m.contains("; not fully configured;"))
+        );
         let upgrade = f.plan(&["--agent", host]);
         assert_eq!(upgrade.changes.len(), 1);
         let backups = upgrade.apply().unwrap();
@@ -908,6 +1065,9 @@ fn kimi_and_hermes_global_guidance_honor_explicit_roots_and_preserve_user_text()
         ("hermes", "SOUL.md"),
         ("vibe", "AGENTS.md"),
     ] {
+        if cfg!(windows) && host == "vibe" {
+            continue;
+        }
         let mut f = Fixture::new();
         let relocated = f.root.join(format!("relocated-{host}"));
         fs::create_dir(&relocated).unwrap();
@@ -921,7 +1081,13 @@ fn kimi_and_hermes_global_guidance_honor_explicit_roots_and_preserve_user_text()
         let path = relocated.join(file);
         fs::write(&path, "Existing user guidance.\n").unwrap();
         let p = f.plan(&[]);
-        assert!(p.messages.join(" ").contains("instructions only"));
+        assert!(p.messages.join(" ").contains(if host == "vibe" {
+            "native pre-execution hook"
+        } else if host == "hermes" {
+            "native post-output plugin"
+        } else {
+            "instructions only"
+        }));
         p.apply().unwrap();
         assert!(
             fs::read_to_string(&path)
@@ -1030,16 +1196,16 @@ fn custom_rtk_script_does_not_block_removing_only_retok_entries() {
     );
 }
 
+#[cfg(not(windows))]
 #[test]
-fn vibe_guidance_stays_in_requested_scope_and_toml_migration_is_manual() {
+fn vibe_project_native_setup_stays_local_and_custom_migration_is_manual() {
     let f = Fixture::new();
     let hooks = f.write(
         ".vibe/hooks.toml",
         "[[hooks]]\nname = 'rtk-rewrite'\ncommand = 'rtk hook vibe'\n",
     );
-    let p = f.plan(&["--replace-rtk"]);
-    assert!(p.changes.is_empty());
-    assert!(p.messages.join(" ").contains("manual review"));
+    let error = plan(&["--replace-rtk".into()], &f.roots).unwrap_err();
+    assert!(error.to_string().contains("manual migration"));
     assert_eq!(
         fs::read_to_string(hooks).unwrap(),
         "[[hooks]]\nname = 'rtk-rewrite'\ncommand = 'rtk hook vibe'\n"
@@ -1140,7 +1306,16 @@ fn native_hooks_upgrade_and_uninstall_after_executable_relocation() {
             let original = fs::read(&path).unwrap();
             f.roots.executable = f.root.join("install B ' $HOME;/retok");
             let status = f.plan(&["--agent", host, "--show"]);
-            assert!(status.messages.iter().any(|m| m.contains("; installed;")));
+            assert!(
+                status
+                    .messages
+                    .iter()
+                    .any(|m| m.contains(if host == "copilot" {
+                        "CLI post-output not configured"
+                    } else {
+                        "; not fully configured;"
+                    }))
+            );
             if update_first {
                 let p = f.plan(&["--agent", host]);
                 assert_eq!(p.changes.len(), 1);
@@ -1256,12 +1431,11 @@ fn openclaw_is_explicit_workspace_guidance_only_and_preserves_rtk_plugin() {
     ] {
         let p = f.plan(&args);
         assert!(p.changes.is_empty());
-        assert!(
-            p.messages
-                .join(" ")
-                .contains("run --project in OpenClaw workspace")
-        );
-        assert!(p.messages.join(" ").contains("manual migration required"));
+        let status = p.messages.join(" ");
+        assert!(status.contains("RTK plugin"), "{status}");
+        if args.contains(&"--replace-rtk") {
+            assert!(status.contains("manual migration required"));
+        }
     }
     assert_eq!(
         fs::read_to_string(plugin).unwrap(),
@@ -1295,7 +1469,7 @@ fn instruction_guidance_names_absolute_executable_and_survives_relocation() {
                 fs::create_dir_all(path.parent().unwrap()).unwrap();
                 fs::write(&path, "User rules.\n").unwrap();
             }
-            let mut args = vec!["--agent", host];
+            let mut args = vec!["--instructions-only", "--agent", host];
             if project {
                 args.push("--project");
             }
@@ -1320,7 +1494,7 @@ fn instruction_guidance_names_absolute_executable_and_survives_relocation() {
                 f.plan(&status)
                     .messages
                     .iter()
-                    .any(|m| m.contains("; installed;"))
+                    .any(|m| m.contains("; configured;"))
             );
             if update_first {
                 let p = f.plan(&args);
@@ -1352,7 +1526,7 @@ fn instruction_guidance_names_absolute_executable_and_survives_relocation() {
 fn relocated_instruction_ownership_does_not_accept_custom_block_or_frontmatter_edits() {
     for host in ["codex", "cursor"] {
         let mut f = Fixture::new();
-        let args = vec!["--agent", host, "--project"];
+        let args = vec!["--instructions-only", "--agent", host, "--project"];
         f.plan(&args).apply().unwrap();
         let path = if host == "codex" {
             f.roots.project.join("AGENTS.md")
@@ -1379,5 +1553,1063 @@ fn relocated_instruction_ownership_does_not_accept_custom_block_or_frontmatter_e
         uninstall.push("--uninstall");
         assert!(f.plan(&uninstall).changes.is_empty());
         assert_eq!(fs::read_to_string(path).unwrap(), changed);
+    }
+}
+
+fn isolated_cli(f: &Fixture) -> std::process::Command {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_retok"));
+    command
+        .current_dir(&f.roots.project)
+        .env("HOME", &f.roots.home)
+        .env("USERPROFILE", &f.roots.home)
+        .env("XDG_CONFIG_HOME", &f.roots.config)
+        .env("RETOK_CONFIG_DIR", f.root.join("retok-config"))
+        .env("RETOK_STATE_DIR", f.root.join("retok-state"));
+    for name in [
+        "CLAUDE_CONFIG_DIR",
+        "PI_CODING_AGENT_DIR",
+        "CODEX_HOME",
+        "COPILOT_HOME",
+        "FACTORY_HOME_OVERRIDE",
+        "KIMI_CODE_HOME",
+        "HERMES_HOME",
+        "VIBE_HOME",
+        "OPENCLAW_STATE_DIR",
+        "OPENCLAW_CONFIG_PATH",
+    ] {
+        command.env_remove(name);
+    }
+    command
+}
+
+#[test]
+fn relocated_environment_roots_reach_active_hosts_without_leaking_project_scope() {
+    let f = Fixture::new();
+    for (agent, variable, suffix) in [
+        ("claude", "CLAUDE_CONFIG_DIR", "settings.json"),
+        ("pi", "PI_CODING_AGENT_DIR", "extensions/retok.ts"),
+        ("omp", "PI_CODING_AGENT_DIR", "extensions/retok.ts"),
+        ("droid", "FACTORY_HOME_OVERRIDE", ".factory/AGENTS.md"),
+    ] {
+        let relocated = f.root.join(format!("relocated-{agent}"));
+        let result = isolated_cli(&f)
+            .env(variable, &relocated)
+            .args(["init", "--agent", agent])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(relocated.join(suffix).is_file(), "{agent}");
+        assert!(!f.roots.home.join(format!(".{agent}")).exists());
+        let before = fs::read(relocated.join(suffix)).unwrap();
+        let result = isolated_cli(&f)
+            .env(variable, &relocated)
+            .args(["init", "--agent", agent, "--project"])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(fs::read(relocated.join(suffix)).unwrap(), before);
+        assert!(
+            f.roots.project.join(format!(".{agent}")).is_dir()
+                || agent == "droid" && f.roots.project.join("AGENTS.md").is_file()
+        );
+    }
+}
+
+#[test]
+fn relocated_pi_and_omp_share_one_owned_plugin_without_conflicting_plans() {
+    let mut f = Fixture::new();
+    f.roots.pi = f.root.join("shared-agent");
+    f.roots.omp = f.roots.pi.clone();
+    fs::create_dir(&f.roots.pi).unwrap();
+    let p = f.plan(&[]);
+    assert_eq!(p.changes.len(), 1);
+    p.apply().unwrap();
+    assert!(f.plan(&[]).changes.is_empty());
+    assert!(!f.roots.pi.join("agent").exists());
+}
+
+#[test]
+fn bom_json_is_backed_up_exactly_preserved_and_still_rejects_duplicate_keys() {
+    let f = Fixture::new();
+    let original = "\u{feff}{\"permissions\":{\"allow\":[\"read\"]},\"custom\":1}\r\n";
+    let path = f.write(".claude/settings.json", original);
+    let p = f.plan(&["--agent", "claude"]);
+    let backups = p.apply().unwrap();
+    assert_eq!(fs::read(&backups[0]).unwrap(), original.as_bytes());
+    let after = fs::read(&path).unwrap();
+    assert!(after.starts_with(b"\xef\xbb\xbf"));
+    let v: Value = serde_json::from_slice(&after[3..]).unwrap();
+    assert_eq!(v["permissions"], json!({"allow":["read"]}));
+    assert!(f.plan(&["--agent", "claude"]).changes.is_empty());
+    fs::write(&path, "\u{feff}{\"hooks\":{},\"hooks\":{}}").unwrap();
+    assert!(plan(&["--agent".into(), "claude".into()], &f.roots).is_err());
+}
+
+#[cfg(not(windows))]
+#[test]
+fn codex_native_json_schema_survives_repeat_and_uninstall() {
+    let f = Fixture::new();
+    f.plan(&["--agent", "codex"]).apply().unwrap();
+    let path = f.roots.codex.join("hooks.json");
+    let v = value(&path);
+    assert_eq!(v["hooks"]["PreToolUse"][0]["matcher"], "Bash");
+    assert_eq!(
+        v["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+        setup::native_shell_command(f.roots.executable.to_str().unwrap(), "codex", false)
+    );
+    assert!(v.get("permissions").is_none());
+    assert!(f.plan(&["--agent", "codex"]).changes.is_empty());
+    f.plan(&["--agent", "codex", "--uninstall"])
+        .apply()
+        .unwrap();
+    assert!(!fs::read_to_string(&path).unwrap().contains(" hook "));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn unavailable_droid_rewrite_preserves_all_native_settings_and_adds_only_guidance() {
+    for root_event in [false, true] {
+        let f = Fixture::new();
+        let settings = f.write(".factory/settings.json", r#"{"permissions":{"allow":["read"]},"hooks":{"PreToolUse":[{"matcher":"Execute","hooks":[{"command":"settings-audit"}]}]}}"#);
+        let root = f.write(
+            ".factory/hooks.json",
+            if root_event {
+                r#"{"PreToolUse":[{"matcher":"Execute","hooks":[{"command":"root-audit"}]}]}"#
+            } else {
+                r#"{"PostToolUse":[{"hooks":[{"command":"post-audit"}]}]}"#
+            },
+        );
+        let legacy = f.write(
+            ".factory/hooks/hooks.json",
+            r#"{"PreToolUse":[{"hooks":[{"command":"legacy-audit"}]}]}"#,
+        );
+        let untouched = if root_event { &settings } else { &root };
+        let original = fs::read(untouched).unwrap();
+        let legacy_before = fs::read(&legacy).unwrap();
+        f.plan(&["--agent", "droid"]).apply().unwrap();
+        assert_eq!(fs::read(untouched).unwrap(), original);
+        assert_eq!(fs::read(&legacy).unwrap(), legacy_before);
+        assert_eq!(value(&settings)["permissions"], json!({"allow":["read"]}));
+        let selected = if root_event {
+            value(&root)
+        } else {
+            value(&settings)["hooks"].clone()
+        };
+        assert_eq!(selected["PreToolUse"].as_array().unwrap().len(), 1);
+        assert!(f.roots.home.join(".factory/AGENTS.md").is_file());
+        assert!(f.plan(&["--agent", "droid"]).changes.is_empty());
+    }
+}
+
+#[test]
+fn shared_copilot_migration_preserves_both_consumers_until_explicit_downgrade() {
+    for agent in ["copilot", "vscode"] {
+        let f = Fixture::new();
+        let original = r#"{"version":1,"hooks":{"PreToolUse":[{"type":"command","command":"rtk hook copilot","cwd":".","timeout":5}]}}"#;
+        let legacy = f.write(".copilot/hooks/rtk-rewrite.json", original);
+        let output = f.write(".copilot/hooks/retok.json", "{broken}");
+        assert!(
+            plan(
+                &["--agent".into(), agent.into(), "--replace-rtk".into()],
+                &f.roots
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read_to_string(&legacy).unwrap(), original);
+        fs::remove_file(&output).unwrap();
+        for args in [
+            vec!["--agent", agent],
+            vec!["--agent", agent, "--replace-rtk"],
+        ] {
+            let p = f.plan(&args);
+            assert!(p.changes.is_empty());
+            assert!(
+                p.messages
+                    .join(" ")
+                    .contains("Shared RTK Copilot activation preserved")
+            );
+            assert_eq!(fs::read_to_string(&legacy).unwrap(), original);
+            assert!(!output.exists());
+        }
+        f.plan(&["--agent", agent, "--replace-rtk", "--instructions-only"])
+            .apply()
+            .unwrap();
+        assert!(
+            value(&legacy)["hooks"]["PreToolUse"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(f.roots.copilot.join("copilot-instructions.md").is_file());
+    }
+}
+
+#[test]
+fn unavailable_prehooks_preserve_rtk_and_fresh_setup_uses_only_guidance() {
+    for (host, relative, body, guidance) in [
+        (
+            "cursor",
+            ".cursor/hooks.json",
+            r#"{"hooks":{"preToolUse":[{"command":"rtk hook cursor"}]}}"#,
+            None,
+        ),
+        (
+            "gemini",
+            ".gemini/settings.json",
+            r#"{"hooks":{"BeforeTool":[{"command":"rtk hook gemini"}]}}"#,
+            Some(".gemini/GEMINI.md"),
+        ),
+        (
+            "droid",
+            ".factory/hooks.json",
+            r#"{"PreToolUse":[{"command":"rtk hook droid"}]}"#,
+            Some(".factory/AGENTS.md"),
+        ),
+    ] {
+        let f = Fixture::new();
+        let fresh = f.plan(&["--agent", host]);
+        assert!(
+            fresh
+                .messages
+                .join(" ")
+                .contains("native rewrite unavailable")
+        );
+        fresh.apply().unwrap();
+        assert!(!f.roots.home.join(relative).exists());
+        if let Some(path) = guidance {
+            assert!(f.roots.home.join(path).is_file());
+        }
+        assert!(f.plan(&["--agent", host]).changes.is_empty());
+        let f = Fixture::new();
+        let path = f.write(relative, body);
+        let migration = f.plan(&["--agent", host, "--replace-rtk"]);
+        assert!(migration.changes.is_empty());
+        assert!(
+            migration
+                .messages
+                .join(" ")
+                .contains("existing automatic RTK hooks preserved")
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), body);
+        let doctor = f.plan(&["--agent", host, "--show"]);
+        assert!(doctor.changes.is_empty());
+        assert!(
+            doctor
+                .messages
+                .join(" ")
+                .contains("native rewrite unavailable")
+        );
+        if guidance.is_some() {
+            f.plan(&["--agent", host, "--replace-rtk", "--instructions-only"])
+                .apply()
+                .unwrap();
+            assert!(!fs::read_to_string(&path).unwrap().contains("rtk hook"));
+        }
+    }
+}
+
+#[cfg(not(windows))]
+#[test]
+fn vibe_toml_migration_preserves_custom_tables_comments_and_bom() {
+    let mut f = Fixture::new();
+    let text = "\u{feff}# user header\ncustom = 'keep'\n\n[[hooks]]\nname = 'audit' # user comment\ntype = 'post_tool'\ncommand = 'custom-audit'\n\n[[hooks]]\nname = 'rtk-rewrite'\ntype = 'pre_tool'\nmatch = 'bash'\ncommand = 'rtk hook vibe'\nstrict = false\n";
+    let path = f.write(".vibe/hooks.toml", text);
+    let backups = f
+        .plan(&["--agent", "vibe", "--replace-rtk"])
+        .apply()
+        .unwrap();
+    assert_eq!(fs::read(&backups[0]).unwrap(), text.as_bytes());
+    let after = fs::read_to_string(&path).unwrap();
+    assert!(after.starts_with("\u{feff}# user header\ncustom = 'keep'"));
+    assert!(after.contains("name = 'audit' # user comment"));
+    assert!(!after.contains("rtk hook vibe"));
+    assert!(after.contains(" hook vibe"));
+    assert!(f.plan(&["--agent", "vibe"]).changes.is_empty());
+    f.roots.executable = f.root.join("new-install/retok");
+    f.plan(&["--agent", "vibe"]).apply().unwrap();
+    assert!(fs::read_to_string(&path).unwrap().contains("new-install"));
+    let changed = fs::read_to_string(&path)
+        .unwrap()
+        .replace("strict = false", "strict = true");
+    fs::write(&path, &changed).unwrap();
+    assert!(plan(&["--agent".into(), "vibe".into()], &f.roots).is_err());
+    f.plan(&["--agent", "vibe", "--uninstall"]).apply().unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), changed);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn doctor_requires_correct_event_matcher_and_executable_not_just_guidance() {
+    let mut f = Fixture::new();
+    f.roots.executable = std::env::current_exe().unwrap();
+    f.plan(&["--agent", "codex"]).apply().unwrap();
+    let path = f.roots.codex.join("hooks.json");
+    let good = value(&path);
+    assert!(
+        f.plan(&["--agent", "codex", "--show"])
+            .messages
+            .iter()
+            .any(|m| m.contains("; configured;"))
+    );
+    for wrong_event in [false, true] {
+        let mut bad = good.clone();
+        if wrong_event {
+            let entries = bad["hooks"]
+                .as_object_mut()
+                .unwrap()
+                .remove("PreToolUse")
+                .unwrap();
+            bad["hooks"]["PostToolUse"] = entries;
+        } else {
+            bad["hooks"]["PreToolUse"][0]["matcher"] = json!("Read");
+        }
+        fs::write(&path, serde_json::to_vec(&bad).unwrap()).unwrap();
+        let status = f.plan(&["--agent", "codex", "--show"]).messages.join("\n");
+        assert!(status.contains("not fully configured"), "{status}");
+        assert!(status.contains("event/matcher wrong"), "{status}");
+    }
+    fs::remove_file(&path).unwrap();
+    assert!(
+        f.plan(&["--agent", "codex", "--show"])
+            .messages
+            .join("\n")
+            .contains("not fully configured")
+    );
+    f.roots.executable = f.root.join("missing/retok");
+    f.plan(&["--agent", "codex"]).apply().unwrap();
+    let status = f.plan(&["--agent", "codex", "--show"]).messages.join("\n");
+    assert!(status.contains("executable missing"), "{status}");
+    assert!(status.contains("host version, discovery, trust and runtime loading not probed"));
+}
+
+#[test]
+fn doctor_reports_effective_disabled_and_invalid_retok_config_without_writes() {
+    let f = Fixture::new();
+    let config = f.root.join("retok-config/config.json");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    for (text, expected) in [
+        ("{\"enabled\":false}", "Retok config: disabled"),
+        ("broken", "Retok config: invalid or unreadable"),
+    ] {
+        fs::write(&config, text).unwrap();
+        let result = isolated_cli(&f)
+            .args(["doctor", "--agent", "codex"])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&result.stdout).contains(expected),
+            "{}",
+            String::from_utf8_lossy(&result.stdout)
+        );
+        assert_eq!(fs::read_to_string(&config).unwrap(), text);
+        assert!(!f.roots.codex.exists());
+    }
+}
+
+#[test]
+fn unsupported_automatic_migration_requires_explicit_instruction_downgrade() {
+    let f = Fixture::new();
+    let original = r#"{"hooks":{"pre_run_command":[{"command":"rtk hook windsurf"}]}}"#;
+    let path = f.write(".codeium/windsurf/hooks.json", original);
+    let p = f.plan(&["--agent", "windsurf", "--replace-rtk"]);
+    assert!(p.changes.is_empty());
+    assert!(p.messages.join(" ").contains("preserved"));
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    f.plan(&[
+        "--agent",
+        "windsurf",
+        "--replace-rtk",
+        "--instructions-only",
+    ])
+    .apply()
+    .unwrap();
+    assert_eq!(value(&path)["hooks"]["pre_run_command"], json!([]));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn stock_project_codex_guidance_is_detected_without_a_codex_directory() {
+    let f = Fixture::new();
+    fs::write(f.roots.project.join("AGENTS.md"), "User rules.\n@RTK.md\n").unwrap();
+    fs::write(f.roots.project.join("RTK.md"), SYNTHETIC_AWARENESS).unwrap();
+    stock_plan(&f, &["--project", "--replace-rtk"])
+        .unwrap()
+        .apply()
+        .unwrap();
+    assert!(f.roots.project.join(".codex/hooks.json").exists());
+    assert!(!f.roots.project.join("RTK.md").exists());
+    assert!(
+        !fs::read_to_string(f.roots.project.join("AGENTS.md"))
+            .unwrap()
+            .contains("@RTK.md")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_prehook_commands_execute_real_cli_contracts_with_shared_consumer_separation() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut f = Fixture::new();
+    f.roots.executable = f.root.join("bin ' quoted $literal/retok");
+    fs::create_dir_all(f.roots.executable.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_retok"), &f.roots.executable).unwrap();
+    let invoke = |command: &str, payload: &Value| {
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", command])
+            .current_dir(&f.roots.project)
+            .env("HOME", &f.roots.home)
+            .env("RETOK_CONFIG_DIR", f.root.join("retok-config"))
+            .env("RETOK_STATE_DIR", f.root.join("retok-state"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(serde_json::to_string(payload).unwrap().as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(
+            out.status.success(),
+            "{command}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<Value>(&out.stdout).unwrap()
+    };
+    for (host, file, event, tool, pointer) in [
+        (
+            "codex",
+            ".codex/hooks.json",
+            "PreToolUse",
+            "Bash",
+            "/hookSpecificOutput/updatedInput",
+        ),
+        (
+            "vibe",
+            ".vibe/hooks.toml",
+            "pre_tool",
+            "bash",
+            "/hook_specific_output/tool_input",
+        ),
+    ] {
+        f.plan(&["--agent", host]).apply().unwrap();
+        let command = if host == "vibe" {
+            let doc = fs::read_to_string(f.roots.home.join(file))
+                .unwrap()
+                .parse::<toml_edit::DocumentMut>()
+                .unwrap();
+            let command = doc["hooks"].as_array_of_tables().unwrap().get(0).unwrap()["command"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            assert!(!command.contains('\\'));
+            command
+        } else {
+            let doc = value(&f.roots.home.join(file));
+            let events = if host == "droid" { &doc } else { &doc["hooks"] };
+            let entry = &events[event][0];
+            entry
+                .get("command")
+                .unwrap_or(&entry["hooks"][0]["command"])
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let input = json!({"hook_event_name":event,"tool_name":tool,"tool_input":{"command":"git status --short 'synthetic file'","opaque":{"keep":17},"shell":"sh"}});
+        let result = invoke(&command, &input);
+        let updated = result
+            .pointer(pointer)
+            .unwrap_or_else(|| panic!("{host}: {result}"));
+        assert_eq!(updated["opaque"], json!({"keep":17}));
+        assert_ne!(
+            updated["command"], input["tool_input"]["command"],
+            "{host}: {result}"
+        );
+        assert!(updated["command"].as_str().unwrap().contains("retok"));
+        assert!(
+            updated["command"]
+                .as_str()
+                .unwrap()
+                .contains("git status --short 'synthetic file'")
+        );
+    }
+    f.plan(&["--agent", "copilot"]).apply().unwrap();
+    let post = value(&f.roots.copilot.join("hooks/retok.json"))["hooks"]["postToolUse"][0].clone();
+    let post_command =
+        setup::native_shell_command(post["exec"].as_str().unwrap(), "copilot", false);
+    let cli_output = json!({"toolName":"bash","toolResult":{"resultType":"success","textResultForLlm":"synthetic repeated line\n".repeat(100)}});
+    assert!(
+        invoke(&post_command, &cli_output)
+            .get("modifiedResult")
+            .is_some()
+    );
+    let vscode = json!({"hook_event_name":"PreToolUse","tool_name":"run_in_terminal","tool_input":{"command":"git status"}});
+    assert_eq!(invoke(&post_command, &vscode), json!({}));
+    f.plan(&["--agent", "vibe", "--project"]).apply().unwrap();
+    let project_hook = f.roots.project.join(".vibe/hooks.toml");
+    assert!(project_hook.exists());
+    assert!(
+        fs::read_to_string(project_hook)
+            .unwrap()
+            .contains("retok-output")
+    );
+}
+
+#[cfg(not(windows))]
+#[test]
+fn edited_matcher_groups_survive_upgrade_and_uninstall() {
+    let f = Fixture::new();
+    f.plan(&["--agent", "codex"]).apply().unwrap();
+    let path = f.roots.codex.join("hooks.json");
+    let mut v = value(&path);
+    v["hooks"]["PreToolUse"][0]["matcher"] = json!("CustomTool");
+    v["hooks"]["PreToolUse"][0]["custom"] = json!("preserve");
+    let custom = v["hooks"]["PreToolUse"][0].clone();
+    fs::write(&path, serde_json::to_vec(&v).unwrap()).unwrap();
+    f.plan(&["--agent", "codex"]).apply().unwrap();
+    f.plan(&["--agent", "codex", "--uninstall"])
+        .apply()
+        .unwrap();
+    assert_eq!(value(&path)["hooks"]["PreToolUse"], json!([custom]));
+}
+
+fn hermes_migration_fixture(config: &str) -> Fixture {
+    let mut f = Fixture::new();
+    f.roots.executable = std::env::current_exe().unwrap();
+    f.write(".hermes/config.yaml", config);
+    for name in ["__init__.py", "plugin.yaml"] {
+        f.write(
+            &format!(".hermes/plugins/rtk-rewrite/{name}"),
+            "synthetic artifact\n",
+        );
+    }
+    f
+}
+fn hermes_migration(f: &Fixture) -> anyhow::Result<setup::Plan> {
+    use sha2::{Digest, Sha256};
+    let digest = format!("{:x}", Sha256::digest(b"synthetic artifact\n"));
+    setup::plan_with_stock(
+        &["--agent".into(), "hermes".into(), "--replace-rtk".into()],
+        &f.roots,
+        &[
+            ("hermes-__init__.py", 19, digest.as_str()),
+            ("hermes-plugin.yaml", 19, digest.as_str()),
+        ],
+    )
+}
+
+#[test]
+fn hermes_yaml_boolean_disables_preserve_rtk_before_any_writes() {
+    for field in ["settings", "config"] {
+        for disabled in [
+            "false",
+            "off",
+            "Off",
+            "OFF",
+            "no",
+            "No",
+            "NO",
+            "!!bool off",
+            "!!bool 'off'",
+        ] {
+            let body = format!(
+                "plugins:\n  enabled: [rtk-rewrite, user-plugin]\n  entries:\n    retok-rewrite:\n      {field}:\n        enabled: {disabled}\n"
+            );
+            let f = hermes_migration_fixture(&body);
+            let p = hermes_migration(&f).unwrap_or_else(|e| panic!("{disabled}: {e:#}"));
+            assert!(p.changes.is_empty(), "{disabled}: {p:?}");
+            assert!(p.messages.join(" ").contains("explicitly disabled"));
+            assert_eq!(
+                fs::read_to_string(f.roots.hermes.join("config.yaml")).unwrap(),
+                body
+            );
+            assert!(!f.roots.hermes.join("plugins/retok-rewrite").exists());
+            assert!(
+                f.plan(&["--agent", "hermes", "--show"])
+                    .messages
+                    .join(" ")
+                    .contains("explicitly disabled")
+            );
+        }
+    }
+}
+
+#[test]
+fn hermes_yaml_migration_preserves_scalar_styles_tags_and_ordinary_values() {
+    let custom = "# keep this comment\nquoted_off: 'off'\nplain_off: off\nquoted_yes: 'yes'\nplain_yes: yes\nordinary: example\noctal: 012\nquoted_octal: '012'\ndate: 2026-01-02\ntagged_string: !!str off\ntagged_boolean: !!bool 'no'\n";
+    for enabled in ["true", "yes", "on", "'off'", "'yes'", "!!str off"] {
+        let body = format!(
+            "{custom}plugins:\n  enabled: [rtk-rewrite, user-plugin]\n  entries:\n    retok-rewrite:\n      settings:\n        enabled: {enabled}\n"
+        );
+        let f = hermes_migration_fixture(&body);
+        let backups = hermes_migration(&f).unwrap().apply().unwrap();
+        assert!(
+            backups
+                .iter()
+                .any(|p| fs::read(p).unwrap() == body.as_bytes())
+        );
+        let after = fs::read_to_string(f.roots.hermes.join("config.yaml")).unwrap();
+        assert!(after.starts_with(custom), "{after}");
+        assert!(after.contains(&format!("enabled: {enabled}\n")), "{after}");
+        assert!(after.contains("user-plugin") && after.contains("retok-rewrite"));
+        assert!(hermes_migration(&f).unwrap().changes.is_empty());
+    }
+}
+
+#[test]
+fn hermes_yaml_merges_preserve_other_plugins_and_inherited_disables() {
+    for body in [
+        "plugins:\n  enabled: [rtk-rewrite, user-plugin]\n",
+        "base: &base\n  enabled: [rtk-rewrite, user-plugin]\nplugins:\n  <<: *base\n",
+        "base: &base\n  plugins:\n    enabled: [rtk-rewrite, user-plugin]\n    custom: 'off'\n<<: *base\n",
+        "base: &base\n  enabled: [rtk-rewrite, user-plugin]\nplugins: *base\n",
+        "base: &base\n  enabled: [rtk-rewrite, user-plugin]\n  custom: &custom {value: 'off'}\n  copy: *custom\nplugins: *base\n",
+        "base: &base\n  plugins: &plugins\n    enabled: [rtk-rewrite, user-plugin]\n    custom: &custom {value: 'off'}\n    copy: *custom\n<<: *base\n",
+    ] {
+        let f = hermes_migration_fixture(body);
+        hermes_migration(&f).unwrap().apply().unwrap();
+        let text = fs::read_to_string(f.roots.hermes.join("config.yaml")).unwrap();
+        // PyYAML rejects duplicate anchors even though serde_yaml accepts them.
+        // Each original declaration must remain once after materialization.
+        for anchor in ["&base", "&plugins", "&custom"] {
+            assert_eq!(
+                text.matches(anchor).count(),
+                body.matches(anchor).count(),
+                "{text}"
+            );
+        }
+        let mut after: serde_yaml_ng::Value =
+            serde_yaml_ng::from_slice(&fs::read(f.roots.hermes.join("config.yaml")).unwrap())
+                .unwrap();
+        after.apply_merge().unwrap();
+        assert_eq!(
+            after["plugins"]["enabled"],
+            serde_yaml_ng::from_str::<serde_yaml_ng::Value>("[user-plugin, retok-rewrite]")
+                .unwrap()
+        );
+        assert!(hermes_migration(&f).unwrap().changes.is_empty());
+    }
+    for inherited in [
+        "disabled: [retok-rewrite]",
+        "entries: {retok-rewrite: {settings: {enabled: off}}}",
+        "entries: {retok-rewrite: {config: {enabled: !!bool no}}}",
+    ] {
+        let body = format!(
+            "base: &base\n  {inherited}\nplugins:\n  <<: *base\n  enabled: [rtk-rewrite, user-plugin]\n"
+        );
+        let f = hermes_migration_fixture(&body);
+        let p = hermes_migration(&f).unwrap();
+        assert!(p.changes.is_empty());
+        assert!(p.messages.join(" ").contains("explicitly disabled"));
+        assert_eq!(
+            fs::read_to_string(f.roots.hermes.join("config.yaml")).unwrap(),
+            body
+        );
+    }
+    for invalid in [
+        "plugins: {<<: 17}",
+        "plugins: {<<: [17]}",
+        "plugins: {<<: *missing}",
+        "plugins: {entries: {retok-rewrite: {settings: {enabled: !<tag:yaml.org,2002:bool> no}}}}",
+    ] {
+        let f = hermes_migration_fixture(invalid);
+        assert!(hermes_migration(&f).is_err());
+        assert_eq!(
+            fs::read_to_string(f.roots.hermes.join("config.yaml")).unwrap(),
+            invalid
+        );
+        assert!(!f.roots.hermes.join("plugins/retok-rewrite").exists());
+    }
+}
+
+#[test]
+fn hermes_completion_bundle_path_upgrade_and_uninstall_preserve_other_plugins() {
+    let mut f = Fixture::new();
+    f.roots.executable = f.root.join("bin ' 日本 $value/retok");
+    let original = "# keep\nplugins:\n  enabled: [user-plugin]\ncustom: 'off'\n";
+    let config = f.write(".hermes/config.yaml", original);
+    let backups = f.plan(&["--agent", "hermes"]).apply().unwrap();
+    assert!(
+        backups
+            .iter()
+            .any(|p| fs::read(p).unwrap() == original.as_bytes())
+    );
+    let plugin = f.roots.hermes.join("plugins/retok-rewrite/__init__.py");
+    let text = fs::read_to_string(&plugin).unwrap();
+    assert!(text.contains("register_hook(\"transform_tool_result\""));
+    assert!(!text.contains("register_hook(\"pre_tool_call\""));
+    let hex: String = f
+        .roots
+        .executable
+        .to_str()
+        .unwrap()
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert!(text.contains(&format!("bytes.fromhex('{hex}')")));
+    assert!(f.plan(&["--agent", "hermes"]).changes.is_empty());
+    f.roots.executable = f.root.join("new-install/retok");
+    f.plan(&["--agent", "hermes"]).apply().unwrap();
+    f.plan(&["--agent", "hermes", "--uninstall"])
+        .apply()
+        .unwrap();
+    assert!(!plugin.exists());
+    let after = fs::read_to_string(&config).unwrap();
+    assert!(after.contains("custom: 'off'"));
+    let value: serde_yaml_ng::Value = serde_yaml_ng::from_str(&after).unwrap();
+    assert_eq!(
+        value["plugins"]["enabled"],
+        serde_yaml_ng::from_str::<serde_yaml_ng::Value>("[user-plugin]").unwrap()
+    );
+}
+
+#[test]
+fn hermes_empty_and_flow_configs_install_and_repeat() {
+    for original in [
+        "",
+        "# keep\n",
+        "null\n",
+        "{}\n",
+        "{model: 'off'}\n",
+        "{plugins: {enabled: [user-plugin]}}\n",
+    ] {
+        let f = Fixture::new();
+        let config = f.write(".hermes/config.yaml", original);
+        f.plan(&["--agent", "hermes"]).apply().unwrap();
+        let value: serde_yaml_ng::Value =
+            serde_yaml_ng::from_slice(&fs::read(&config).unwrap()).unwrap();
+        assert!(
+            value["plugins"]["enabled"]
+                .as_sequence()
+                .unwrap()
+                .iter()
+                .any(|v| v.as_str() == Some("retok-rewrite"))
+        );
+        assert!(f.plan(&["--agent", "hermes"]).changes.is_empty());
+    }
+}
+
+#[test]
+fn native_plugin_explicit_disables_and_denies_are_preserved() {
+    for body in [
+        "plugins:\n  disabled: [retok-rewrite]\n",
+        "plugins:\n  entries:\n    retok-rewrite:\n      settings:\n        enabled: false\n",
+        "plugins:\n  entries:\n    retok-rewrite:\n      config:\n        enabled: false\n",
+    ] {
+        let f = Fixture::new();
+        let path = f.write(".hermes/config.yaml", body);
+        let p = f.plan(&["--agent", "hermes"]);
+        assert!(p.changes.is_empty());
+        assert!(p.messages.join(" ").contains("explicitly disabled"));
+        assert_eq!(fs::read_to_string(path).unwrap(), body);
+    }
+    for plugins in [
+        json!({"enabled":false}),
+        json!({"deny":["retok-rewrite"]}),
+        json!({"entries":{"retok-rewrite":{"enabled":false}}}),
+        json!({"entries":{"retok-rewrite":{"config":{"enabled":false}}}}),
+    ] {
+        let f = Fixture::new();
+        let body = serde_json::to_string(&json!({"plugins":plugins})).unwrap();
+        let path = f.write(".openclaw/openclaw.json", &body);
+        let p = f.plan(&["--agent", "openclaw"]);
+        assert!(p.changes.is_empty());
+        assert!(p.messages.join(" ").contains("explicit disable/deny"));
+        assert_eq!(fs::read_to_string(path).unwrap(), body);
+    }
+}
+
+#[test]
+fn openclaw_json5_unknowns_and_explicit_single_plugin_allowlist_addition() {
+    let mut f = Fixture::new();
+    f.roots.openclaw = f.root.join("openclaw-state");
+    f.roots.openclaw_config = Some(f.root.join("separate-config.json"));
+    let config = f.roots.openclaw_config.as_ref().unwrap();
+    let text = "// User JSON5 comment\n{ custom: 'keep', plugins: { allow: ['user-plugin'], entries: {'user-plugin': {enabled: true, config: {keep: 7}}}, }, }";
+    fs::create_dir_all(&f.roots.openclaw).unwrap();
+    fs::write(config, text).unwrap();
+    let detected = f.plan(&[]);
+    assert!(detected.changes.is_empty());
+    let p = f.plan(&["--agent", "openclaw"]);
+    assert!(p.messages.join(" ").contains("add only retok-rewrite"));
+    let backups = p.apply().unwrap();
+    assert!(
+        backups
+            .iter()
+            .any(|p| fs::read(p).unwrap() == text.as_bytes())
+    );
+    let v = value(config);
+    assert_eq!(
+        v["plugins"]["allow"],
+        json!(["user-plugin", "retok-rewrite"])
+    );
+    assert_eq!(v["plugins"]["entries"]["user-plugin"]["config"]["keep"], 7);
+    assert_eq!(
+        v["plugins"]["entries"]["retok-rewrite"],
+        json!({"enabled":true,"config":{"enabled":true}})
+    );
+    assert_eq!(v["custom"], "keep");
+    assert!(
+        f.roots
+            .openclaw
+            .join("extensions/retok-rewrite/index.mjs")
+            .exists()
+    );
+    assert!(!f.roots.home.join(".openclaw").exists());
+    assert!(f.plan(&["--agent", "openclaw"]).changes.is_empty());
+    f.plan(&["--agent", "openclaw", "--uninstall"])
+        .apply()
+        .unwrap();
+    assert_eq!(value(config)["plugins"]["allow"], json!(["user-plugin"]));
+    assert!(
+        value(config)["plugins"]["entries"]
+            .get("retok-rewrite")
+            .is_none()
+    );
+}
+
+#[test]
+fn openclaw_uninstall_never_turns_a_restrictive_allowlist_into_allow_all() {
+    let f = Fixture::new();
+    let config = f.write(
+        ".openclaw/openclaw.json",
+        r#"{"plugins":{"allow":["retok-rewrite"]}}"#,
+    );
+    f.plan(&["--agent", "openclaw"]).apply().unwrap();
+    f.plan(&["--agent", "openclaw", "--uninstall"])
+        .apply()
+        .unwrap();
+    assert_eq!(value(&config)["plugins"]["allow"], json!(["retok-rewrite"]));
+}
+
+#[test]
+fn edited_native_plugin_bundle_preserves_activation_and_every_file() {
+    for (host, relative, config) in [
+        (
+            "hermes",
+            ".hermes/plugins/retok-rewrite/__init__.py",
+            ".hermes/config.yaml",
+        ),
+        (
+            "openclaw",
+            ".openclaw/extensions/retok-rewrite/index.mjs",
+            ".openclaw/openclaw.json",
+        ),
+    ] {
+        let f = Fixture::new();
+        f.plan(&["--agent", host]).apply().unwrap();
+        let path = f.roots.home.join(relative);
+        let changed = format!(
+            "{}\n# synthetic user edit\n",
+            fs::read_to_string(&path).unwrap()
+        );
+        fs::write(&path, &changed).unwrap();
+        let config = f.roots.home.join(config);
+        let before = fs::read(&config).unwrap();
+        assert!(plan(&["--agent".into(), host.into()], &f.roots).is_err());
+        assert!(f.plan(&["--agent", host, "--uninstall"]).changes.is_empty());
+        assert_eq!(fs::read(&config).unwrap(), before);
+        assert_eq!(fs::read_to_string(&path).unwrap(), changed);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn stock_native_plugin_migration_switches_activation_only_after_replacement_is_ready() {
+    use sha2::{Digest, Sha256};
+    for host in ["hermes", "openclaw"] {
+        let mut f = Fixture::new();
+        let files: &[&str] = if host == "hermes" {
+            &["__init__.py", "plugin.yaml"]
+        } else {
+            &["index.ts", "openclaw.plugin.json", "package.json"]
+        };
+        let dir = if host == "hermes" {
+            ".hermes/plugins/rtk-rewrite"
+        } else {
+            ".openclaw/extensions/rtk-rewrite"
+        };
+        let body = b"synthetic stock plugin artifact\n";
+        let mut stock = vec![];
+        for name in files {
+            f.write(&format!("{dir}/{name}"), std::str::from_utf8(body).unwrap());
+            stock.push((
+                format!("{host}-{name}"),
+                body.len(),
+                format!("{:x}", Sha256::digest(body)),
+            ));
+        }
+        f.write(&format!("{dir}/README.md"), "Synthetic documentation.\n");
+        let table = stock
+            .iter()
+            .map(|(k, n, h)| (k.as_str(), *n, h.as_str()))
+            .collect::<Vec<_>>();
+        let config = if host == "hermes" {
+            f.write(
+                ".hermes/config.yaml",
+                "plugins:\n  enabled: [rtk-rewrite, user-plugin]\n",
+            )
+        } else {
+            f.write(".openclaw/openclaw.json", r#"{"plugins":{"entries":{"rtk-rewrite":{"enabled":true},"user-plugin":{"enabled":true}}}}"#)
+        };
+        let original = fs::read(&config).unwrap();
+        let args = [
+            OsString::from("--agent"),
+            host.into(),
+            "--replace-rtk".into(),
+        ];
+        let blocked = setup::plan_with_stock(&args, &f.roots, &table).unwrap();
+        assert!(blocked.changes.is_empty());
+        assert!(blocked.messages.join(" ").contains("unavailable"));
+        f.roots.executable = std::env::current_exe().unwrap();
+        let p = setup::plan_with_stock(&args, &f.roots, &table).unwrap();
+        let backups = p.apply().unwrap();
+        assert!(backups.iter().any(|p| fs::read(p).unwrap() == original));
+        for name in files {
+            assert_eq!(
+                fs::read(f.roots.home.join(format!("{dir}/{name}"))).unwrap(),
+                body
+            );
+        }
+        if host == "hermes" {
+            let v: serde_yaml_ng::Value =
+                serde_yaml_ng::from_slice(&fs::read(&config).unwrap()).unwrap();
+            assert_eq!(
+                v["plugins"]["enabled"],
+                serde_yaml_ng::from_str::<serde_yaml_ng::Value>("[user-plugin, retok-rewrite]")
+                    .unwrap()
+            );
+        } else {
+            assert_eq!(
+                value(&config)["plugins"]["entries"]["rtk-rewrite"]["enabled"],
+                false
+            );
+            assert_eq!(
+                value(&config)["plugins"]["entries"]["retok-rewrite"]["enabled"],
+                true
+            );
+        }
+        assert!(
+            setup::plan_with_stock(&args, &f.roots, &table)
+                .unwrap()
+                .changes
+                .is_empty()
+        );
+        assert!(f.plan(&["--agent", host]).changes.is_empty());
+        let alias = f.root.join("upgraded-retok");
+        std::os::unix::fs::symlink(&f.roots.executable, &alias).unwrap();
+        f.roots.executable = alias;
+        let upgrade = f.plan(&["--agent", host]);
+        assert!(!upgrade.changes.is_empty());
+        upgrade.apply().unwrap();
+        assert!(f.plan(&["--agent", host]).changes.is_empty());
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn unsupported_windows_prehooks_preserve_rtk_while_posthooks_still_install() {
+    for (host, relative, original) in [
+        (
+            "codex",
+            ".codex/hooks.json",
+            r#"{"hooks":{"PreToolUse":[{"command":"rtk hook codex"}]}}"#,
+        ),
+        (
+            "cursor",
+            ".cursor/hooks.json",
+            r#"{"hooks":{"preToolUse":[{"command":"rtk hook cursor"}]}}"#,
+        ),
+        (
+            "gemini",
+            ".gemini/settings.json",
+            r#"{"hooks":{"BeforeTool":[{"command":"rtk hook gemini"}]}}"#,
+        ),
+        (
+            "droid",
+            ".factory/hooks.json",
+            r#"{"PreToolUse":[{"command":"rtk hook droid"}]}"#,
+        ),
+        (
+            "copilot",
+            ".copilot/hooks/rtk-rewrite.json",
+            r#"{"hooks":{"PreToolUse":[{"command":"rtk hook copilot"}]}}"#,
+        ),
+        (
+            "vibe",
+            ".vibe/hooks.toml",
+            "[[hooks]]\nname='rtk-rewrite'\ntype='pre_tool'\nmatch='bash'\ncommand='rtk hook vibe'\n",
+        ),
+    ] {
+        let f = Fixture::new();
+        let path = f.write(relative, original);
+        assert!(
+            f.plan(&["--agent", host, "--replace-rtk"])
+                .changes
+                .is_empty(),
+            "{host}"
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        if host != "cursor" {
+            let p = f.plan(&["--agent", host, "--replace-rtk", "--instructions-only"]);
+            assert!(!p.changes.is_empty(), "{host}");
+            p.apply().unwrap();
+            assert!(!fs::read_to_string(path).unwrap().contains("rtk hook"));
+        }
+    }
+    let f = Fixture::new();
+    for host in ["claude", "copilot"] {
+        let p = f.plan(&["--agent", host]);
+        assert!(!p.changes.is_empty());
+        p.apply().unwrap();
+    }
+    assert!(value(&f.roots.claude.join("settings.json"))["hooks"]["PostToolUse"].is_array());
+    assert!(value(&f.roots.copilot.join("hooks/retok.json"))["hooks"]["postToolUse"].is_array());
+}
+
+#[test]
+fn openclaw_json5_preserves_literal_number_marker_and_rejects_ambiguous_configs() {
+    let f = Fixture::new();
+    let path = f.write(
+        ".openclaw/openclaw.json",
+        "// JSON5\n{custom: {'$serde_json::private::Number': '6.0200'}, integer: 9007199254740993}",
+    );
+    f.plan(&["--agent", "openclaw"]).apply().unwrap();
+    let fields: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let custom: std::collections::BTreeMap<String, String> =
+        serde_json::from_str(fields["custom"].get()).unwrap();
+    assert_eq!(custom["$serde_json::private::Number"], "6.0200");
+    assert_eq!(value(&path)["integer"].as_u64(), Some(9007199254740993));
+    for bad in [
+        "{custom: 1, custom: 2}",
+        "{custom: NaN}",
+        "{custom: Infinity}",
+        "{plugins: {enabled: 'false'}}",
+    ] {
+        fs::write(&path, bad).unwrap();
+        assert!(
+            plan(&["--agent".into(), "openclaw".into()], &f.roots).is_err(),
+            "{bad}"
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), bad);
     }
 }

@@ -29,6 +29,24 @@ impl Drop for Temp {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+fn age_directory(path: &Path) {
+    #[cfg(windows)]
+    let file = {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+        };
+        fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+            .unwrap()
+    };
+    #[cfg(not(windows))]
+    let file = fs::File::open(path).unwrap();
+    file.set_times(fs::FileTimes::new().set_modified(std::time::UNIX_EPOCH))
+        .unwrap();
+}
 fn event() -> Event {
     Event {
         unix_millis: 86_400_001,
@@ -191,10 +209,7 @@ fn retention_evicts_oldest_originals_and_rotates_one_metrics_backup() {
     state::record_at(temp.path(), &settings, event(), Some((b"first", b""))).unwrap();
     let first = state::list_originals_at(temp.path()).unwrap().remove(0).id;
     // Set an old timestamp deterministically; no timing assumptions between writes.
-    fs::File::open(temp.path().join("originals").join(&first))
-        .unwrap()
-        .set_times(std::fs::FileTimes::new().set_modified(std::time::UNIX_EPOCH))
-        .unwrap();
+    age_directory(&temp.path().join("originals").join(&first));
     for _ in 0..101 {
         state::record_at(temp.path(), &settings, event(), Some((b"x", b"y"))).unwrap();
     }
@@ -537,4 +552,398 @@ fn interrupted_originals_are_pruned_and_retained_complete_streams_survive() {
     assert_eq!(state::list_originals_at(temp.path()).unwrap().len(), 100);
     assert_eq!(fs::read_dir(originals).unwrap().count(), 100);
     assert_eq!(state::usage_at(temp.path()).unwrap().events.len(), 102);
+}
+
+#[test]
+fn legacy_records_and_project_filters_preserve_measured_meaning() {
+    let temp = Temp::new();
+    let legacy = serde_json::to_string(&event()).unwrap() + "\n";
+    fs::write(temp.path().join("metrics.1.jsonl"), &legacy).unwrap();
+    let project_a = temp.path().join("project-a");
+    let project_b = temp.path().join("project-b");
+    fs::create_dir_all(project_a.join(".git")).unwrap();
+    fs::create_dir_all(project_a.join("nested")).unwrap();
+    fs::create_dir_all(&project_b).unwrap();
+    // Git worktrees use a .git file. Identical basenames do not identify a project.
+    fs::write(project_b.join(".git"), "gitdir: synthetic\n").unwrap();
+    let a = state::project_at(&project_a).unwrap();
+    let b = state::project_at(&project_b).unwrap();
+    assert_eq!(state::project_at(&project_a.join("nested")).unwrap(), a);
+    for (project, measured) in [(&a, true), (&b, true), (&a, false)] {
+        let mut input = event();
+        if !measured {
+            input.output_tokens = None;
+        }
+        state::record_project_at(
+            temp.path(),
+            &Settings::default(),
+            input,
+            None,
+            Some(project),
+        )
+        .unwrap();
+    }
+    let usage = state::usage_at(temp.path()).unwrap();
+    assert_eq!(usage.events.len(), 4);
+    assert!(usage.events[0].project.is_none());
+    assert_eq!(usage.totals().saved_tokens, 180);
+    let filtered = state::query_at(
+        temp.path(),
+        &state::UsageQuery {
+            project: Some(a.clone()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            filtered.totals().events,
+            filtered.totals().measured_events,
+            filtered.totals().saved_tokens
+        ),
+        (2, 1, 60)
+    );
+    let mut output = Vec::new();
+    state::gain_at(
+        temp.path(),
+        &args(&["--json", "--history", "--project", &a]),
+        &mut output,
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["totals"]["events"], 2);
+    assert_eq!(json["history"][0]["project"], a);
+    assert_eq!(
+        fs::read_to_string(temp.path().join("metrics.1.jsonl")).unwrap(),
+        legacy
+    );
+}
+
+#[test]
+fn utc_periods_and_intersected_time_source_command_filters() {
+    let temp = Temp::new();
+    // Fixed UTC dates: 2024-12-29 (Sunday), 12-30 (Monday), 2025-01-01, 01-06.
+    for (millis, command, source) in [
+        (1735430400000, "git", "run"),
+        (1735516800000, "git", "run"),
+        (1735689600000, "git", "hook"),
+        (1736121600000, "cargo", "run"),
+    ] {
+        let mut input = event();
+        input.unix_millis = millis;
+        input.command = command.into();
+        input.source = Some(source.into());
+        state::record_at(temp.path(), &Settings::default(), input, None).unwrap();
+    }
+    let mut output = Vec::new();
+    state::gain_at(
+        temp.path(),
+        &args(&["--json", "--weekly", "--monthly"]),
+        &mut output,
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["weekly_utc"]["2024-12-23"]["events"], 1);
+    assert_eq!(json["weekly_utc"]["2024-12-30"]["events"], 2);
+    assert_eq!(json["weekly_utc"]["2025-01-06"]["events"], 1);
+    assert_eq!(json["monthly_utc"]["2024-12"]["saved_tokens"], 120);
+    assert_eq!(json["monthly_utc"]["2025-01"]["saved_tokens"], 120);
+    output.clear();
+    state::gain_at(
+        temp.path(),
+        &args(&[
+            "--json",
+            "--since",
+            "2024-12-30",
+            "--until",
+            "1736121600000",
+            "--command",
+            "git",
+            "--source",
+            "run",
+        ]),
+        &mut output,
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["totals"]["events"], 1);
+    for options in [
+        vec!["--since", "2023-02-29"],
+        vec!["--until", "2024-04-31"],
+        vec!["--since", "2024-01-02", "--until", "2024-01-01"],
+        vec!["--since", "2024-01-01", "--until", "2024-01-01"],
+        vec!["--json", "--csv"],
+        vec!["--source"],
+        vec!["--command", "git status"],
+    ] {
+        assert!(
+            state::gain_at(temp.path(), &args(&options), &mut Vec::new()).is_err(),
+            "{options:?}"
+        );
+    }
+    state::gain_at(
+        temp.path(),
+        &args(&["--since", "2024-02-29", "--until", "2024-03-01"]),
+        &mut Vec::new(),
+    )
+    .unwrap();
+    // The first Unix week starts before the epoch.
+    state::record_at(temp.path(), &Settings::default(), event(), None).unwrap();
+    output.clear();
+    state::gain_at(
+        temp.path(),
+        &args(&["--json", "--weekly", "--until", "1970-01-05"]),
+        &mut output,
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["weekly_utc"]["1969-12-29"]["events"], 1);
+}
+
+#[test]
+fn csv_escapes_project_fields_and_distinguishes_partial_measurements() {
+    let temp = Temp::new();
+    let project = "workspace, \"quoted\"\r\nnext";
+    let mut input = event();
+    input.input_tokens = Some(20);
+    input.output_tokens = Some(40);
+    state::record_project_at(
+        temp.path(),
+        &Settings::default(),
+        input.clone(),
+        None,
+        Some(project),
+    )
+    .unwrap();
+    input.output_tokens = None;
+    state::record_project_at(temp.path(), &Settings::default(), input, None, None).unwrap();
+    let mut output = Vec::new();
+    state::gain_at(
+        temp.path(),
+        &args(&["--format", "csv", "--history"]),
+        &mut output,
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("86400001,\"workspace, \"\"quoted\"\"\r\nnext\",Bash,hook,true,20,40,-20,1000,300,12,0,\r\n"), "{text:?}");
+    assert!(
+        text.contains("86400001,,Bash,hook,false,20,,,1000,300,12,0,\r\n"),
+        "{text:?}"
+    );
+    let mut output = Vec::new();
+    state::gain_at(temp.path(), &args(&["--csv"]), &mut output).unwrap();
+    assert!(
+        String::from_utf8(output)
+            .unwrap()
+            .contains("all,,2,1,20,40,-20,2000,600,0\r\n")
+    );
+    assert!(
+        state::gain_at(
+            temp.path(),
+            &args(&["--csv", "--history", "--weekly"]),
+            &mut Vec::new()
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn recall_navigation_filters_then_limits_and_preserves_bytes() {
+    let temp = Temp::new();
+    let settings = Settings {
+        keep_originals: true,
+        ..Default::default()
+    };
+    let stdout = b"skip\r\nmatch first\r\nignore\nmatch \xff second\nmatch last";
+    state::record_at(
+        temp.path(),
+        &settings,
+        event(),
+        Some((stdout, b"err\nlast")),
+    )
+    .unwrap();
+    let id = state::list_originals_at(temp.path()).unwrap().remove(0).id;
+    let mut output = Vec::new();
+    state::recall_command_at(
+        temp.path(),
+        &args(&[&id, "--from", "3", "--grep", "match", "--lines", "1"]),
+        &mut output,
+    )
+    .unwrap();
+    assert_eq!(output, b"match \xff second\n");
+    output.clear();
+    state::recall_command_at(
+        temp.path(),
+        &args(&[&id, "--from", "4", "--grep", "match", "--lines", "2"]),
+        &mut output,
+    )
+    .unwrap();
+    assert_eq!(output, b"match \xff second\nmatch last");
+    output.clear();
+    state::recall_command_at(
+        temp.path(),
+        &args(&[&id, "--stderr", "--from", "2"]),
+        &mut output,
+    )
+    .unwrap();
+    assert_eq!(output, b"last");
+    output.clear();
+    state::recall_command_at(temp.path(), &args(&[&id]), &mut output).unwrap();
+    assert_eq!(output, stdout);
+    for options in [
+        vec![&id, "--from", "0"],
+        vec![&id, "--lines", "0"],
+        vec![&id, "--lines", "10001"],
+        vec![&id, "--grep"],
+        vec![&id, "--unknown"],
+    ] {
+        assert!(state::recall_command_at(temp.path(), &args(&options), &mut Vec::new()).is_err());
+    }
+    let large = "no\n".repeat(300) + &"match\n".repeat(250);
+    state::record_at(
+        temp.path(),
+        &settings,
+        event(),
+        Some((large.as_bytes(), b"")),
+    )
+    .unwrap();
+    let last = state::usage_at(temp.path())
+        .unwrap()
+        .events
+        .last()
+        .unwrap()
+        .original_id
+        .clone()
+        .unwrap();
+    output.clear();
+    state::recall_command_at(temp.path(), &args(&[&last, "--grep", "match"]), &mut output).unwrap();
+    assert_eq!(output, "match\n".repeat(200).as_bytes());
+}
+
+#[test]
+fn exact_original_ids_win_and_prefixes_must_be_unique() {
+    let temp = Temp::new();
+    for (id, content) in [("abcd", "exact"), ("abcd-1", "longer"), ("abce", "other")] {
+        let dir = temp.path().join("originals").join(id);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("stdout"), content).unwrap();
+        fs::write(dir.join("stderr"), b"").unwrap();
+    }
+    let mut output = Vec::new();
+    state::recall_at(temp.path(), "abcd", false, &mut output).unwrap();
+    assert_eq!(output, b"exact");
+    output.clear();
+    state::recall_at(temp.path(), "abcd-", false, &mut output).unwrap();
+    assert_eq!(output, b"longer");
+    assert!(
+        state::recall_at(temp.path(), "abc", false, &mut Vec::new())
+            .unwrap_err()
+            .to_string()
+            .contains("ambiguous")
+    );
+    assert!(
+        state::recall_at(temp.path(), "ffff", false, &mut Vec::new())
+            .unwrap_err()
+            .to_string()
+            .contains("not found")
+    );
+    assert_eq!(state::list_originals_at(temp.path()).unwrap().len(), 3);
+}
+
+#[test]
+fn retention_caps_load_from_old_and_new_config_and_keep_metrics_for_large_originals() {
+    let temp = Temp::new();
+    let path = temp.path().join("config.json");
+    fs::write(&path, r#"{"keep_originals":true}"#).unwrap();
+    let old = Settings::load_from(&path).unwrap();
+    assert_eq!(
+        (
+            old.originals_max_entries,
+            old.originals_max_bytes,
+            old.originals_max_days
+        ),
+        (100, 104857600, 30)
+    );
+    fs::write(&path, r#"{"keep_originals":true,"originals_max_entries":2,"originals_max_bytes":5,"originals_max_days":1}"#).unwrap();
+    let settings = Settings::load_from(&path).unwrap();
+    state::record_at(temp.path(), &settings, event(), Some((b"abc", b""))).unwrap();
+    let first = state::list_originals_at(temp.path()).unwrap().remove(0).id;
+    state::record_at(temp.path(), &settings, event(), Some((b"de", b"f"))).unwrap();
+    let entries = state::list_originals_at(temp.path()).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_ne!(entries[0].id, first);
+    // Too large for retention: preserve the measurement without storing raw bytes.
+    state::record_at(temp.path(), &settings, event(), Some((b"123456", b""))).unwrap();
+    let usage = state::usage_at(temp.path()).unwrap();
+    assert_eq!(usage.events.len(), 3);
+    assert!(usage.events[2].original_id.is_none());
+    let old_dir = temp.path().join("originals").join(&entries[0].id);
+    age_directory(&old_dir);
+    state::record_at(temp.path(), &settings, event(), Some((b"z", b""))).unwrap();
+    assert!(!old_dir.exists());
+    let count_settings = Settings {
+        originals_max_entries: 1,
+        originals_max_bytes: 100,
+        ..settings
+    };
+    state::record_at(temp.path(), &count_settings, event(), Some((b"next", b""))).unwrap();
+    assert_eq!(state::list_originals_at(temp.path()).unwrap().len(), 1);
+    for key in [
+        "originals_max_entries",
+        "originals_max_bytes",
+        "originals_max_days",
+    ] {
+        fs::write(&path, format!("{{\"{key}\":0}}")).unwrap();
+        assert!(Settings::load_from(&path).is_err());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn runner_records_project_and_cli_queries_are_isolated_and_private() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+    let temp = Temp::new();
+    let project = temp.path().join("project");
+    fs::create_dir_all(project.join("nested")).unwrap();
+    fs::write(project.join(".git"), "gitdir: synthetic\n").unwrap();
+    let state = temp.path().join("state");
+    let config = temp.path().join("config");
+    let mut run = Command::new(env!("CARGO_BIN_EXE_retok"));
+    let result = run
+        .current_dir(project.join("nested"))
+        .env("RETOK_STATE_DIR", &state)
+        .env("RETOK_CONFIG_DIR", &config)
+        .args(["run", "--", "/bin/sh", "-c", "printf 'synthetic\\n'"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_retok"))
+        .current_dir(&project)
+        .env("RETOK_STATE_DIR", &state)
+        .env("RETOK_CONFIG_DIR", &config)
+        .args(["gain", "--project", "--json", "--history"])
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(json["totals"]["events"], 1);
+    assert_eq!(
+        json["history"][0]["project"],
+        state::project_at(&project).unwrap()
+    );
+    assert!(!state.join("originals").exists());
+    assert!(!config.exists());
+    assert_eq!(
+        fs::metadata(state.join("metrics.jsonl"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
 }

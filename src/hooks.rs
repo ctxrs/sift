@@ -15,6 +15,7 @@ use serde_json::value::RawValue;
 use std::collections::HashSet;
 use std::fmt;
 use std::io::{Read, Write};
+use std::path::Path;
 use std::time::Instant;
 
 const MAX_INPUT: usize = 16 * 1024 * 1024;
@@ -22,7 +23,7 @@ const MAX_TEXT: usize = 8 * 1024 * 1024;
 
 // Keep values opaque: Value's arbitrary_precision number marker is also a
 // legal user object key. Re-encoding through Value can change such objects.
-struct Object(Vec<(String, Box<RawValue>)>);
+pub(crate) struct Object(Vec<(String, Box<RawValue>)>);
 
 impl<'de> Deserialize<'de> for Object {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -61,22 +62,22 @@ impl Serialize for Object {
 }
 
 impl Object {
-    fn get(&self, key: &str) -> Option<&RawValue> {
+    pub(crate) fn get(&self, key: &str) -> Option<&RawValue> {
         self.0
             .iter()
             .find(|(name, _)| name == key)
             .map(|(_, value)| &**value)
     }
 
-    fn string(&self, key: &str) -> Option<String> {
+    pub(crate) fn string(&self, key: &str) -> Option<String> {
         serde_json::from_str(self.get(key)?.get()).ok()
     }
 
-    fn object(&self, key: &str) -> Option<Object> {
+    pub(crate) fn object(&self, key: &str) -> Option<Object> {
         serde_json::from_str(self.get(key)?.get()).ok()
     }
 
-    fn set_text(&mut self, key: &str, text: &str) -> Result<()> {
+    pub(crate) fn set_text(&mut self, key: &str, text: &str) -> Result<()> {
         if let Some((_, value)) = self.0.iter_mut().find(|(name, _)| name == key) {
             *value = RawValue::from_string(serde_json::to_string(text)?)?;
         }
@@ -102,14 +103,14 @@ fn transform_inner(
     // Codex's current post hook omits native status/metadata and replacement
     // discards that context. Even text resembling legacy framing can be raw
     // command output. No payload-content heuristic can safely identify it.
-    if input.len() > MAX_INPUT || !matches!(host, "claude" | "copilot") {
+    if input.len() > MAX_INPUT || !matches!(host, "claude" | "copilot" | "hermes") {
         return Ok(None);
     }
-    let root: Object = serde_json::from_str(input)?;
-    let tool = root.string(if host == "claude" {
-        "tool_name"
-    } else {
+    let root: Object = serde_json::from_str(input.trim_start_matches('\u{feff}'))?;
+    let tool = root.string(if host == "copilot" {
         "toolName"
+    } else {
+        "tool_name"
     });
     let Some(tool) = tool else { return Ok(None) };
     if exclusions.contains(&tool) {
@@ -163,6 +164,17 @@ fn transform_inner(
             }
             (response, vec!["textResultForLlm"])
         }
+        "hermes" => {
+            if root.string("hook_event_name").as_deref() != Some("TransformToolResult")
+                || tool != "terminal"
+            {
+                return Ok(None);
+            }
+            let Some(response) = root.object("tool_response") else {
+                return Ok(None);
+            };
+            (response, vec!["output"])
+        }
         _ => return Ok(None),
     };
 
@@ -209,6 +221,9 @@ fn transform_inner(
             "{{\"hookSpecificOutput\":{{\"hookEventName\":\"PostToolUse\",\"updatedToolOutput\":{response}}}}}"
         ),
         "copilot" => format!("{{\"modifiedResult\":{response}}}"),
+        // Hermes' final-result hook returns a JSON result *string*. Keep opaque
+        // metadata lexemes intact across the Python adapter's JSON decoding.
+        "hermes" => format!("{{\"result\":{}}}", serde_json::to_string(&response)?),
         _ => unreachable!(),
     };
     Ok(Some(envelope))
@@ -219,6 +234,7 @@ fn transform_inner(
 pub fn run(host: &str) -> Result<()> {
     let mut bytes = Vec::new();
     let mut records = Vec::new();
+    let mut recording = None;
     let result = std::io::stdin()
         .lock()
         .take((MAX_INPUT + 1) as u64)
@@ -227,6 +243,21 @@ pub fn run(host: &str) -> Result<()> {
         let settings = Settings::load().ok().filter(|s| s.enabled);
         settings.and_then(|settings| {
             let input = std::str::from_utf8(&bytes).ok()?;
+            let root: Object = serde_json::from_str(input.trim_start_matches('\u{feff}')).ok()?;
+            // Host cwd is authoritative when supplied. Invalid or unavailable
+            // directories remain unscoped rather than naming the hook launcher.
+            let project = if root.get("cwd").is_some() {
+                root.string("cwd").and_then(|cwd| {
+                    let path = Path::new(&cwd);
+                    path.is_absolute()
+                        .then(|| state::project_at(path).ok())
+                        .flatten()
+                })
+            } else {
+                std::env::current_dir()
+                    .ok()
+                    .and_then(|p| state::project_at(&p).ok())
+            };
             let transformed = transform_inner(
                 host,
                 input,
@@ -253,6 +284,7 @@ pub fn run(host: &str) -> Result<()> {
                     records.push((event, original));
                 },
             );
+            recording = Some((settings, project));
             match transformed {
                 Ok(output) => output,
                 Err(_) => {
@@ -269,7 +301,17 @@ pub fn run(host: &str) -> Result<()> {
     if writeln!(stdout, "{}", output.as_deref().unwrap_or("{}")).is_ok() && stdout.flush().is_ok() {
         for (event, original) in records {
             // Optional storage must not alter successful output delivery.
-            let _ = state::record(event, original.as_deref().map(|text| (text, &b""[..])));
+            if let Some((settings, project)) = &recording
+                && let Ok(dir) = state::state_dir()
+            {
+                let _ = state::record_project_at(
+                    &dir,
+                    settings,
+                    event,
+                    original.as_deref().map(|text| (text, &b""[..])),
+                    project.as_deref(),
+                );
+            }
         }
     }
     Ok(())

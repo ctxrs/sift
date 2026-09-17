@@ -71,6 +71,13 @@ for (const host of ["opencode", "kilo"]) {
       assert.deepEqual(input, {tool:"bash",args:{command:"echo original"}});
       assert.deepEqual(output.metadata, {exit:3});
       assert.equal(output.title, "title");
+      if (host === "opencode") {
+        const shellOutput = {title:"shell", output:"shell result", metadata:{exit:17}};
+        const shellInput = {tool:"shell", args:{command:"untouched | pipeline"}};
+        await hooks["tool.execute.after"](shellInput, shellOutput);
+        assert.deepEqual(shellOutput, {title:"shell", output:"framed(shell result)", metadata:{exit:17}});
+        assert.equal(shellInput.args.command, "untouched | pipeline");
+      }
       await hooks["tool.execute.after"]({tool:"read"}, output);
       assert.equal(output.output, "framed(result)");
     });

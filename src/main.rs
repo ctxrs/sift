@@ -7,10 +7,15 @@ use retok::{CompactResult, Compactor, Encoding};
 use serde::{Deserialize, Serialize};
 
 mod discover;
+mod filter;
 mod hooks;
+mod pre_hooks;
+mod rewrite;
 mod runner;
 mod setup;
 mod state;
+mod usage;
+mod views;
 
 const HELP: &str = "Retok — lossless, token-counted tool output compaction
 
@@ -18,14 +23,21 @@ Usage:
   retok init [--agent HOST] [--replace-rtk] [--project] [--dry-run]
   retok init --uninstall [--agent HOST]
   retok doctor [--agent HOST]
-  retok hook claude|copilot
-  retok run [--raw] -- COMMAND [ARG...]
+  retok hook HOST
+  retok rewrite [--json] [--shell posix|powershell] -- 'COMMAND'
+  retok run [--raw|--capture] -- COMMAND [ARG...]
   retok COMMAND [ARG...]
   retok proxy COMMAND [ARG...]
   retok gain [--json] [--history] [--daily] [--graph]
+  retok ccusage --import FILE [--json|--csv]
   retok config [--create]
   retok recall --list | ID [--stderr]
   retok discover [--json] [FILE ...]
+  retok discover --history PATH [--suggest] [--json]
+  retok read [FILE|-] [--from N] [--lines N] [--grep TEXT]
+  retok json [FILE|-] [--pointer POINTER] [--field KEY] [--limit N]
+  retok summary|err|test [OPTIONS] -- COMMAND [ARG...]
+  retok filter [--capture]
   retok compact [FILE|-]
   retok compact --protocol=json-v1
   retok restore --encoding ENCODING [FILE|-]
@@ -171,7 +183,7 @@ fn parse_encoding(value: &str) -> Result<Encoding> {
     }
 }
 
-fn execute(args: &[OsString], raw: bool) -> Result<i32> {
+fn execute(args: &[OsString], raw: bool, capture: bool, view: Option<&views::View>) -> Result<i32> {
     let settings = match state::Settings::load() {
         Ok(settings) => settings,
         Err(error) => {
@@ -208,44 +220,58 @@ fn execute(args: &[OsString], raw: bool) -> Result<i32> {
     } else {
         "external".into()
     };
-    runner::run_observed(args, raw || !settings.enabled || excluded, |observation| {
-        let (Some(stdout_bytes), Some(stderr_bytes), Some(stdout_emitted), Some(stderr_emitted)) = (
-            observation.stdout.read_bytes,
-            observation.stderr.read_bytes,
-            observation.stdout.emitted_bytes,
-            observation.stderr.emitted_bytes,
-        ) else {
-            return;
-        };
-        let counts = |stream: &runner::StreamObservation<'_>| {
-            stream
-                .compacted
-                .map(|r| (r.input_tokens as u64, r.output_tokens as u64))
-                .or_else(|| (stream.read_bytes == Some(0)).then_some((0, 0)))
-        };
-        let tokens = counts(&observation.stdout)
-            .zip(counts(&observation.stderr))
-            .map(|(out, err)| (out.0 + err.0, out.1 + err.1));
-        let event = state::Event {
-            unix_millis: state::unix_millis(),
-            command,
-            input_tokens: tokens.map(|t| t.0),
-            output_tokens: tokens.map(|t| t.1),
-            input_bytes: stdout_bytes + stderr_bytes,
-            output_bytes: stdout_emitted + stderr_emitted,
-            duration_ms: observation.duration.as_millis().min(u64::MAX as u128) as u64,
-            exit_code: Some(observation.status),
-            source: Some("run".into()),
-            original_id: None,
-        };
-        let originals = observation.stdout.original.zip(observation.stderr.original);
-        // Usage storage is optional and cannot turn a successful command into a failure.
-        let _ = state::record(event, originals);
-    })
+    runner::run_transformed(
+        args,
+        runner::Options {
+            raw: raw || !settings.enabled || excluded,
+            capture,
+        },
+        |bytes, _| view.and_then(|view| views::render(view, bytes).ok()),
+        |observation| {
+            let (
+                Some(stdout_bytes),
+                Some(stderr_bytes),
+                Some(stdout_emitted),
+                Some(stderr_emitted),
+            ) = (
+                observation.stdout.read_bytes,
+                observation.stderr.read_bytes,
+                observation.stdout.emitted_bytes,
+                observation.stderr.emitted_bytes,
+            )
+            else {
+                return;
+            };
+            let counts = |stream: &runner::StreamObservation<'_>| {
+                stream
+                    .compacted
+                    .map(|r| (r.input_tokens as u64, r.output_tokens as u64))
+                    .or_else(|| (stream.read_bytes == Some(0)).then_some((0, 0)))
+            };
+            let tokens = counts(&observation.stdout)
+                .zip(counts(&observation.stderr))
+                .map(|(out, err)| (out.0 + err.0, out.1 + err.1));
+            let event = state::Event {
+                unix_millis: state::unix_millis(),
+                command,
+                input_tokens: tokens.map(|t| t.0),
+                output_tokens: tokens.map(|t| t.1),
+                input_bytes: stdout_bytes + stderr_bytes,
+                output_bytes: stdout_emitted + stderr_emitted,
+                duration_ms: observation.duration.as_millis().min(u64::MAX as u128) as u64,
+                exit_code: Some(observation.status),
+                source: Some(if view.is_some() { "view" } else { "run" }.into()),
+                original_id: None,
+            };
+            let originals = observation.stdout.original.zip(observation.stderr.original);
+            // Usage storage is optional and cannot turn a successful command into a failure.
+            let _ = state::record(event, originals);
+        },
+    )
 }
 
 fn run() -> Result<i32> {
-    let mut args = std::env::args_os().skip(1);
+    let mut args = std::env::args_os().skip(1).collect::<Vec<_>>().into_iter();
     let Some(command) = args.next() else {
         bail!("missing command; use 'retok --help'");
     };
@@ -270,12 +296,32 @@ fn run() -> Result<i32> {
         let host = args
             .next()
             .and_then(|s| s.into_string().ok())
-            .context("hook requires claude or copilot")?;
+            .context("hook requires a supported agent name")?;
         ensure!(
-            ["claude", "copilot", "codex"].contains(&host.as_str()) && args.next().is_none(),
-            "hook requires claude or copilot"
+            [
+                "claude", "copilot", "hermes", "codex", "cursor", "gemini", "vscode", "droid",
+                "vibe"
+            ]
+            .contains(&host.as_str())
+                && args.next().is_none(),
+            "hook requires a supported agent name"
         );
+        if !matches!(host.as_str(), "claude" | "copilot" | "hermes") {
+            return pre_hooks::run(&host);
+        }
         hooks::run(&host)?;
+        return Ok(0);
+    }
+    if command == "rewrite" {
+        return rewrite::run(&args.collect::<Vec<_>>());
+    }
+    if command == "filter" {
+        let remaining: Vec<_> = args.collect();
+        ensure!(
+            remaining.is_empty() || remaining == [OsString::from("--capture")],
+            "filter accepts only --capture"
+        );
+        filter::run(!remaining.is_empty())?;
         return Ok(0);
     }
     if command == "gain" || command == "config" || command == "recall" {
@@ -291,6 +337,36 @@ fn run() -> Result<i32> {
         discover::run(&args.collect::<Vec<_>>())?;
         return Ok(0);
     }
+    if command == "ccusage" {
+        usage::run(&args.collect::<Vec<_>>())?;
+        return Ok(0);
+    }
+    if matches!(
+        command.to_str(),
+        Some("read" | "json" | "summary" | "err" | "test")
+    ) {
+        match views::parse(command.to_str().unwrap(), &args.collect::<Vec<_>>())? {
+            views::Action::Help => {
+                io::stdout().write_all(views::HELP.as_bytes())?;
+                return Ok(0);
+            }
+            views::Action::Input { path, view }
+                if command == "read" && !view.is_read_selection() =>
+            {
+                args = path
+                    .map(|path| vec![OsString::from("--"), path])
+                    .unwrap_or_default()
+                    .into_iter();
+            }
+            views::Action::Input { path, view } => {
+                views::run_input(path.as_deref(), &view)?;
+                return Ok(0);
+            }
+            views::Action::Command { argv, view } => {
+                return execute(&argv, false, true, Some(&view));
+            }
+        }
+    }
     let command = if command == "pipe" || command == "read" {
         OsString::from("compact")
     } else {
@@ -300,9 +376,14 @@ fn run() -> Result<i32> {
         if command == "run" || command == "proxy" {
             let mut remaining: Vec<_> = args.collect();
             let mut raw = command == "proxy";
-            if remaining.first().is_some_and(|arg| arg == "--raw") {
-                raw = true;
-                remaining.remove(0);
+            let mut capture = false;
+            while remaining
+                .first()
+                .is_some_and(|arg| arg == "--raw" || arg == "--capture")
+            {
+                let flag = remaining.remove(0);
+                raw |= flag == "--raw";
+                capture |= flag == "--capture";
             }
             if remaining
                 .first()
@@ -314,7 +395,7 @@ fn run() -> Result<i32> {
             if remaining.first().is_some_and(|arg| arg == "--") {
                 remaining.remove(0);
             }
-            return execute(&remaining, raw);
+            return execute(&remaining, raw, capture, None);
         }
         ensure!(
             !command.to_string_lossy().starts_with('-'),
@@ -323,6 +404,8 @@ fn run() -> Result<i32> {
         return execute(
             &std::iter::once(command).chain(args).collect::<Vec<_>>(),
             false,
+            false,
+            None,
         );
     }
     let mut file: Option<OsString> = None;

@@ -1,0 +1,13 @@
+{
+  "id": "retok-rewrite",
+  "name": "Retok",
+  "version": "0.1.0",
+  "description": "Rewrite supported shell commands through Retok before execution.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean", "default": true }
+    }
+  }
+}

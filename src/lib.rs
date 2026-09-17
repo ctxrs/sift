@@ -5,7 +5,6 @@ mod text_codec;
 mod text_refs;
 
 use serde::{Deserialize, Serialize};
-use tiktoken_rs::CoreBPE;
 
 /// The explicit restoration format; raw text is never interpreted as framing.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -32,21 +31,21 @@ pub struct CompactResult {
     pub output_tokens: usize,
 }
 
-/// Reuse an instance to avoid loading the embedded tokenizer for each input.
+/// Instances share the embedded ordinary o200k tokenizer within the process.
 pub struct Compactor {
-    tokenizer: CoreBPE,
+    tokenizer: &'static bpe_openai::Tokenizer,
 }
 
 impl Compactor {
     pub fn new() -> anyhow::Result<Self> {
         Ok(Self {
-            tokenizer: tiktoken_rs::o200k_base()?,
+            tokenizer: bpe_openai::o200k_base(),
         })
     }
 
     /// Count one complete text using the same ordinary-token policy as compaction.
     pub fn count_tokens(&self, text: &str) -> usize {
-        self.tokenizer.encode_ordinary(text).len()
+        self.tokenizer.count(text)
     }
 
     /// Choose only strictly cheaper complete representations. Ties favor raw,
@@ -82,7 +81,7 @@ impl Compactor {
                     .map(|candidate| (Encoding::TextRefsV1, candidate)),
             );
         for (candidate_encoding, candidate) in candidates {
-            let tokens = self.tokenizer.encode_ordinary(&candidate).len();
+            let tokens = self.count_tokens(&candidate);
             if tokens < output_tokens {
                 selected = Some(candidate);
                 encoding = candidate_encoding;

@@ -1,18 +1,22 @@
 # Retok
 
-Retok reduces tool output before an agent reads it. It runs locally, keeps every
-text byte or JSON value, and selects a compact representation only when its full
-framing uses fewer ordinary `o200k_base` tokens. It is an independent project
-inspired by RTK.
+Retok reduces tool output before an agent reads it. Its default compaction keeps
+every text byte or supported JSON value, selecting a compact representation only
+when its full framing uses fewer ordinary `o200k_base` tokens. Explicit views can
+select lines, fields or diagnostics when you ask for them. Retok is an independent
+project inspired by RTK.
 
-Use native output hooks to keep command execution and permissions with your
-agent, or run any executable through `retok run`. There are no model calls,
-telemetry, background services, or shell-profile changes. Supported JSON keeps
+Use an [agent adapter](INTEGRATIONS.md) for automatic compaction, or run an
+executable through `retok run`. Completion adapters replace eligible output;
+pre-execution adapters rewrite supported literal POSIX commands before they run.
+Codex on Unix omits the requested shell from hook input: disable its Retok
+pre-hook before using non-POSIX shell requests and use manual `retok run` instead.
+There are no model calls, telemetry, background services, or shell-profile changes. Supported JSON keeps
 values, types, numeric lexemes, rows, and key associations; whitespace and object
 key order can change.
 
 ```sh
-retok init --replace-rtk     # Back up and migrate recognized RTK integrations
+retok init --replace-rtk    # Back up and migrate recognized RTK integrations
 retok git status           # Or use an explicit command wrapper
 retok gain                 # Local measured output savings
 ```
@@ -21,9 +25,13 @@ See [agent integrations and migration](INTEGRATIONS.md) for automatic coverage
 and [RTK workflow coverage](COMPATIBILITY.md) for deliberate differences.
 
 The [command benchmark and charts](benchmarks/results/2026-09-17-development-v0.2.0/README.md)
-compare output tokens, retained information and elapsed time. In that synthetic
-development run, Retok took about 100–112 ms on small workloads versus RTK's
-2.7–14.5 ms. Tokenizer startup is a cost; Retok does not claim to be faster.
+compare output tokens, retained information and elapsed time for the earlier
+candidate. A separate synthetic development comparison of the new exact tokenizer
+measured about 39–42 ms per fresh Retok process, versus 116–152 ms for the previous
+Retok release on the same inputs. The prepared tokenizer increases that Linux
+executable from about 7.4 MB to 35.8 MB. These are development measurements, not
+final release timings or evidence that Retok is faster than RTK; the earlier
+comparison is unchanged.
 
 ## Install
 
@@ -81,8 +89,8 @@ signature and the Windows binary carries a timestamped Authenticode signature.
 The v0.1.0 binaries remain unsigned. The installers do not disable Gatekeeper,
 SmartScreen, or other operating-system protections.
 
-To select v0.2.0 or a different directory, set the environment variables for the
-installer (either variable can be used on its own):
+To pin an existing release (v0.2.0 shown) or choose a different directory, set
+the installer environment variables (either variable can be used on its own):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ctxrs/retok/main/install.sh | RETOK_VERSION=v0.2.0 RETOK_INSTALL_DIR="$HOME/.local/bin" sh
@@ -101,8 +109,12 @@ Installer checks use synthetic releases and make no network requests:
 
 ## Build and use
 
-Requires Rust 1.88 or newer. Dependencies and the tokenizer are downloaded at
-build time; the tokenizer's vocabulary is embedded in the binary.
+Requires Rust 1.88 or newer. Cargo downloads dependencies at build time. The
+prepared tokenizer data is embedded in the binary; runtime needs no vocabulary
+download. This reduces initialization work at the cost of a larger executable.
+This README describes the 0.3.0 development source, not a released 0.3.0 artifact.
+Check your installed version's `retok --help` and subcommand help for available
+features.
 
 ```sh
 cargo build --release --locked
@@ -122,7 +134,7 @@ ordinary text, not special tokens.
 
 ```sh
 retok run -- git status --short
-retok cargo test
+retok run --capture -- cargo test     # Wait for a finite command to finish
 retok proxy git diff                 # Explicit raw output
 retok run -- sh -c 'git log | tail -5' # Compact after the entire pipeline
 ```
@@ -133,40 +145,95 @@ child's exit status. It never retries a command to recover output. Shorthand
 `retok COMMAND ...` has the same behavior; use `run --` for names that collide
 with Retok's own commands.
 
-TTY output passes through. For noninteractive output, Retok buffers up to 8 MiB
-and waits up to 250 ms after the first output while the command is still running.
+By default, terminal input or output makes the runner pass through. Otherwise,
+Retok buffers up to 8 MiB and waits up to 250 ms after the first output while the command is still running.
 When either threshold is reached it streams the original bytes for the rest of
 that command. Short, complete output is compacted; very small results and invalid
 UTF-8 stay raw. Tokenizer work after completion adds processing time. This keeps
 prompts and ongoing progress visible without truncating output.
 
+`--capture` waits for child exit and both output streams to close, without the
+250 ms deadline. It can capture a finite command even from a terminal, while
+stdin stays inherited. Progress and prompts are delayed; it does not allocate a
+PTY. Reaching the combined 8 MiB limit flushes the buffered bytes and switches
+both streams to raw forwarding. `--raw` takes precedence over capture.
+
 Use Retok at the end of a programmatic pipeline. `retok git log | tail -5` would
 make `tail` read the compact representation. To retain native pipeline semantics,
 wrap the whole pipeline in an explicit shell as above, or let a supported native
 output hook compact the final agent-visible result. Retok does not automatically
-rewrite shell commands or install permission allow rules.
+rewrite pipelines. Its pre-execution adapters only rewrite the supported command
+forms described in [INTEGRATIONS.md](INTEGRATIONS.md); setup installs no blanket
+permission rule.
 
-`retok pipe` and `retok read` are aliases for `compact`, with the same single-file
-arguments. They do not implement RTK's lossy filtering flags.
+`retok pipe` and plain `retok read` use `compact`'s lossless single-file behavior.
+For streaming stdin, `retok filter` uses bounded buffering and otherwise passes
+bytes through; `filter --capture` waits for EOF within the same size bound.
+Neither command loads named RTK filters.
+
+## Explicit views
+
+These commands can omit information. Automatic compaction never selects a view.
+
+```sh
+retok read build.log --from 20 --lines 40 --grep 'error'
+retok json response.json --pointer /items --field name --field status --limit 10
+retok summary --lines 20 -- cargo build
+retok err --context 3 -- cargo check
+retok test --context 3 -- cargo test
+```
+
+`read` starts at a one-based source line, matches literal case-sensitive text,
+and limits the matching lines. Without selection options it remains a lossless
+compact alias. `json` validates the full document, selects a JSON Pointer, limits
+the selected array, then keeps the requested fields. Missing fields, duplicate
+keys and invalid JSON fail; numbers retain their original spelling. File/stdin
+views accept up to 16 MiB; JSON nesting is limited to 64 levels.
+
+`summary` keeps the first and last N lines of each stream (20 each by default).
+`err` and `test` select diagnostic keywords with context (two lines by default).
+They label omissions and use substring matching: a line such as `0 failures` can
+match. They do not parse test totals or infer success. No matches or non-text
+output stays raw. These command views use bounded complete capture, delay
+progress and preserve the child's status; capture overflow passes through raw.
+Use `retok run -- test -f FILE` to invoke the native `test` utility.
 
 ## Local usage and original output
 
 ```sh
 retok gain --daily --graph
-retok gain --json --history
+retok gain --project --weekly
+retok gain --project --history --csv
+retok gain --since 2026-09-01 --until 2026-10-01 --command git --json
 retok config --create
 retok recall --list
 retok recall ID                      # Original stdout, when saved
-retok recall ID --stderr
+retok recall PREFIX --stderr --from 20 --lines 40 --grep error
 retok discover --json output.txt     # Potential savings; never executes input
+retok discover --history ./saved-sessions --suggest --json
+retok ccusage --import usage.json --csv
 ```
 
 Automatic integrations and captured `run` output record local counts, timing,
-status, and a short tool/executable label. They do not record command arguments.
-`gain` reports measured ordinary `o200k_base` tokens; unmeasured streams are
-excluded. These are output-token measurements, not claims about model billing,
-input-cache costs, task success, or total conversation usage. Plain `compact`
-and `discover` do not change the usage history.
+status, a short tool/executable label and a local project path when available.
+They do not record command arguments. The project is the canonical checkout root,
+or the process's working directory outside Git; linked worktrees remain separate.
+Completion hooks use the host's reported working directory when supplied;
+an unavailable reported directory leaves the event unscoped. Without that field,
+they use the hook process's directory, which can differ from the command's.
+
+`gain` reports retained measured ordinary `o200k_base` tokens; unmeasured streams
+are excluded from token totals. Explicit command views are marked `view` and do
+not count as measured lossless compaction savings. Reports cover all projects by
+default; `--project [PATH]` selects one checkout (the current checkout if omitted).
+Old records without project identity appear only in all-project reports. Daily,
+weekly and monthly buckets use UTC, with Monday starting the week. `--since`
+is inclusive and `--until` exclusive; each accepts a UTC date or Unix milliseconds.
+`--command` and `--source` filter exact labels. CSV can export totals, periods or
+history; export CSV history and period summaries separately. JSON includes
+available measurement and parse diagnostics. These output-token measurements do
+not establish model billing, input-cache costs, task success or total conversation
+usage. Plain `compact` and `discover` do not change the usage history.
 
 Configuration is `config.json` under `RETOK_CONFIG_DIR`, otherwise
 `$XDG_CONFIG_HOME/retok` or `~/.config/retok` on Unix (including macOS), and
@@ -174,20 +241,34 @@ Configuration is `config.json` under `RETOK_CONFIG_DIR`, otherwise
 without overwriting an existing file:
 
 ```json
-{"enabled":true,"record_usage":true,"keep_originals":false,"exclude_commands":[]}
+{
+  "enabled": true,
+  "record_usage": true,
+  "keep_originals": false,
+  "exclude_commands": [],
+  "originals_max_entries": 100,
+  "originals_max_bytes": 104857600,
+  "originals_max_days": 30
+}
 ```
 
 Disable `record_usage` to stop recording. `enabled:false` disables automatic
 compaction and command-wrapper compaction; explicit `compact` still works.
 `exclude_commands` contains exact executable basenames for `run`, or exact tool
-labels such as `Bash` for Claude or `bash` for plugins. No shell command is parsed to infer an
-executable inside a script.
+labels such as `Bash` for Claude or `bash` for completion plugins. Pre-execution
+adapters also check executable names in their supported literal command forms;
+they do not evaluate arbitrary scripts to discover exclusions.
 
 Original output is saved only when `keep_originals:true`, for complete bounded
 captures; it may contain sensitive data. `recall` reads the saved bytes without
 rerunning a command. Streaming or inherited output is never accumulated for
-recall. Original storage is limited to 100 entries, 100 MiB, and 30 days, pruned
-when another original is saved. Metrics rotate at 10 MiB with one backup.
+recall. Original retention defaults to 100 entries, 100 MiB total and 30 days;
+set positive `originals_max_entries`, `originals_max_bytes` and
+`originals_max_days` to change these caps. Pruning happens when another original
+is saved, not immediately when settings change. Oversized originals are skipped.
+`recall` accepts an exact ID or a unique prefix. Without selectors it writes the
+entire saved stream as raw bytes; navigation defaults to at most 200 matching
+lines and permits up to 10,000. Metrics rotate at 10 MiB with one backup.
 `gain --reset` clears metrics and leaves saved originals.
 
 State uses `RETOK_STATE_DIR`, otherwise `$XDG_STATE_HOME/retok` or
@@ -195,6 +276,26 @@ State uses `RETOK_STATE_DIR`, otherwise `$XDG_STATE_HOME/retok` or
 files/directories have private permissions. Local storage failures do not replace
 command output or change a child's exit status. A busy usage lock skips the
 record after a brief bounded wait; usage history is best effort.
+
+### Selected history and imported usage
+
+`discover --history PATH` reads only the selected file or directory. It supports
+Claude and Codex saved-session shapes and reports potential savings from captured
+text, along with missing, unsupported or limited measurements. Scans are bounded
+and skip symlinks. `--since YYYY-MM-DD` filters by UTC command date;
+`--project PATH` matches the recorded working directory exactly (unlike `gain`,
+it does not resolve a checkout root). `--suggest` reports a small set of repeated
+command-correction patterns. It never executes historical commands, writes agent rules or changes Retok usage records.
+History reports omit paths, arguments and transcript text. Recognizing a Retok
+call in a transcript does not prove it ran or saved tokens.
+
+`ccusage --import FILE` reads an existing local daily/session JSON export,
+including project-grouped daily exports. It does not run or install ccusage,
+fetch prices, scan histories or persist the import. Missing counters remain
+unavailable; totals are shown only when supplied, and inconsistent totals fail.
+Reported USD may be calculated or incompletely priced by ccusage. It is neither
+an invoice nor money saved by Retok, and remains separate from `gain`. Imports
+are limited to a 32 MiB regular file; combined multi-section reports are unsupported.
 
 ## JSONL integration
 

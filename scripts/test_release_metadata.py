@@ -1,6 +1,7 @@
 """Offline fixtures only; no builds, downloads, or production license substitutes."""
 
 import copy
+import gzip
 import hashlib
 import io
 import json
@@ -135,6 +136,334 @@ class MetadataTests(unittest.TestCase):
             self.nodes.append(self.node("winapi", [("winapi-x86_64-pc-windows-gnu", parent_edge)]))
             self.nodes[0]["deps"].append(self.node("root", [("winapi", None)])["deps"][0])
         self.write_lock()
+
+    def use_packed_tokenizer(self, overrides=None):
+        """A tiny synthetic reviewed representation; never substitute production data."""
+        self.packed = b"Synthetic packed prefix\0" + bytes(range(128))
+        self.binary.write_bytes(b"Synthetic executable\0" + self.packed + b"trailer")
+        gzip_vocab = gzip.compress(VOCAB, mtime=0)
+        build_script = b"// Synthetic dictionary generator fixture.\n"
+        profile = dict(metadata.PACKED_PROPERTIES, **{
+            "source-commit": "c" * 40,
+            "source-compressed-sha256": hashlib.sha256(gzip_vocab).hexdigest(),
+            "generator-build-script-sha256": hashlib.sha256(build_script).hexdigest(),
+            "embedded-sha256": hashlib.sha256(self.packed).hexdigest(),
+            "embedded-size": str(len(self.packed)),
+        })
+        self.enterContext(patch("release_metadata.PACKED_PROPERTIES", profile))
+        self.enterContext(patch("release_metadata.PACKED_PREFIX", self.packed[:24]))
+        self.enterContext(patch("release_metadata.PACKED_VOCAB_SHA256", hashlib.sha256(VOCAB).hexdigest()))
+        self.enterContext(patch("release_metadata.GITHUB_MIT", MIT))
+        self.enterContext(patch("release_metadata.LIBYAML_MIT", MIT.replace("contributors", "libyaml fixture contributors")))
+        files = {"LICENSE-MIT": None, metadata.PACKED_PATH: gzip_vocab, "build.rs": build_script,
+                 ".cargo_vcs_info.json": json.dumps({"git": {"sha1": "c" * 40}}).encode()}
+        files.update(overrides or {})
+        self.add_crate("bpe-openai", "0.3.1", overrides=files)
+        self.add_crate("bpe", "0.2.2", overrides={
+            "LICENSE-MIT": None, ".cargo_vcs_info.json": json.dumps({"git": {"sha1": "d" * 40}}).encode()})
+        self.add_crate("unsafe-libyaml", "0.2.11", overrides={
+            ".cargo_vcs_info.json": json.dumps({"git": {"sha1": "e" * 40}}).encode()})
+        for name in ("json5", "serde_yaml_ng", "vocab-builder", "vocab-codec"):
+            self.add_crate(name)
+        pins = dict(metadata.SUPPLEMENTS)
+        for name, version, revision in (("bpe-openai", "0.3.1", "c"), ("bpe", "0.2.2", "d"),
+                                         ("unsafe-libyaml", "0.2.11", "e")):
+            pins[name, version] = (metadata.sha256(self.archives[name]), revision * 40, "https://example.org/fixture")
+        self.enterContext(patch("release_metadata.SUPPLEMENTS", pins))
+        self.nodes[0]["deps"] = self.node("root", [
+            ("bpe-openai", None), ("normal", None), ("json5", None), ("serde_yaml_ng", None),
+            ("tiktoken-rs", "dev"), ("build-only", "build"), ("dev-only", "dev")])["deps"]
+        self.nodes.extend([
+            self.node("bpe-openai", [("bpe", None), ("regex-syntax", None), ("unicode-ident", None),
+                                      ("vocab-builder", "build"), ("tiktoken-rs", "dev")]),
+            self.node("bpe", []), self.node("vocab-builder", [("vocab-codec", None)]),
+            self.node("vocab-codec", []), self.node("json5", []),
+            self.node("serde_yaml_ng", [("unsafe-libyaml", None)]), self.node("unsafe-libyaml", []),
+        ])
+        self.cargo["retok-normal-graph"] = {
+            "root": ["bpe-openai", "normal", "json5", "serde_yaml_ng"],
+            "bpe-openai": ["bpe", "regex-syntax", "unicode-ident"],
+            "bpe": [], "regex-syntax": [], "unicode-ident": [], "normal": [], "json5": [],
+            "serde_yaml_ng": ["unsafe-libyaml"], "unsafe-libyaml": [],
+        }
+        self.cargo["retok-generator-graph"] = {
+            "bpe-openai": ["bpe", "regex-syntax", "unicode-ident", "vocab-builder"],
+            "bpe": [], "regex-syntax": [], "unicode-ident": [],
+            "vocab-builder": ["vocab-codec"], "vocab-codec": [],
+        }
+        self.write_lock()
+
+    @staticmethod
+    def set_property(component, key, value):
+        values = {p["name"].removeprefix("retok:"): p["value"] for p in component["properties"]}
+        values[key] = value
+        component["properties"] = metadata.properties(values)
+
+    def test_packed_inventory_full_notices_and_exact_binary_binding(self):
+        self.use_packed_tokenizer()
+        document, notices = metadata.generate(self.project, self.binary, "x86_64-unknown-linux-gnu",
+                                             "b" * 40, None, self.supplement, self.runtime_path)
+        components = {c["name"]: c for c in document["components"]}
+        self.assertEqual(set(components), {"bpe-openai", "bpe", "normal", "regex-syntax", "unicode-ident",
+                         "json5", "serde_yaml_ng", "unsafe-libyaml", "vocab-builder", "vocab-codec",
+                         "o200k_base", "rust-std"})
+        props = metadata.property_map(document["metadata"]["component"])
+        self.assertEqual(json.loads(props["retok:vocabulary-build-dependencies"]),
+                         ["pkg:cargo/vocab-builder@1.2.3", "pkg:cargo/vocab-codec@1.2.3"])
+        self.assertNotIn("vocab-builder", props["retok:normal-dependencies"])
+        vp = metadata.property_map(components["o200k_base"])
+        self.assertEqual(vp["retok:embedded-sha256"], hashlib.sha256(self.packed).hexdigest())
+        self.assertEqual(metadata.component_hash(components["o200k_base"]), hashlib.sha256(VOCAB).hexdigest())
+        self.assertNotIn(VOCAB, self.binary.read_bytes())
+        self.assertIn("not the raw .tiktoken text", notices)
+        self.assertNotIn("assets/o200k_base.tiktoken", notices)
+        for name in ("bpe-openai", "bpe", "json5", "serde_yaml_ng", "unsafe-libyaml", "vocab-builder"):
+            text = notices.split(f"===== crate {name} {components[name]['version']} =====", 1)[1].split("=====", 1)[0]
+            self.assertIn(MIT, text)
+        self.assertIn(metadata.LIBYAML_MIT, notices)
+        self.assertNotIn(str(self.root), json.dumps(document) + notices)
+        self.assertEqual((document, notices), self.generate())
+        metadata.validate_project(document, self.project)
+
+    def test_packed_sources_must_be_present_and_match_reviewed_hashes(self):
+        self.use_packed_tokenizer()
+        _, packages, _, _ = metadata.release_graph(self.cargo)
+        lock = {(p["name"], p["version"], p.get("source")): p
+                for p in tomllib.loads((self.project / "Cargo.lock").read_text())["package"]}
+        _, files = metadata.checked_archive(packages["bpe-openai"], lock)
+        for name in (metadata.PACKED_PATH, "build.rs"):
+            for raw in (None, b"changed"):
+                changed = dict(files)
+                if raw is None:
+                    changed.pop(name)
+                else:
+                    changed[name] = raw
+                with self.subTest(name=name, raw=raw), self.assertRaisesRegex(ValueError, "missing|SHA-256"):
+                    metadata.packed_source(changed)
+        with patch("release_metadata.PACKED_VOCAB_SHA256", "0" * 64):
+            with self.assertRaisesRegex(ValueError, "source SHA-256"):
+                self.generate()
+        self.archives["bpe-openai"].unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.generate()
+
+    def test_packed_missing_or_modified_binary_representation_fails(self):
+        self.use_packed_tokenizer()
+        for data in (b"", VOCAB, self.packed[:24], self.packed[:-1] + b"changed"):
+            self.binary.write_bytes(data)
+            with self.subTest(size=len(data)), self.assertRaisesRegex(ValueError, "does not contain|SHA-256"):
+                self.generate()
+
+    def test_packed_sidecar_cannot_redefine_reviewed_bytes_or_provenance(self):
+        self.use_packed_tokenizer()
+        document, notices = self.generate()
+        for key, value in (("embedded-sha256", "0" * 64), ("embedded-size", "1"),
+                           ("source-compressed-sha256", "0" * 64), ("source-path", metadata.VOCAB_PATH),
+                           ("generator-build-script-sha256", "0" * 64), ("source-commit", "f" * 40),
+                           ("representation", "raw vocabulary"), ("embedded-offset", "0")):
+            changed = copy.deepcopy(document)
+            vocab = next(c for c in changed["components"] if c["name"] == "o200k_base")
+            self.set_property(vocab, key, value)
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "representation|SHA-256"):
+                metadata.validate(changed, notices, self.binary)
+        # Rehashing the whole executable cannot hide a changed byte inside the dictionary.
+        self.binary.write_bytes(self.binary.read_bytes().replace(self.packed, self.packed[:-1] + b"!"))
+        document["metadata"]["component"]["hashes"] = metadata.hashes(metadata.sha256(self.binary))
+        with self.assertRaisesRegex(ValueError, "embedded vocabulary SHA-256"):
+            metadata.validate(document, notices, self.binary)
+        vocab = next(c for c in document["components"] if c["name"] == "o200k_base")
+        self.set_property(vocab, "embedded-sha256", hashlib.sha256(self.packed[:-1] + b"!").hexdigest())
+        with self.assertRaisesRegex(ValueError, "unreviewed packed"):
+            metadata.validate(document, notices, self.binary)
+
+    def test_packed_project_verification_catches_reclassified_build_dependency(self):
+        self.use_packed_tokenizer()
+        document, notices = self.generate()
+        root = document["metadata"]["component"]
+        props = metadata.property_map(root)
+        build = json.loads(props["retok:vocabulary-build-dependencies"])
+        normal = json.loads(props["retok:normal-dependencies"])
+        self.set_property(root, "normal-dependencies", json.dumps(sorted(normal + [build.pop()])))
+        self.set_property(root, "vocabulary-build-dependencies", json.dumps(build))
+        metadata.validate(document, notices, self.binary)
+        with self.assertRaisesRegex(ValueError, "normal/build inventory"):
+            metadata.validate_project(document, self.project)
+
+    def test_feature_resolved_trees_exclude_metadata_only_dependencies(self):
+        self.use_packed_tokenizer()
+        # Model metadata's merged feature view: an inactive normal dep and an
+        # inactive build transitive. Neither appears in Cargo's resolved trees.
+        next(n for n in self.nodes if n["id"] == "bpe")["deps"] = self.node("bpe", [("vocab-codec", None)])["deps"]
+        next(n for n in self.nodes if n["id"] == "vocab-builder")["deps"] = self.node("vocab-builder", [("unused-platform", None)])["deps"]
+        normal_tree = (f"0retok v{metadata.VERSION} (/synthetic/project)\n"
+                       "1bpe-openai v0.3.1\n2bpe v0.2.2\n2regex-syntax v1.2.3\n"
+                       "2unicode-ident v1.2.3 (proc-macro)\n1normal v1.2.3\n")
+        build_tree = ("0bpe-openai v0.3.1\n1bpe v0.2.2\n1regex-syntax v1.2.3\n"
+                      "1unicode-ident v1.2.3\n1vocab-builder v1.2.3\n")
+        with patch("release_metadata.subprocess.run") as run:
+            run.side_effect = [subprocess.CompletedProcess([], 0, output, "")
+                               for output in (json.dumps(self.cargo), normal_tree, build_tree)]
+            resolved = ORIGINAL_CARGO_GRAPH(self.project, "aarch64-apple-darwin")
+        self.graph_mock.return_value = resolved
+        document, notices = self.generate()
+        names = {c["name"] for c in document["components"]}
+        self.assertIn("vocab-builder", names)
+        self.assertNotIn("vocab-codec", names)
+        self.assertNotIn("unused-platform", names)
+        metadata.validate_project(document, self.project)
+        for call, kinds, name in zip(run.call_args_list[1:], ("normal", "normal,build"), ("retok", "bpe-openai")):
+            args = call.args[0]
+            self.assertEqual(args[:6], ["cargo", "tree", "--offline", "--locked", "--target", "aarch64-apple-darwin"])
+            self.assertEqual(args[args.index("--edges") + 1], kinds)
+            self.assertEqual(args[args.index("--package") + 1], name)
+            self.assertIn("--no-dedupe", args)
+
+    def test_cargo_tree_parser_fails_closed_and_merges_host_target_instances(self):
+        for text in ("", "not a tree\n", "1retok v" + metadata.VERSION,
+                     f"0retok v{metadata.VERSION}\n2normal v1.2.3\n", "0absent v1.2.3\n"):
+            with patch("release_metadata.subprocess.run") as run:
+                run.return_value = subprocess.CompletedProcess([], 0, text, "")
+                with self.subTest(text=text), self.assertRaisesRegex(ValueError, "Cargo tree"):
+                    metadata.cargo_tree_graph(self.project, "target", self.cargo, "normal", "retok")
+        text = (f"0retok v{metadata.VERSION}\n1normal v1.2.3\n2regex-syntax v1.2.3\n"
+                "1normal v1.2.3\n2unicode-ident v1.2.3\n")
+        with patch("release_metadata.subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, text, "")
+            graph = metadata.cargo_tree_graph(self.project, "target", self.cargo, "normal,build", "retok")
+        self.assertEqual(graph["normal"], ["regex-syntax", "unicode-ident"])
+
+    def test_packed_supplements_reject_archive_revision_license_drift(self):
+        self.use_packed_tokenizer()
+        _, packages, _, _ = metadata.release_graph(self.cargo)
+        lock = {(p["name"], p["version"], p.get("source")): p
+                for p in tomllib.loads((self.project / "Cargo.lock").read_text())["package"]}
+        package = packages["bpe"]
+        digest, files = metadata.checked_archive(package, lock)
+        for changed_package, changed_digest, changed_files in (
+            (dict(package, version="0.2.3"), digest, files),
+            (package, "0" * 64, files),
+            (dict(package, license="Apache-2.0"), digest, files),
+            (package, digest, dict(files, **{".cargo_vcs_info.json": b'{"git":{"sha1":"ffffffffffffffffffffffffffffffffffffffff"}}'})),
+        ):
+            with self.assertRaisesRegex(ValueError, "unreviewed license supplement"):
+                metadata.supplement_texts(changed_package, changed_digest, changed_files)
+        with self.archives["vocab-builder"].open("ab") as stream:
+            stream.write(b"tampered build archive")
+        with self.assertRaisesRegex(ValueError, "cached crate checksum"):
+            self.generate()
+
+    def test_full_supplement_required_even_after_overall_notice_rehash(self):
+        self.use_packed_tokenizer()
+        document, notices = self.generate()
+        for name in ("bpe", "bpe-openai", "unsafe-libyaml"):
+            component = next(c for c in document["components"] if c["name"] == name)
+            marker = f"===== crate {name} {component['version']} ====="
+            before, after = notices.split(marker, 1)
+            section, separator, rest = after.partition("=====")
+            altered = before + marker + section.replace("Permission is hereby granted", "Omitted") + separator + rest
+            changed = copy.deepcopy(document)
+            self.set_property(changed["metadata"]["component"], "notices-sha256", hashlib.sha256(altered.encode()).hexdigest())
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "complete upstream license"):
+                metadata.validate(changed, altered, self.binary)
+
+    def add_yaml_edit(self):
+        self.add_crate("yaml-edit", "0.3.1", "Apache-2.0", {
+            "LICENSE-MIT": None,
+            ".cargo_vcs_info.json": json.dumps({"git": {"sha1": "f" * 40}}).encode(),
+        })
+        self.nodes.append(self.node("yaml-edit", []))
+        self.nodes[0]["deps"].append(self.node("root", [("yaml-edit", None)])["deps"][0])
+        if "retok-normal-graph" in self.cargo:
+            self.cargo["retok-normal-graph"]["root"].append("yaml-edit")
+            self.cargo["retok-normal-graph"]["yaml-edit"] = []
+        self.enterContext(patch.dict(metadata.SUPPLEMENTS, {("yaml-edit", "0.3.1"): (
+            metadata.sha256(self.archives["yaml-edit"]), "f" * 40, "https://example.org/yaml-edit")}))
+        self.write_lock()
+
+    def test_yaml_edit_canonical_apache_terms_and_honest_provenance(self):
+        self.use_packed_tokenizer()
+        self.add_yaml_edit()
+        document, notices = self.generate()
+        component = next(c for c in document["components"] if c["name"] == "yaml-edit")
+        self.assertEqual(component["licenses"], [{"expression": "Apache-2.0"}])
+        self.assertEqual(metadata.component_hash(component), metadata.sha256(self.archives["yaml-edit"]))
+        text = notices.split("===== crate yaml-edit 0.3.1 =====", 1)[1].split("=====", 1)[0]
+        self.assertIn(metadata.APACHE_2_0, text)
+        self.assertIn("declares Apache-2.0 in its authenticated Cargo.toml", text)
+        self.assertIn("https://www.apache.org/licenses/LICENSE-2.0.txt", text)
+        self.assertIn("cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30", text)
+        self.assertIn("/blob/" + "f" * 40 + "/Cargo.toml", text)
+        self.assertIn("not an upstream LICENSE file", text)
+        self.assertNotIn("/blob/" + "f" * 40 + "/LICENSE", text)
+        self.assertNotIn("GitHub upstream supplement", text)
+        self.assertNotIn(MIT, text)
+        self.assertNotIn(str(self.root), text)
+        metadata.validate_project(document, self.project)
+
+    def test_yaml_edit_supplement_rejects_identity_spdx_revision_and_terms_drift(self):
+        self.add_yaml_edit()
+        package = next(p for p in self.packages if p["name"] == "yaml-edit")
+        lock = {(p["name"], p["version"], p.get("source")): p
+                for p in tomllib.loads((self.project / "Cargo.lock").read_text())["package"]}
+        digest, files = metadata.checked_archive(package, lock)
+        for changed_package, changed_digest, changed_files in (
+            (dict(package, version="0.3.2"), digest, files),
+            (dict(package, name="unreviewed-yaml"), digest, files),
+            (package, "0" * 64, files),
+            (dict(package, license="MIT"), digest, files),
+            (dict(package, license="Apache-2.0 AND MIT"), digest, files),
+            (package, digest, dict(files, **{".cargo_vcs_info.json": b'{"git":{"sha1":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'})),
+        ):
+            with self.subTest(package=changed_package, digest=changed_digest), self.assertRaisesRegex(
+                    ValueError, "unreviewed license supplement"):
+                metadata.supplement_texts(changed_package, changed_digest, changed_files)
+        for value in ("", metadata.APACHE_2_0.replace("Redistribution.", "Omitted.")):
+            with patch("release_metadata.APACHE_2_0", value), self.assertRaisesRegex(ValueError, "canonical Apache license SHA-256"):
+                self.generate()
+        with patch("release_metadata.APACHE_2_0_SHA256", "0" * 64), self.assertRaisesRegex(
+                ValueError, "canonical Apache license SHA-256"):
+            self.generate()
+        with self.archives["yaml-edit"].open("ab") as stream:
+            stream.write(b"tampered fixture archive")
+        with self.assertRaisesRegex(ValueError, "cached crate checksum"):
+            self.generate()
+
+    def test_yaml_edit_rejects_license_and_provenance_tampering_after_rehash(self):
+        self.add_yaml_edit()
+        document, notices = self.generate()
+        marker = "===== crate yaml-edit 0.3.1 ====="
+        before, after = notices.split(marker, 1)
+        text, separator, rest = after.partition("=====")
+        mutations = (
+            text.replace(metadata.APACHE_2_0, ""),
+            text.replace("You must give any other recipients", "Removed condition"),
+            text.replace(metadata.APACHE_2_0_URL, "https://example.org/unreviewed-license"),
+            text.replace(metadata.APACHE_2_0_SHA256, "0" * 64),
+            text.replace("f" * 40, "e" * 40),
+            text.replace("declares Apache-2.0", "declares MIT"),
+            text.replace("not an upstream LICENSE file", "an upstream LICENSE file"),
+        )
+        for changed_text in mutations:
+            changed = copy.deepcopy(document)
+            altered = before + marker + changed_text + separator + rest
+            self.set_property(changed["metadata"]["component"], "notices-sha256", hashlib.sha256(altered.encode()).hexdigest())
+            with self.subTest(text=changed_text[-100:]), self.assertRaisesRegex(ValueError, "canonical Apache license or yaml-edit provenance"):
+                metadata.validate(changed, altered, self.binary)
+        component = next(c for c in document["components"] if c["name"] == "yaml-edit")
+        component["hashes"] = metadata.hashes("0" * 64)
+        with self.assertRaisesRegex(ValueError, "unreviewed yaml-edit license source identity"):
+            metadata.validate(document, notices, self.binary)
+
+    def test_legacy_sidecar_without_new_build_inventory_remains_valid(self):
+        document, notices = self.generate()
+        root = document["metadata"]["component"]
+        root["properties"] = [p for p in root["properties"] if p["name"] != "retok:vocabulary-build-dependencies"]
+        metadata.validate(document, notices, self.binary)
+        metadata.validate_project(document, self.project)
+        vocab = next(c for c in document["components"] if c["name"] == "o200k_base")
+        self.set_property(vocab, "source-commit", "f" * 40)
+        with self.assertRaisesRegex(ValueError, "Cargo vocabulary source mismatch"):
+            metadata.validate_project(document, self.project)
 
     def test_winapi_import_license_fallback_and_legacy_spdx(self):
         self.add_winapi()

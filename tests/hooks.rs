@@ -161,6 +161,46 @@ fn copilot_preserves_failure_type_and_metadata() {
 }
 
 #[test]
+fn hermes_final_result_preserves_status_and_exact_metadata() {
+    let text = log();
+    let response = format!(
+        r#"{{"output":{},"exit_code":17,"error":null,"hint":"retain hint","approval":"already approved","count":123456789012345678901234567890,"number":-0.00100E+99999,"marker":{{"$serde_json::private::Number":"user object"}}}}"#,
+        json_string(&text)
+    );
+    let input = format!(
+        r#"{{"hook_event_name":"TransformToolResult","tool_name":"terminal","tool_response":{response}}}"#
+    );
+    let output = hooks::transform("hermes", &input).unwrap().unwrap();
+    let envelope = object(&output);
+    assert_eq!(envelope.len(), 1);
+    let result = string(&envelope["result"]);
+    let changed = object(&result);
+    for (key, value) in object(&response) {
+        if key != "output" {
+            assert_eq!(changed[&key].get(), value.get());
+        }
+    }
+    assert_reversible(&text, &string(&changed["output"]));
+    assert_eq!(
+        run("hermes", input.as_bytes()),
+        format!("{output}\n").as_bytes()
+    );
+    assert!(
+        hooks::transform(
+            "hermes",
+            &input.replace("TransformToolResult", "PreToolUse")
+        )
+        .unwrap()
+        .is_none()
+    );
+    assert!(
+        hooks::transform("hermes", &input.replace("\"terminal\"", "\"read_file\""))
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn malformed_unsupported_and_tiny_are_noops() {
     for host in ["claude", "codex", "copilot", "unknown"] {
         for input in ["", "{", "{}", "null", "[]", "{}\n{}", r#"{"x":1,"x":2}"#] {
@@ -280,6 +320,7 @@ impl Sandbox {
     fn run(&self, host: &str, input: &[u8]) -> Vec<u8> {
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "hook_entry", "--nocapture"])
+            .current_dir(&self.0)
             .env("RETOK_HOOK_TEST_HOST", host)
             .env("RETOK_CONFIG_DIR", self.0.join("config"))
             .env("RETOK_STATE_DIR", self.0.join("state"))
@@ -308,6 +349,44 @@ impl Sandbox {
             .unwrap()
             + MARKER.len();
         output.stdout[start..].to_vec()
+    }
+}
+
+#[test]
+fn hook_project_uses_host_cwd_and_keeps_invalid_cwd_unscoped() {
+    for host in ["claude", "copilot"] {
+        let sandbox = Sandbox::new();
+        let other = Sandbox::new();
+        std::fs::create_dir(sandbox.0.join(".git")).unwrap();
+        std::fs::create_dir(other.0.join(".git")).unwrap();
+        let base = if host == "claude" {
+            claude(&format!(r#"{{"stdout":{}}}"#, json_string(&log())))
+        } else {
+            serde_json::json!({"toolName":"bash", "toolResult":{
+                "resultType":"success", "textResultForLlm":log()
+            }})
+            .to_string()
+        };
+        let launcher = state::project_at(&sandbox.0).unwrap();
+        let other_project = state::project_at(&other.0).unwrap();
+        for (cwd, expected) in [
+            (None, Some(launcher.clone())),
+            (Some(serde_json::json!(sandbox.0)), Some(launcher)),
+            (Some(serde_json::json!(other.0)), Some(other_project)),
+            (Some(serde_json::json!(other.0.join("missing"))), None),
+            (Some(serde_json::json!("relative")), None),
+            (Some(serde_json::Value::Null), None),
+        ] {
+            let mut input: serde_json::Value = serde_json::from_str(&base).unwrap();
+            if let Some(cwd) = cwd {
+                input["cwd"] = cwd;
+            }
+            assert_ne!(sandbox.run(host, input.to_string().as_bytes()), b"{}\n");
+            let metrics = std::fs::read_to_string(sandbox.0.join("state/metrics.jsonl")).unwrap();
+            let last: serde_json::Value =
+                serde_json::from_str(metrics.lines().last().unwrap()).unwrap();
+            assert_eq!(last["project"].as_str(), expected.as_deref());
+        }
     }
 }
 
