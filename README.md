@@ -114,6 +114,33 @@ brew tap ctxrs/retok https://github.com/ctxrs/retok
 brew install ctxrs/retok/retok
 ```
 
+### Update and uninstall
+
+Rerun the installer to update the binary and notices. After moving or updating
+Retok, rerun `retok init` to refresh supported managed adapters; custom edits remain
+preserved. Homebrew installations use `brew upgrade ctxrs/retok/retok`.
+
+Before removing Retok, uninstall its managed integration for each configured agent
+and project, for example `retok init --agent codex --uninstall` (add `--project`
+inside a configured project). This preserves unrelated settings and customized
+entries; review any manual-removal notice. It does not reactivate old RTK hooks
+or delete saved Retok usage/originals.
+
+Then remove the executable and notices from the directory you installed into.
+For the default locations:
+
+```sh
+rm -- "$HOME/.local/bin/retok" "$HOME/.local/bin/retok.third-party-notices.txt"
+```
+
+```powershell
+Remove-Item -LiteralPath "$env:LOCALAPPDATA\Programs\Retok\retok.exe", "$env:LOCALAPPDATA\Programs\Retok\retok.exe.third-party-notices.txt"
+```
+
+For Homebrew, use `brew uninstall ctxrs/retok/retok`. Configuration and retained
+output remain in the [documented local directories](#local-usage-and-original-output)
+unless you explicitly remove them.
+
 ## Build and use
 
 Requires Rust 1.88 or newer. Cargo downloads dependencies at build time. The
