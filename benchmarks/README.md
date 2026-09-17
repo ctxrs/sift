@@ -5,10 +5,10 @@ RTK 0.49.0 subcommands. It needs Python 3.9+, Git, and ordinary POSIX command-li
 tools. It uses only Python's standard library, installs nothing, and builds no
 binaries. Use a fixed, release-mode Retok candidate after runner changes settle.
 
-The [2026-09-17 development v0.2.0 results](results/2026-09-17-development-v0.2.0/README.md)
-include sanitized samples, token and elapsed charts, execution differences, and
-the two corrected harness failures. They describe a development binary, not a
-shipped artifact or an aggregate win over RTK.
+The [2026-09-17 release v0.3.0 results](results/2026-09-17-release-v0.3.0/README.md)
+include sanitized samples, token and elapsed charts, and execution differences
+for the final Linux x64 release. The [earlier v0.2.0 development run](results/2026-09-17-development-v0.2.0/README.md)
+is retained unchanged. Neither run establishes an aggregate win over RTK.
 
 ```sh
 python3 benchmarks/compare.py --self-test
