@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="755" role="img" aria-label="End-to-end milliseconds (includes command and startup; lower is faster)">
+<rect width="100%" height="100%" fill="white"/>
+<text x="10" y="22" font-family="sans-serif">End-to-end milliseconds (includes command and startup; lower is faster)</text>
+<text x="10" y="57" font-size="12" font-family="sans-serif">git-status / native</text>
+<rect x="240" y="45" height="15" width="1.64" fill="#555"/>
+<text x="246.64" y="57" font-size="12">1.35</text>
+<text x="10" y="80" font-size="12" font-family="sans-serif">git-status / retok</text>
+<rect x="240" y="68" height="15" width="121.73" fill="#1565c0"/>
+<text x="366.73" y="80" font-size="12">100.27</text>
+<text x="10" y="103" font-size="12" font-family="sans-serif">git-status / rtk</text>
+<rect x="240" y="91" height="15" width="6.72" fill="#bd5d00"/>
+<text x="251.72" y="103" font-size="12">5.53</text>
+<text x="10" y="126" font-size="12" font-family="sans-serif">git-diff / native</text>
+<rect x="240" y="114" height="15" width="1.88" fill="#555"/>
+<text x="246.88" y="126" font-size="12">1.55</text>
+<text x="10" y="149" font-size="12" font-family="sans-serif">git-diff / retok</text>
+<rect x="240" y="137" height="15" width="124.53" fill="#1565c0"/>
+<text x="369.53" y="149" font-size="12">102.58</text>
+<text x="10" y="172" font-size="12" font-family="sans-serif">git-diff / rtk</text>
+<rect x="240" y="160" height="15" width="7.22" fill="#bd5d00"/>
+<text x="252.22" y="172" font-size="12">5.95</text>
+<text x="10" y="195" font-size="12" font-family="sans-serif">git-log / native</text>
+<rect x="240" y="183" height="15" width="1.72" fill="#555"/>
+<text x="246.72" y="195" font-size="12">1.42</text>
+<text x="10" y="218" font-size="12" font-family="sans-serif">git-log / retok</text>
+<rect x="240" y="206" height="15" width="121.37" fill="#1565c0"/>
+<text x="366.37" y="218" font-size="12">99.98</text>
+<text x="10" y="241" font-size="12" font-family="sans-serif">git-log / rtk</text>
+<rect x="240" y="229" height="15" width="5.29" fill="#bd5d00"/>
+<text x="250.29" y="241" font-size="12">4.36</text>
+<text x="10" y="264" font-size="12" font-family="sans-serif">listing / native</text>
+<rect x="240" y="252" height="15" width="2.57" fill="#555"/>
+<text x="247.57" y="264" font-size="12">2.12</text>
+<text x="10" y="287" font-size="12" font-family="sans-serif">listing / retok</text>
+<rect x="240" y="275" height="15" width="130.50" fill="#1565c0"/>
+<text x="375.50" y="287" font-size="12">107.50</text>
+<text x="10" y="310" font-size="12" font-family="sans-serif">listing / rtk</text>
+<rect x="240" y="298" height="15" width="4.89" fill="#bd5d00"/>
+<text x="249.89" y="310" font-size="12">4.03</text>
+<text x="10" y="333" font-size="12" font-family="sans-serif">search / native</text>
+<rect x="240" y="321" height="15" width="2.43" fill="#555"/>
+<text x="247.43" y="333" font-size="12">2.00</text>
+<text x="10" y="356" font-size="12" font-family="sans-serif">search / retok</text>
+<rect x="240" y="344" height="15" width="130.21" fill="#1565c0"/>
+<text x="375.21" y="356" font-size="12">107.25</text>
+<text x="10" y="379" font-size="12" font-family="sans-serif">search / rtk</text>
+<rect x="240" y="367" height="15" width="4.45" fill="#bd5d00"/>
+<text x="249.45" y="379" font-size="12">3.67</text>
+<text x="10" y="402" font-size="12" font-family="sans-serif">json / native</text>
+<rect x="240" y="390" height="15" width="2.15" fill="#555"/>
+<text x="247.15" y="402" font-size="12">1.77</text>
+<text x="10" y="425" font-size="12" font-family="sans-serif">json / retok</text>
+<rect x="240" y="413" height="15" width="133.76" fill="#1565c0"/>
+<text x="378.76" y="425" font-size="12">110.18</text>
+<text x="10" y="448" font-size="12" font-family="sans-serif">json / rtk</text>
+<rect x="240" y="436" height="15" width="3.25" fill="#bd5d00"/>
+<text x="248.25" y="448" font-size="12">2.68</text>
+<text x="10" y="471" font-size="12" font-family="sans-serif">tests-diagnostics / native</text>
+<rect x="240" y="459" height="15" width="12.15" fill="#555"/>
+<text x="257.15" y="471" font-size="12">10.01</text>
+<text x="10" y="494" font-size="12" font-family="sans-serif">tests-diagnostics / retok</text>
+<rect x="240" y="482" height="15" width="135.72" fill="#1565c0"/>
+<text x="380.72" y="494" font-size="12">111.80</text>
+<text x="10" y="517" font-size="12" font-family="sans-serif">tests-diagnostics / rtk</text>
+<rect x="240" y="505" height="15" width="17.55" fill="#bd5d00"/>
+<text x="262.55" y="517" font-size="12">14.46</text>
+<text x="10" y="540" font-size="12" font-family="sans-serif">control-noop / native</text>
+<rect x="240" y="528" height="15" width="0.59" fill="#555"/>
+<text x="245.59" y="540" font-size="12">0.48</text>
+<text x="10" y="563" font-size="12" font-family="sans-serif">control-noop / retok</text>
+<rect x="240" y="551" height="15" width="1.54" fill="#1565c0"/>
+<text x="246.54" y="563" font-size="12">1.27</text>
+<text x="10" y="586" font-size="12" font-family="sans-serif">control-noop / rtk</text>
+<rect x="240" y="574" height="15" width="3.53" fill="#bd5d00"/>
+<text x="248.53" y="586" font-size="12">2.91</text>
+<text x="10" y="609" font-size="12" font-family="sans-serif">control-short / native</text>
+<rect x="240" y="597" height="15" width="2.02" fill="#555"/>
+<text x="247.02" y="609" font-size="12">1.67</text>
+<text x="10" y="632" font-size="12" font-family="sans-serif">control-short / retok</text>
+<rect x="240" y="620" height="15" width="14.03" fill="#1565c0"/>
+<text x="259.03" y="632" font-size="12">11.56</text>
+<text x="10" y="655" font-size="12" font-family="sans-serif">control-short / rtk</text>
+<rect x="240" y="643" height="15" width="3.83" fill="#bd5d00"/>
+<text x="248.83" y="655" font-size="12">3.16</text>
+<text x="10" y="678" font-size="12" font-family="sans-serif">control-progress / native</text>
+<rect x="240" y="666" height="15" width="597.62" fill="#555"/>
+<text x="842.62" y="678" font-size="12">492.28</text>
+<text x="10" y="701" font-size="12" font-family="sans-serif">control-progress / retok</text>
+<rect x="240" y="689" height="15" width="597.96" fill="#1565c0"/>
+<text x="842.96" y="701" font-size="12">492.56</text>
+<text x="10" y="724" font-size="12" font-family="sans-serif">control-progress / rtk</text>
+<rect x="240" y="712" height="15" width="600.00" fill="#bd5d00"/>
+<text x="845.00" y="724" font-size="12">494.24</text>
+</svg>

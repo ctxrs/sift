@@ -228,6 +228,21 @@ class ReleaseTests(unittest.TestCase):
             release.stage(self.source, self.output, self.evidence)
         self.assertEqual(marker.read_text(), "keep")
 
+    def test_concurrently_created_empty_destination_is_preserved(self):
+        appeared = []
+
+        def verify(directory, _evidence):
+            if directory != self.source:
+                self.output.mkdir()
+                appeared.append(self.output.stat().st_ino)
+
+        self.verify_signing.side_effect = verify
+        with self.assertRaises(FileExistsError):
+            release.stage(self.source, self.output, self.evidence)
+        self.assertEqual(appeared, [self.output.stat().st_ino])
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.root.glob(".retok-stage-*")), [])
+
     def test_signing_evidence_is_required_before_staging(self):
         self.verify_signing.side_effect = ValueError("invalid signing evidence")
         with self.assertRaisesRegex(ValueError, "signing evidence"):

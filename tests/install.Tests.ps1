@@ -4,7 +4,8 @@ $ErrorActionPreference = 'Stop'
 $installer = Join-Path (Split-Path $PSScriptRoot -Parent) 'install.ps1'
 $root = Join-Path ([IO.Path]::GetTempPath()) ('retok-installer-test-' + [guid]::NewGuid())
 $variables = @('OS', 'PROCESSOR_ARCHITECTURE', 'PROCESSOR_ARCHITEW6432',
-    'LOCALAPPDATA', 'RETOK_VERSION', 'RETOK_INSTALL_DIR', 'TEMP', 'TMP', 'TMPDIR')
+    'LOCALAPPDATA', 'RETOK_VERSION', 'RETOK_INSTALL_DIR', 'TEMP', 'TMP', 'TMPDIR',
+    'RETOK_TEST_SETUP_LOG', 'RETOK_TEST_SETUP_EXIT')
 $saved = @{}
 foreach ($name in $variables) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
 
@@ -148,6 +149,27 @@ try {
     $failChecksum = $false
     $failDownload = ''
     $destination = Join-Path $env:LOCALAPPDATA 'Programs/Retok/retok.exe'
+    # Native parameter binding must reject bad options before downloads or files.
+    $installerEntry = [scriptblock]::Create([IO.File]::ReadAllText($installer))
+    foreach ($options in @(@{ UnknownOption = $true }, @{ Init = $true; ReplaceRtk = $true },
+                            @{ Help = $true; Init = $true })) {
+        $failure = $null
+        try { & $installerEntry @options } catch { $failure = $_.Exception }
+        Assert ($null -ne $failure) 'Accepted invalid installer switches'
+        Assert ($requests.Count -eq 0) 'Downloaded before rejecting switches'
+        Assert (-not (Test-Path -LiteralPath $env:LOCALAPPDATA)) 'Created files before rejecting switches'
+        $checks++
+    }
+    $failure = $null
+    try { & $installerEntry 'unexpected-positional-argument' } catch { $failure = $_.Exception }
+    Assert ($null -ne $failure) 'Accepted unexpected positional argument'
+    Assert ($requests.Count -eq 0) 'Downloaded before rejecting positional argument'
+    Assert (-not (Test-Path -LiteralPath $env:LOCALAPPDATA)) 'Created files before rejecting positional argument'
+    $helpText = (& $installerEntry -Help) -join "`n"
+    Assert ($helpText.Contains('-ReplaceRtk') -and $helpText.Contains('-Init')) 'Missing setup help'
+    Assert ($requests.Count -eq 0) 'Help downloaded files'
+    Assert (-not (Test-Path -LiteralPath $env:LOCALAPPDATA)) 'Help created files'
+    $checks += 2
     Run-Installer
 
     # Pinned release, custom path with spaces, and 32-bit PowerShell on x64 Windows.
@@ -249,6 +271,82 @@ try {
         Test-DeniedBinaryReplacement $true $true $true
     } else {
         Write-Host 'Skipped 2 native Windows no-delete-sharing lock checks: requires Windows.'
+    }
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        # Build an inert executable using the Windows .NET Framework compiler.
+        # It only records its path/arguments and returns a synthetic exit code.
+        $fixtureSource = Join-Path $root 'setup-fixture.cs'
+        $fixtureBinary = Join-Path $root 'setup-fixture.exe'
+        [IO.File]::WriteAllText($fixtureSource, @'
+using System;
+using System.IO;
+using System.Reflection;
+public class SetupFixture {
+    public static int Main(string[] args) {
+        string binary = Assembly.GetExecutingAssembly().Location;
+        if (!File.Exists(binary + ".third-party-notices.txt")) return 98;
+        string[] lines = new string[args.Length + 1];
+        lines[0] = binary;
+        Array.Copy(args, 0, lines, 1, args.Length);
+        File.WriteAllLines(Environment.GetEnvironmentVariable("RETOK_TEST_SETUP_LOG"), lines);
+        return int.Parse(Environment.GetEnvironmentVariable("RETOK_TEST_SETUP_EXIT"));
+    }
+}
+'@)
+        $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+        Assert (Test-Path -LiteralPath $compiler) 'Windows setup fixture requires the .NET Framework compiler'
+        & $compiler /nologo /target:exe "/out:$fixtureBinary" $fixtureSource
+        Assert ($LASTEXITCODE -eq 0) 'Could not compile synthetic setup executable'
+        $payload = [IO.File]::ReadAllBytes($fixtureBinary)
+        $digest = (Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $fixtureBinary -Algorithm SHA256).Hash.ToLowerInvariant()
+        $manifest = "$digest  retok-windows-x64.exe`r`n" + $noticesEntry
+        $env:RETOK_INSTALL_DIR = Join-Path $root 'setup bin with spaces'
+        $destination = Join-Path $env:RETOK_INSTALL_DIR 'retok.exe'
+        $env:RETOK_TEST_SETUP_LOG = Join-Path $root 'setup-args.txt'
+        $env:RETOK_TEST_SETUP_EXIT = '0'
+        $requests = @()
+        Run-Installer # No-argument irm | iex behavior must never execute setup.
+        Assert (-not (Test-Path -LiteralPath $env:RETOK_TEST_SETUP_LOG)) 'No-argument install executed setup'
+        foreach ($option in @('Init', 'ReplaceRtk')) {
+            foreach ($exitCode in @('0', '7')) {
+                $env:RETOK_TEST_SETUP_EXIT = $exitCode
+                $options = @{ $option = $true }
+                $requests = @()
+                $beforePath = $env:PATH
+                $beforePreference = $ErrorActionPreference
+                $failure = $null
+                try { & $installerEntry @options } catch { $failure = $_.Exception.Message }
+                if ($exitCode -eq '0') {
+                    Assert ($null -eq $failure) "Setup failed: $failure"
+                } else {
+                    Assert ($null -ne $failure -and $failure.Contains('Binary installed') -and $failure.Contains('integration failed')) 'Missing installed-but-setup-failed diagnostic'
+                }
+                Assert ($env:PATH -ceq $beforePath) 'Setup installer changed PATH'
+                Assert ($ErrorActionPreference -eq $beforePreference) 'Setup installer changed caller error preference'
+                $forwarded = [IO.File]::ReadAllLines($env:RETOK_TEST_SETUP_LOG)
+                Assert ($forwarded[0] -ceq $destination) 'Did not execute exact installed absolute binary'
+                Assert ($forwarded[1] -ceq 'init') 'Missing init argument'
+                if ($option -eq 'ReplaceRtk') {
+                    Assert ($forwarded.Length -eq 3 -and $forwarded[2] -ceq '--replace-rtk') 'Wrong replacement arguments'
+                } else {
+                    Assert ($forwarded.Length -eq 2) 'Unexpected init arguments'
+                }
+                Assert ([Convert]::ToBase64String([IO.File]::ReadAllBytes($destination)) -ceq [Convert]::ToBase64String($payload)) 'Setup failure lost installed executable'
+                Assert ([Convert]::ToBase64String([IO.File]::ReadAllBytes($destination + '.third-party-notices.txt')) -ceq [Convert]::ToBase64String($notices)) 'Setup failure lost installed notices'
+                Assert ($requests.Count -eq 3) 'Setup install did not download exactly three files'
+                Assert (@(Get-ChildItem -LiteralPath $env:RETOK_INSTALL_DIR -Filter '.retok-*' -Force).Count -eq 0) 'Setup install leaked staged files'
+                Remove-Item -LiteralPath $env:RETOK_TEST_SETUP_LOG
+                $checks++
+            }
+        }
+        $manifest = '0' * 64 + "  retok-windows-x64.exe`r`n" + $noticesEntry
+        $failure = $null
+        try { & $installerEntry -Init } catch { $failure = $_.Exception.Message }
+        Assert ($null -ne $failure -and $failure.Contains('SHA-256 mismatch')) 'Accepted invalid setup binary'
+        Assert (-not (Test-Path -LiteralPath $env:RETOK_TEST_SETUP_LOG)) 'Ran setup after verification failure'
+        $checks++
+    } else {
+        Write-Host 'Skipped native setup executable checks: requires Windows and the .NET Framework compiler.'
     }
     Write-Host "Passed $checks offline PowerShell installer checks."
 } finally {

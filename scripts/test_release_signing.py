@@ -1,3 +1,5 @@
+import ctypes
+import errno
 import hashlib
 import io
 import json
@@ -7,7 +9,7 @@ import struct
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 try:
     import release_signing as signing
@@ -22,9 +24,12 @@ OTHER_COMMIT = "b" * 64
 
 
 def linux_binary(name):
-    data = bytearray(64)
+    data = bytearray(120)
     data[:7] = b"\x7fELF\x02\x01\x01"
-    struct.pack_into("<H", data, 18, 183 if name.endswith("aarch64") else 62)
+    struct.pack_into("<HHI", data, 16, 3, 183 if name.endswith("aarch64") else 62, 1)
+    struct.pack_into("<Q", data, 32, 64)
+    struct.pack_into("<HHH", data, 52, 64, 56, 1)
+    struct.pack_into("<IIQQQQQQ", data, 64, 1, 5, 0, 0, 0, 120, 120, 4096)
     return bytes(data)
 
 
@@ -92,6 +97,65 @@ def expected_evidence(asset, commit, policy, native=True):
     if native:
         document["native_verification"] = expected_native(name, digest, policy)
     return document
+
+
+class PublicationTests(unittest.TestCase):
+    def test_posix_native_calls_preserve_no_replace_flags_and_errors(self):
+        source, destination = Path("staged assets"), Path("published assets")
+        for system, symbol, args, argtypes in (
+            ("linux", "renameat2", (-100, b"staged assets", -100, b"published assets", 1),
+             (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)),
+            ("darwin", "renamex_np", (b"staged assets", b"published assets", 4),
+             (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)),
+        ):
+            for error in (0, errno.EEXIST, errno.EACCES, errno.ENOTSUP):
+                with self.subTest(system=system, error=error):
+                    native = Mock(return_value=-1 if error else 0)
+                    libc = Mock(spec=[symbol], **{symbol: native})
+                    with patch.object(signing.sys, "platform", system), \
+                         patch.object(signing.ctypes, "CDLL", return_value=libc) as load, \
+                         patch.object(signing.ctypes, "get_errno", return_value=error), \
+                         patch.object(signing.os, "rename") as fallback:
+                        if error:
+                            with self.assertRaises(OSError) as caught:
+                                signing.publish_directory(source, destination)
+                            self.assertEqual(caught.exception.errno, error)
+                        else:
+                            signing.publish_directory(source, destination)
+                        load.assert_called_once_with(None, use_errno=True)
+                        native.assert_called_once_with(*args)
+                        self.assertEqual(native.argtypes, argtypes)
+                        self.assertIs(native.restype, ctypes.c_int)
+                        fallback.assert_not_called()
+
+    def test_windows_uses_rename_and_propagates_collision(self):
+        source, destination = Path("staged assets"), Path("published assets")
+        for error in (None, FileExistsError(errno.EEXIST, "destination exists")):
+            with self.subTest(error=error), \
+                 patch.object(signing.sys, "platform", "win32"), \
+                 patch.object(signing.os, "rename", side_effect=error) as rename, \
+                 patch.object(signing.ctypes, "CDLL") as load:
+                if error:
+                    with self.assertRaises(FileExistsError):
+                        signing.publish_directory(source, destination)
+                else:
+                    signing.publish_directory(source, destination)
+                rename.assert_called_once_with(source, destination)
+                load.assert_not_called()
+
+    def test_unsupported_platform_and_missing_native_api_fail_clearly(self):
+        for system, message in (("freebsd14", "unsupported on freebsd14"),
+                                ("linux", "requires renameat2"),
+                                ("darwin", "requires renamex_np")):
+            with self.subTest(system=system), \
+                 patch.object(signing.sys, "platform", system), \
+                 patch.object(signing.ctypes, "CDLL", return_value=Mock(spec=[])) as load, \
+                 patch.object(signing.os, "rename") as fallback:
+                with self.assertRaisesRegex(ValueError, message):
+                    signing.publish_directory(Path("staged"), Path("published"))
+                fallback.assert_not_called()
+                if system == "freebsd14":
+                    load.assert_not_called()
 
 
 class EvidenceTests(unittest.TestCase):
@@ -282,6 +346,36 @@ class InputInventoryTests(unittest.TestCase):
         path.mkdir()
         with self.assertRaisesRegex(ValueError, "regular"):
             self.call_sign()
+
+    def test_linux_headers_are_validated_before_tools_or_credentials(self):
+        with patch.object(signing, "prepare_tools", side_effect=ValueError("tools reached")) as tools, \
+             patch.object(signing, "credentials") as credentials:
+            for name in LINUX:
+                path = self.source / name
+                valid = linux_binary(name)
+                malformed = bytearray(64)
+                malformed[:7] = b"\x7fELF\x02\x01\x01"
+                struct.pack_into("<H", malformed, 18, 183 if name.endswith("aarch64") else 62)
+                invalid_inputs = [malformed, valid[:64]]
+                for offset, fmt, value in ((16, "H", 1), (20, "I", 0), (32, "Q", 65),
+                                           (52, "H", 0), (54, "H", 0), (56, "H", 0)):
+                    altered = bytearray(valid)
+                    struct.pack_into("<" + fmt, altered, offset, value)
+                    invalid_inputs.append(altered)
+                for invalid in invalid_inputs:
+                    with self.subTest(name=name, header=invalid[:64]):
+                        path.write_bytes(invalid)
+                        with self.assertRaisesRegex(ValueError, "ELF"):
+                            self.call_sign()
+                        tools.assert_not_called()
+                        credentials.assert_not_called()
+                        self.assertFalse(self.destination.exists())
+                        self.assertFalse(self.evidence.exists())
+                path.write_bytes(valid)
+            with self.assertRaisesRegex(ValueError, "tools reached"):
+                self.call_sign()
+            tools.assert_called_once()
+            credentials.assert_not_called()
 
     def test_sign_input_inventory_rejects_already_signed_pe(self):
         self.write_inputs(signed_pe=True)

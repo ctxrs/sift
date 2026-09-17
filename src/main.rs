@@ -6,9 +6,26 @@ use anyhow::{Context, Result, bail, ensure};
 use retok::{CompactResult, Compactor, Encoding};
 use serde::{Deserialize, Serialize};
 
+mod discover;
+mod hooks;
+mod runner;
+mod setup;
+mod state;
+
 const HELP: &str = "Retok — lossless, token-counted tool output compaction
 
 Usage:
+  retok init [--agent HOST] [--replace-rtk] [--project] [--dry-run]
+  retok init --uninstall [--agent HOST]
+  retok doctor [--agent HOST]
+  retok hook claude|copilot
+  retok run [--raw] -- COMMAND [ARG...]
+  retok COMMAND [ARG...]
+  retok proxy COMMAND [ARG...]
+  retok gain [--json] [--history] [--daily] [--graph]
+  retok config [--create]
+  retok recall --list | ID [--stderr]
+  retok discover [--json] [FILE ...]
   retok compact [FILE|-]
   retok compact --protocol=json-v1
   retok restore --encoding ENCODING [FILE|-]
@@ -19,6 +36,8 @@ Read stdin when FILE is omitted or '-'. Use '--' before a filename starting '-'.
 Plain compact writes only the selected representation, without adding a newline.
 JSONL protocol returns encoding and exact ordinary o200k_base token counts.
 Restore requires an explicit encoding; raw mode also preserves non-UTF-8 bytes.
+Run executes argv directly, preserving stdin, streams and exit status.
+Interactive and long-running output passes through; proxy always passes through.
 ";
 
 #[derive(Deserialize)]
@@ -45,8 +64,14 @@ struct Response {
     result: CompactResult,
 }
 
-fn protocol(input: impl BufRead, mut output: impl Write) -> Result<bool> {
+fn protocol(
+    input: impl BufRead,
+    mut output: impl Write,
+    source: Option<&str>,
+    tool: Option<&str>,
+) -> Result<bool> {
     let compactor = Compactor::new().context("cannot initialize tokenizer")?;
+    let settings = source.map(|_| state::Settings::load()).transpose()?;
     let mut input = input;
     let mut line = Vec::new();
     let mut failed = false;
@@ -55,7 +80,7 @@ fn protocol(input: impl BufRead, mut output: impl Write) -> Result<bool> {
         if input.read_until(b'\n', &mut line)? == 0 {
             break;
         }
-        let result = (|| -> Result<Response> {
+        let result = (|| -> Result<(Response, Option<(state::Event, String)>)> {
             let request: Request = serde_json::from_slice(&line).map_err(|error| {
                 anyhow::anyhow!(
                     "invalid JSON request at line {}, column {}",
@@ -77,23 +102,59 @@ fn protocol(input: impl BufRead, mut output: impl Write) -> Result<bool> {
             // Error/incomplete payloads get the same lossless selection. These
             // flags describe the source, never permission to drop information.
             let _ = (request.is_error, request.complete);
-            Ok(Response {
-                version: 1,
-                result: compactor.compact(&request.text),
-            })
+            let started = std::time::Instant::now();
+            let result = if settings
+                .as_ref()
+                .is_none_or(|s| s.enabled && tool.is_none_or(|name| !s.excludes(name)))
+            {
+                compactor.compact(&request.text)
+            } else {
+                let tokens = compactor.count_tokens(&request.text);
+                CompactResult {
+                    text: request.text.clone(),
+                    encoding: Encoding::Raw,
+                    input_tokens: tokens,
+                    output_tokens: tokens,
+                }
+            };
+            let record = source.map(|source| {
+                let event = state::Event {
+                    unix_millis: state::unix_millis(),
+                    command: tool.unwrap_or("tool-output").into(),
+                    input_tokens: Some(result.input_tokens as u64),
+                    output_tokens: Some(result.output_tokens as u64),
+                    input_bytes: request.text.len() as u64,
+                    output_bytes: result.text.len() as u64,
+                    duration_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+                    exit_code: None,
+                    source: Some(source.into()),
+                    original_id: None,
+                };
+                (event, request.text)
+            });
+            Ok((Response { version: 1, result }, record))
         })();
-        match result {
-            Ok(response) => serde_json::to_writer(&mut output, &response)?,
+        let record = match result {
+            Ok((response, record)) => {
+                serde_json::to_writer(&mut output, &response)?;
+                record
+            }
             Err(error) => {
                 failed = true;
                 serde_json::to_writer(
                     &mut output,
                     &serde_json::json!({"version": 1, "error": error.to_string()}),
                 )?;
+                None
             }
-        }
+        };
         output.write_all(b"\n")?;
         output.flush()?;
+        if let Some((event, original)) = record {
+            // Count only successfully delivered responses. Optional storage
+            // cannot replace output or turn successful delivery into failure.
+            let _ = state::record(event, Some((original.as_bytes(), &[])));
+        }
     }
     Ok(failed)
 }
@@ -110,26 +171,165 @@ fn parse_encoding(value: &str) -> Result<Encoding> {
     }
 }
 
-fn run() -> Result<bool> {
+fn execute(args: &[OsString], raw: bool) -> Result<i32> {
+    let settings = match state::Settings::load() {
+        Ok(settings) => settings,
+        Err(error) => {
+            let _ = writeln!(
+                io::stderr(),
+                "retok: {error:#}; passing command output through"
+            );
+            state::Settings {
+                enabled: false,
+                record_usage: false,
+                ..Default::default()
+            }
+        }
+    };
+    let excluded = args
+        .first()
+        .is_some_and(|arg| settings.excludes(&arg.to_string_lossy()));
+    let command = args
+        .first()
+        .map(|arg| {
+            std::path::Path::new(arg)
+                .file_name()
+                .unwrap_or(arg)
+                .to_string_lossy()
+                .into_owned()
+        })
+        .unwrap_or_else(|| "external".into());
+    let command = if command
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '+'))
+        && command.len() <= 128
+    {
+        command
+    } else {
+        "external".into()
+    };
+    runner::run_observed(args, raw || !settings.enabled || excluded, |observation| {
+        let (Some(stdout_bytes), Some(stderr_bytes), Some(stdout_emitted), Some(stderr_emitted)) = (
+            observation.stdout.read_bytes,
+            observation.stderr.read_bytes,
+            observation.stdout.emitted_bytes,
+            observation.stderr.emitted_bytes,
+        ) else {
+            return;
+        };
+        let counts = |stream: &runner::StreamObservation<'_>| {
+            stream
+                .compacted
+                .map(|r| (r.input_tokens as u64, r.output_tokens as u64))
+                .or_else(|| (stream.read_bytes == Some(0)).then_some((0, 0)))
+        };
+        let tokens = counts(&observation.stdout)
+            .zip(counts(&observation.stderr))
+            .map(|(out, err)| (out.0 + err.0, out.1 + err.1));
+        let event = state::Event {
+            unix_millis: state::unix_millis(),
+            command,
+            input_tokens: tokens.map(|t| t.0),
+            output_tokens: tokens.map(|t| t.1),
+            input_bytes: stdout_bytes + stderr_bytes,
+            output_bytes: stdout_emitted + stderr_emitted,
+            duration_ms: observation.duration.as_millis().min(u64::MAX as u128) as u64,
+            exit_code: Some(observation.status),
+            source: Some("run".into()),
+            original_id: None,
+        };
+        let originals = observation.stdout.original.zip(observation.stderr.original);
+        // Usage storage is optional and cannot turn a successful command into a failure.
+        let _ = state::record(event, originals);
+    })
+}
+
+fn run() -> Result<i32> {
     let mut args = std::env::args_os().skip(1);
     let Some(command) = args.next() else {
         bail!("missing command; use 'retok --help'");
     };
     if command == "--help" || command == "-h" {
         io::stdout().write_all(HELP.as_bytes())?;
-        return Ok(false);
+        return Ok(0);
     }
     if command == "--version" {
         writeln!(io::stdout(), "Retok {}", env!("CARGO_PKG_VERSION"))?;
-        return Ok(false);
+        return Ok(0);
     }
-    ensure!(
-        command == "compact" || command == "restore",
-        "unknown command; use 'retok --help'"
-    );
+    if command == "init" || command == "doctor" {
+        let remaining: Vec<_> = args.collect();
+        if command == "init" {
+            setup::run(&remaining)?;
+        } else {
+            setup::doctor(&remaining)?;
+        }
+        return Ok(0);
+    }
+    if command == "hook" {
+        let host = args
+            .next()
+            .and_then(|s| s.into_string().ok())
+            .context("hook requires claude or copilot")?;
+        ensure!(
+            ["claude", "copilot", "codex"].contains(&host.as_str()) && args.next().is_none(),
+            "hook requires claude or copilot"
+        );
+        hooks::run(&host)?;
+        return Ok(0);
+    }
+    if command == "gain" || command == "config" || command == "recall" {
+        let remaining: Vec<_> = args.collect();
+        match command.to_str().unwrap() {
+            "gain" => state::gain(&remaining)?,
+            "config" => state::config(&remaining)?,
+            _ => state::recall(&remaining)?,
+        }
+        return Ok(0);
+    }
+    if command == "discover" {
+        discover::run(&args.collect::<Vec<_>>())?;
+        return Ok(0);
+    }
+    let command = if command == "pipe" || command == "read" {
+        OsString::from("compact")
+    } else {
+        command
+    };
+    if command != "compact" && command != "restore" {
+        if command == "run" || command == "proxy" {
+            let mut remaining: Vec<_> = args.collect();
+            let mut raw = command == "proxy";
+            if remaining.first().is_some_and(|arg| arg == "--raw") {
+                raw = true;
+                remaining.remove(0);
+            }
+            if remaining
+                .first()
+                .is_some_and(|arg| arg == "--help" || arg == "-h")
+            {
+                io::stdout().write_all(HELP.as_bytes())?;
+                return Ok(0);
+            }
+            if remaining.first().is_some_and(|arg| arg == "--") {
+                remaining.remove(0);
+            }
+            return execute(&remaining, raw);
+        }
+        ensure!(
+            !command.to_string_lossy().starts_with('-'),
+            "unknown option; use 'retok --help'"
+        );
+        return execute(
+            &std::iter::once(command).chain(args).collect::<Vec<_>>(),
+            false,
+        );
+    }
     let mut file: Option<OsString> = None;
     let mut encoding = None;
     let mut jsonl = false;
+    let mut record_source = None;
+    let mut record_tool = None;
     let mut positional = false;
     while let Some(arg) = args.next() {
         let value = arg.to_str();
@@ -137,7 +337,33 @@ fn run() -> Result<bool> {
             positional = true;
         } else if !positional && matches!(value, Some("--help" | "-h")) {
             io::stdout().write_all(HELP.as_bytes())?;
-            return Ok(false);
+            return Ok(0);
+        } else if !positional
+            && value.is_some_and(|v| v == "--record-source" || v.starts_with("--record-source="))
+        {
+            ensure!(
+                command == "compact" && record_source.is_none(),
+                "--record-source is allowed once for compact only"
+            );
+            let source = option_value(value.unwrap(), &mut args)?;
+            ensure!(
+                ["pi", "omp", "opencode", "kilo"].contains(&source.as_str()),
+                "unsupported integration source"
+            );
+            record_source = Some(source);
+        } else if !positional
+            && value.is_some_and(|v| v == "--record-tool" || v.starts_with("--record-tool="))
+        {
+            ensure!(
+                command == "compact" && record_tool.is_none(),
+                "--record-tool is allowed once for compact only"
+            );
+            let tool = option_value(value.unwrap(), &mut args)?;
+            ensure!(
+                ["bash", "powershell", "exec"].contains(&tool.as_str()),
+                "unsupported integration tool"
+            );
+            record_tool = Some(tool);
         } else if !positional
             && value.is_some_and(|v| v == "--protocol" || v.starts_with("--protocol="))
         {
@@ -170,10 +396,24 @@ fn run() -> Result<bool> {
     }
     let stdout = io::stdout();
     let mut output = BufWriter::new(stdout.lock());
+    ensure!(
+        record_tool.is_none() || record_source.is_some(),
+        "--record-tool requires --record-source"
+    );
     if jsonl {
         ensure!(file.is_none(), "JSONL protocol reads stdin; omit FILE");
-        return protocol(io::stdin().lock(), output);
+        return protocol(
+            io::stdin().lock(),
+            output,
+            record_source.as_deref(),
+            record_tool.as_deref(),
+        )
+        .map(i32::from);
     }
+    ensure!(
+        record_source.is_none(),
+        "--record-source requires --protocol=json-v1"
+    );
     if command == "restore" {
         ensure!(encoding.is_some(), "restore requires --encoding");
     }
@@ -202,7 +442,7 @@ fn run() -> Result<bool> {
         }
     }
     output.flush()?;
-    Ok(false)
+    Ok(0)
 }
 
 fn option_value(arg: &str, args: &mut impl Iterator<Item = OsString>) -> Result<String> {
@@ -215,16 +455,16 @@ fn option_value(arg: &str, args: &mut impl Iterator<Item = OsString>) -> Result<
         .map_err(|_| anyhow::anyhow!("option value must be UTF-8"))
 }
 
-fn main() -> std::process::ExitCode {
-    match run() {
-        Ok(false) => std::process::ExitCode::SUCCESS,
-        Ok(true) => std::process::ExitCode::FAILURE,
-        Err(error) if is_broken_pipe(&error) => std::process::ExitCode::SUCCESS,
+fn main() {
+    let status = match run() {
+        Ok(status) => status,
+        Err(error) if is_broken_pipe(&error) => 0,
         Err(error) => {
             let _ = writeln!(io::stderr().lock(), "retok: {error:#}");
-            std::process::ExitCode::FAILURE
+            1
         }
-    }
+    };
+    std::process::exit(status);
 }
 
 fn is_broken_pipe(error: &anyhow::Error) -> bool {

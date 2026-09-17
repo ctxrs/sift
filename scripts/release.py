@@ -36,6 +36,9 @@ Notice paths may be absolute or relative to the manifest. Complete UTF-8 file
 contents are copied; local paths are replaced by public labels and file hashes
 in the canonical manifest embedded in the SBOM. Its SHA256 is bound to the root.
 
+Staging supports Linux, macOS, and Windows using native atomic no-replace
+publication; other hosts or unavailable native operations fail without replacing
+the destination. The official signing factory remains Linux x86_64.
 Staging requires signing evidence for both macOS binaries and the Windows
 binary. The evidence stays outside the public asset directory. Staging preserves
 asset bytes, normalizes modes to 755/644, and adds sorted,
@@ -98,16 +101,7 @@ def binary_header(path, system, arch):
         header = stream.read(64)
         require(len(header) == 64, f"{path.name}: truncated binary header")
         if system == "Linux":
-            require(header[:7] == b"\x7fELF\x02\x01\x01",
-                    f"{path.name}: expected little-endian ELF64")
-            kind, machine, version = struct.unpack_from("<HHI", header, 16)
-            offset = struct.unpack_from("<Q", header, 32)[0]
-            header_size, entry_size, count = struct.unpack_from("<HHH", header, 52)
-            require(kind in (2, 3) and version == 1
-                    and machine == {"x64": 62, "arm64": 183}[arch]
-                    and header_size == 64 and entry_size == 56 and count > 0
-                    and offset >= 64 and offset + count * entry_size <= size,
-                    f"{path.name}: invalid ELF executable/architecture/program headers")
+            release_signing.elf_header(header, size, arch, path.name)
         elif system == "Darwin":
             magic, cpu, _, kind, count, commands_size = struct.unpack_from("<6I", header)
             require(magic == 0xFEEDFACF
@@ -229,7 +223,7 @@ def stage(source, destination, signing_evidence):
         release_signing.verify_release_evidence(staged, signing_evidence)
         (staged / "SHA256SUMS").write_bytes(checksums(staged))
         (staged / "SHA256SUMS").chmod(0o644)
-        staged.rename(destination)
+        release_signing.publish_directory(staged, destination)
 
 
 def main():

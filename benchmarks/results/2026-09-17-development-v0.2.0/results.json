@@ -1,0 +1,5211 @@
+{
+  "schema": 1,
+  "harness_sha256": "1f0f1d413bbeca6ac81dd825d244791b7408f5a77242a1f12ffe7652f4ac266c",
+  "repeats": 5,
+  "tokenizer": "ordinary o200k_base, same warmed Retok protocol input_tokens for ALL arms",
+  "fixture_sha256": "875654f2b6fdbf69e5bc70cd69763b0a376ce28528b69c2c80eeea8d52ff7272",
+  "timing": "one unmeasured warmup per arm; rotating order; subprocess wall time; no audit shims",
+  "protocol_timing": "warmed compact request round trip, excludes startup, includes JSON/pipe overhead",
+  "memory": "not measured",
+  "binary_hashes_unchanged_after_run": true,
+  "date_utc": "2026-09-17T06:15:46.007615+00:00",
+  "candidate_status": "Development release-mode Retok v0.2.0 binary, not a shipped artifact; final source/release qualification pending",
+  "source_evidence_sha256": "46ec6144269e9622621dc9c8f8264c723ca5a05ba664138d643ea67128637d32",
+  "environment": "Linux shared host; governed run; warm filesystem caches; no host identity recorded here",
+  "binaries": {
+    "retok": {
+      "sha256": "fb9be54224069f898f8d88708af9930f389d782f89f6ba9783ce4dfbd8313eab",
+      "version": "Retok 0.2.0"
+    },
+    "rtk": {
+      "sha256": "dd97f3c0a08f91ed90d3e87e05520c448bfda112b3cb101847ccb4d5444c9b07",
+      "version": "rtk 0.49.0"
+    },
+    "git": {
+      "sha256": "2a8c18fbf43da9f692d75474c72bea9dfd796c260b0f3dfe456376abc3bbd668",
+      "version": "git version 2.43.0"
+    },
+    "python": {
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+      "version": "Python 3.12.3"
+    },
+    "ls": {
+      "sha256": "2726eb35864608ff34969fbf45ef4afcbba95eefed5ce5653c9c0124c4cd26cf"
+    },
+    "grep": {
+      "sha256": "20a35a4c18f2fe9e6305c1cbf866b9c0fcc3f957132ae66028c99ec353bb0a80"
+    },
+    "cat": {
+      "sha256": "0d5c6788b9e87eb2f6672ae7dd1fb1fc9e4d13b930d988f28e4c040ff5b79c19"
+    },
+    "true": {
+      "sha256": "8a63c98320173f79e263115e10cefc170155e47d1fd4b5a70e4429d2699cae28"
+    },
+    "printf": {
+      "sha256": "e6b0e5cee964f1bbee2111700cabb1b1c9d15821b062f197dd8efa2993d202ab"
+    },
+    "fixture-check": {
+      "sha256": "757490faf0ab6b2dc006df3aa90da3b95cb1edd1ecea7c3e119c152eb536dd29"
+    }
+  },
+  "limitations": [
+    "Seven predeclared modest synthetic workloads and three controls; no aggregate winner or model-task/billing conclusion.",
+    "One warmup per arm; five timed repeats; order rotates; startup, subprocess work and normal local tracking included.",
+    "Warm processing is separate Retok protocol round-trip time, including Python JSON/pipe overhead; not runner CPU time or RTK processing time.",
+    "Same warmed Retok ordinary o200k_base tokenizer counts actual stdout and stderr separately for every arm; no independent tiktoken verification.",
+    "Untimed PATH audit observes native child argv/cwd/count; internal or absolute-path execution is not fully observable.",
+    "Content hashes include Git metadata; no claim about access timestamps, identical rewrites, every subprocess or external side effect.",
+    "Text restore is byte-exact; JSON uses independent Python Number lexemes and typed parsed values, permitting whitespace/key-order changes.",
+    "Runner output must equal the exact saved original or the exact explicit-encoding protocol candidate per stream.",
+    "Runner bypasses streams below 256 bytes; progress may stream raw. RTK controls use proxy, not output filters.",
+    "Literal marker absence is not semantic loss by itself, particularly for reversible encoding.",
+    "Memory, first-byte progress latency, TTY behavior and agent outcomes are not measured.",
+    "Native long listing contains runtime owner/group names; only token counts/hashes are published, so counts can vary across systems."
+  ],
+  "earlier_failed_attempts": [
+    {
+      "attempt": 1,
+      "completed_workloads": [
+        "git-status"
+      ],
+      "failure": "Native git-diff audit saw .git/index stat-cache refresh after fixture timestamp normalization.",
+      "correction": "Refresh index during fixture setup. Payloads, native commands and repeat counts unchanged."
+    },
+    {
+      "attempt": 2,
+      "completed_workloads": [
+        "git-status",
+        "git-diff",
+        "git-log",
+        "listing",
+        "search"
+      ],
+      "failure": "Harness incorrectly required byte-exact JSON restoration.",
+      "correction": "Use documented JSON values/types/numeric-lexeme contract; still record byte equality separately."
+    }
+  ],
+  "failed_attempts_policy": "Both failed runs, their harness snapshots and raw samples retained privately; no failed-attempt samples pooled into these results.",
+  "rows": [
+    {
+      "workload": "git-status",
+      "arm": "native",
+      "argv": [
+        "git",
+        "status"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "git",
+            "args": [
+              "status"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 1.349337,
+      "min_elapsed_ms": 1.174228,
+      "max_elapsed_ms": 1.582886,
+      "median_tokens": 144,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 1.582886,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.174228,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.349337,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.582155,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.194646,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "git-status",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "git",
+        "status"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "git",
+            "args": [
+              "status"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 100.269553,
+      "min_elapsed_ms": 98.437879,
+      "max_elapsed_ms": 109.7399,
+      "median_tokens": 144,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 102.284522,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 99.96959,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 100.269553,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 98.437879,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 109.7399,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 510,
+              "sha256": "d99d95d27953374846f7506f5cde90c2c857e8ce0afa9ffaf3953568150b1bb8",
+              "tokens": 144,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 144,
+          "output_tokens": 144,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.163859,
+            0.122981,
+            0.114947,
+            0.108404,
+            0.115958
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.02128,
+            0.013686,
+            0.012133,
+            0.012023,
+            0.011672
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.128091
+    },
+    {
+      "workload": "git-status",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "git",
+        "status"
+      ],
+      "execution": "different implementation/argv or unverified child execution",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "git",
+            "args": [
+              "status"
+            ],
+            "cwd_is_synthetic_repo": true
+          },
+          {
+            "program": "git",
+            "args": [
+              "status",
+              "--porcelain",
+              "-b"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": false,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 5.534406,
+      "min_elapsed_ms": 5.357503,
+      "max_elapsed_ms": 5.744662,
+      "median_tokens": 43,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 5.534406,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 125,
+              "sha256": "53df512d0fff14769ccca7ed3d48a57535d6043615b92258dee90b4b2ac370b5",
+              "tokens": 43,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 5.524538,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 125,
+              "sha256": "53df512d0fff14769ccca7ed3d48a57535d6043615b92258dee90b4b2ac370b5",
+              "tokens": 43,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 5.357503,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 125,
+              "sha256": "53df512d0fff14769ccca7ed3d48a57535d6043615b92258dee90b4b2ac370b5",
+              "tokens": 43,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 5.645575,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 125,
+              "sha256": "53df512d0fff14769ccca7ed3d48a57535d6043615b92258dee90b4b2ac370b5",
+              "tokens": 43,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 5.744662,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 125,
+              "sha256": "53df512d0fff14769ccca7ed3d48a57535d6043615b92258dee90b4b2ac370b5",
+              "tokens": 43,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_01.txt",
+            "module_17.txt",
+            "notes.txt"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "git-diff",
+      "arm": "native",
+      "argv": [
+        "git",
+        "diff"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "git",
+            "args": [
+              "diff"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 1.550495,
+      "min_elapsed_ms": 1.424439,
+      "max_elapsed_ms": 1.700257,
+      "median_tokens": 507,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 1.424439,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1394,
+              "sha256": "bbdbcdee57bc0c86c87ffd6ab5adec4c2a859c6dd6232e401d7712bb896418ba",
+              "tokens": 507,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.502696,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1394,
+              "sha256": "bbdbcdee57bc0c86c87ffd6ab5adec4c2a859c6dd6232e401d7712bb896418ba",
+              "tokens": 507,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.558631,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1394,
+              "sha256": "bbdbcdee57bc0c86c87ffd6ab5adec4c2a859c6dd6232e401d7712bb896418ba",
+              "tokens": 507,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.700257,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1394,
+              "sha256": "bbdbcdee57bc0c86c87ffd6ab5adec4c2a859c6dd6232e401d7712bb896418ba",
+              "tokens": 507,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.550495,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1394,
+              "sha256": "bbdbcdee57bc0c86c87ffd6ab5adec4c2a859c6dd6232e401d7712bb896418ba",
+              "tokens": 507,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "git-diff",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "git",
+        "diff"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "git",
+            "args": [
+              "diff"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 102.578204,
+      "min_elapsed_ms": 98.55527,
+      "max_elapsed_ms": 106.928613,
+      "median_tokens": 506,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 105.649769,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1299,
+              "sha256": "1f7e8cbb621cd1c5ae4284487fdf96a071d268c55a5807b3d854fc97b13e50fb",
+              "tokens": 506,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 106.928613,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1299,
+              "sha256": "1f7e8cbb621cd1c5ae4284487fdf96a071d268c55a5807b3d854fc97b13e50fb",
+              "tokens": 506,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 100.526105,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1299,
+              "sha256": "1f7e8cbb621cd1c5ae4284487fdf96a071d268c55a5807b3d854fc97b13e50fb",
+              "tokens": 506,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 98.55527,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1299,
+              "sha256": "1f7e8cbb621cd1c5ae4284487fdf96a071d268c55a5807b3d854fc97b13e50fb",
+              "tokens": 506,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 102.578204,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1299,
+              "sha256": "1f7e8cbb621cd1c5ae4284487fdf96a071d268c55a5807b3d854fc97b13e50fb",
+              "tokens": 506,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "text-refs-v1",
+          "input_tokens": 507,
+          "output_tokens": 506,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.482888,
+            0.378361,
+            0.335831,
+            0.259738,
+            0.247315
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.027161,
+            0.01611,
+            0.013946,
+            0.013405,
+            0.012744
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.349777
+    },
+    {
+      "workload": "git-diff",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "git",
+        "diff"
+      ],
+      "execution": "different implementation/argv or unverified child execution",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "git",
+            "args": [
+              "diff",
+              "--stat"
+            ],
+            "cwd_is_synthetic_repo": true
+          },
+          {
+            "program": "git",
+            "args": [
+              "diff"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": false,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 5.948996,
+      "min_elapsed_ms": 5.104066,
+      "max_elapsed_ms": 47.463343,
+      "median_tokens": 429,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 47.463343,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1158,
+              "sha256": "3759832f6907569d8bd474620b3d7e874a6dad913253b8e074f0b05d2b0f85ab",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 5.52599,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1158,
+              "sha256": "3759832f6907569d8bd474620b3d7e874a6dad913253b8e074f0b05d2b0f85ab",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 5.104066,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1158,
+              "sha256": "3759832f6907569d8bd474620b3d7e874a6dad913253b8e074f0b05d2b0f85ab",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 6.003608,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1158,
+              "sha256": "3759832f6907569d8bd474620b3d7e874a6dad913253b8e074f0b05d2b0f85ab",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 5.948996,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1158,
+              "sha256": "3759832f6907569d8bd474620b3d7e874a6dad913253b8e074f0b05d2b0f85ab",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "revised_setting_3",
+            "module_17.txt"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "git-log",
+      "arm": "native",
+      "argv": [
+        "git",
+        "log",
+        "-6"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "git",
+            "args": [
+              "log",
+              "-6"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 1.418197,
+      "min_elapsed_ms": 1.156815,
+      "max_elapsed_ms": 1.568139,
+      "median_tokens": 374,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 1.418197,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1025,
+              "sha256": "f78918ce134dfd0b6e9f2f143ea9e7c81c00771552633b2a2abe6b2ecfde21fc",
+              "tokens": 374,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.514979,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1025,
+              "sha256": "f78918ce134dfd0b6e9f2f143ea9e7c81c00771552633b2a2abe6b2ecfde21fc",
+              "tokens": 374,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.156815,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1025,
+              "sha256": "f78918ce134dfd0b6e9f2f143ea9e7c81c00771552633b2a2abe6b2ecfde21fc",
+              "tokens": 374,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.568139,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1025,
+              "sha256": "f78918ce134dfd0b6e9f2f143ea9e7c81c00771552633b2a2abe6b2ecfde21fc",
+              "tokens": 374,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.352283,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 1025,
+              "sha256": "f78918ce134dfd0b6e9f2f143ea9e7c81c00771552633b2a2abe6b2ecfde21fc",
+              "tokens": 374,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "git-log",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "git",
+        "log",
+        "-6"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "git",
+            "args": [
+              "log",
+              "-6"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 99.97522,
+      "min_elapsed_ms": 94.085956,
+      "max_elapsed_ms": 104.441648,
+      "median_tokens": 280,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 99.97522,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 638,
+              "sha256": "cc3a263d7e1cfe09958d3fcbd68679b66f35bee3cf0a4a55ce150bdfc11a29c4",
+              "tokens": 280,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author"
+          ],
+          "markers_absent": [
+            "Adjust validation for item 5"
+          ]
+        },
+        {
+          "elapsed_ms": 102.758764,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 638,
+              "sha256": "cc3a263d7e1cfe09958d3fcbd68679b66f35bee3cf0a4a55ce150bdfc11a29c4",
+              "tokens": 280,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author"
+          ],
+          "markers_absent": [
+            "Adjust validation for item 5"
+          ]
+        },
+        {
+          "elapsed_ms": 94.085956,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 638,
+              "sha256": "cc3a263d7e1cfe09958d3fcbd68679b66f35bee3cf0a4a55ce150bdfc11a29c4",
+              "tokens": 280,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author"
+          ],
+          "markers_absent": [
+            "Adjust validation for item 5"
+          ]
+        },
+        {
+          "elapsed_ms": 99.71474,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 638,
+              "sha256": "cc3a263d7e1cfe09958d3fcbd68679b66f35bee3cf0a4a55ce150bdfc11a29c4",
+              "tokens": 280,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author"
+          ],
+          "markers_absent": [
+            "Adjust validation for item 5"
+          ]
+        },
+        {
+          "elapsed_ms": 104.441648,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 638,
+              "sha256": "cc3a263d7e1cfe09958d3fcbd68679b66f35bee3cf0a4a55ce150bdfc11a29c4",
+              "tokens": 280,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author"
+          ],
+          "markers_absent": [
+            "Adjust validation for item 5"
+          ]
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "text-refs-v1",
+          "input_tokens": 374,
+          "output_tokens": 280,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.237677,
+            0.157446,
+            0.146165,
+            0.144893,
+            0.141185
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.020839,
+            0.013696,
+            0.012033,
+            0.011472,
+            0.011381
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.15819799999999998
+    },
+    {
+      "workload": "git-log",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "git",
+        "log",
+        "-6"
+      ],
+      "execution": "different implementation/argv or unverified child execution",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "git",
+            "args": [
+              "log",
+              "--pretty=format:%h %s (%ar) <%an>%n%b%n---END---",
+              "-6"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": false,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 4.358846,
+      "min_elapsed_ms": 3.990914,
+      "max_elapsed_ms": 4.537602,
+      "median_tokens": 139,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 4.358846,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 474,
+              "sha256": "d958e68a2c3ec0f5981940d6b06bc7dd251c4a6cf80a24f17dda7a7bf40b67f1",
+              "tokens": 139,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 4.425882,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 474,
+              "sha256": "d958e68a2c3ec0f5981940d6b06bc7dd251c4a6cf80a24f17dda7a7bf40b67f1",
+              "tokens": 139,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 3.990914,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 474,
+              "sha256": "d958e68a2c3ec0f5981940d6b06bc7dd251c4a6cf80a24f17dda7a7bf40b67f1",
+              "tokens": 139,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 4.537602,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 474,
+              "sha256": "d958e68a2c3ec0f5981940d6b06bc7dd251c4a6cf80a24f17dda7a7bf40b67f1",
+              "tokens": 139,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 4.163228,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 474,
+              "sha256": "d958e68a2c3ec0f5981940d6b06bc7dd251c4a6cf80a24f17dda7a7bf40b67f1",
+              "tokens": 139,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "Synthetic Author",
+            "Adjust validation for item 5"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "listing",
+      "arm": "native",
+      "argv": [
+        "ls",
+        "-l",
+        "src"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "ls",
+            "args": [
+              "-l",
+              "src"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 2.118925,
+      "min_elapsed_ms": 1.986575,
+      "max_elapsed_ms": 2.267193,
+      "median_tokens": 429,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 2.118925,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 961,
+              "sha256": "bec8e988c2e5d60ea4b43b991962501b08db14e039834297e67222e232da6b15",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.040867,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 961,
+              "sha256": "bec8e988c2e5d60ea4b43b991962501b08db14e039834297e67222e232da6b15",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.986575,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 961,
+              "sha256": "bec8e988c2e5d60ea4b43b991962501b08db14e039834297e67222e232da6b15",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.267193,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 961,
+              "sha256": "bec8e988c2e5d60ea4b43b991962501b08db14e039834297e67222e232da6b15",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.163257,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 961,
+              "sha256": "bec8e988c2e5d60ea4b43b991962501b08db14e039834297e67222e232da6b15",
+              "tokens": 429,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "listing",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "ls",
+        "-l",
+        "src"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "ls",
+            "args": [
+              "-l",
+              "src"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 107.49587,
+      "min_elapsed_ms": 103.981172,
+      "max_elapsed_ms": 112.274305,
+      "median_tokens": 249,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 108.156522,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 600,
+              "sha256": "423ccc6c0deed360cc9ca5b1eac82b2d7db64fc8549ed26b2894bd54bb3181ad",
+              "tokens": 249,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt"
+          ],
+          "markers_absent": [
+            "module_16.txt"
+          ]
+        },
+        {
+          "elapsed_ms": 105.392315,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 600,
+              "sha256": "423ccc6c0deed360cc9ca5b1eac82b2d7db64fc8549ed26b2894bd54bb3181ad",
+              "tokens": 249,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt"
+          ],
+          "markers_absent": [
+            "module_16.txt"
+          ]
+        },
+        {
+          "elapsed_ms": 112.274305,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 600,
+              "sha256": "423ccc6c0deed360cc9ca5b1eac82b2d7db64fc8549ed26b2894bd54bb3181ad",
+              "tokens": 249,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt"
+          ],
+          "markers_absent": [
+            "module_16.txt"
+          ]
+        },
+        {
+          "elapsed_ms": 107.49587,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 600,
+              "sha256": "423ccc6c0deed360cc9ca5b1eac82b2d7db64fc8549ed26b2894bd54bb3181ad",
+              "tokens": 249,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt"
+          ],
+          "markers_absent": [
+            "module_16.txt"
+          ]
+        },
+        {
+          "elapsed_ms": 103.981172,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 600,
+              "sha256": "423ccc6c0deed360cc9ca5b1eac82b2d7db64fc8549ed26b2894bd54bb3181ad",
+              "tokens": 249,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt"
+          ],
+          "markers_absent": [
+            "module_16.txt"
+          ]
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "text-refs-v1",
+          "input_tokens": 429,
+          "output_tokens": 249,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.264347,
+            0.203052,
+            0.241053,
+            0.18598,
+            0.155613
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.024326,
+            0.015308,
+            0.020178,
+            0.014227,
+            0.012093
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.21836
+    },
+    {
+      "workload": "listing",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "ls",
+        "-l",
+        "src"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "ls",
+            "args": [
+              "-l",
+              "src"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 4.026331,
+      "min_elapsed_ms": 3.554092,
+      "max_elapsed_ms": 4.48897,
+      "median_tokens": 187,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 3.554092,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 425,
+              "sha256": "354ef89e0f784a0ce5d01f471f6a74a94205bc6291f0a653c9addd307e00a016",
+              "tokens": 187,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 4.229964,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 425,
+              "sha256": "354ef89e0f784a0ce5d01f471f6a74a94205bc6291f0a653c9addd307e00a016",
+              "tokens": 187,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 3.822938,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 425,
+              "sha256": "354ef89e0f784a0ce5d01f471f6a74a94205bc6291f0a653c9addd307e00a016",
+              "tokens": 187,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 4.026331,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 425,
+              "sha256": "354ef89e0f784a0ce5d01f471f6a74a94205bc6291f0a653c9addd307e00a016",
+              "tokens": 187,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 4.48897,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 425,
+              "sha256": "354ef89e0f784a0ce5d01f471f6a74a94205bc6291f0a653c9addd307e00a016",
+              "tokens": 187,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "module_00.txt",
+            "module_16.txt"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "search",
+      "arm": "native",
+      "argv": [
+        "grep",
+        "-n",
+        "WARN",
+        "service.log"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "grep",
+            "args": [
+              "-n",
+              "WARN",
+              "service.log"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 2.00011,
+      "min_elapsed_ms": 1.955297,
+      "max_elapsed_ms": 2.134202,
+      "median_tokens": 138,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 1.982097,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.134202,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.00011,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.955297,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.060294,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "search",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "grep",
+        "-n",
+        "WARN",
+        "service.log"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "grep",
+            "args": [
+              "-n",
+              "WARN",
+              "service.log"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 107.254537,
+      "min_elapsed_ms": 104.532659,
+      "max_elapsed_ms": 115.789855,
+      "median_tokens": 138,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 107.254537,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 107.890472,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 104.532659,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 104.584897,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 115.789855,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 138,
+          "output_tokens": 138,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.077536,
+            0.041628,
+            0.036118,
+            0.033784,
+            0.033262
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.024807,
+            0.014949,
+            0.012904,
+            0.027342,
+            0.028333
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.06092499999999999
+    },
+    {
+      "workload": "search",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "grep",
+        "-n",
+        "WARN",
+        "service.log"
+      ],
+      "execution": "different implementation/argv or unverified child execution",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "grep",
+            "args": [
+              "-n",
+              "-H",
+              "-I",
+              "--null",
+              "-n",
+              "-e",
+              "WARN",
+              "--",
+              "service.log"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": false,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 3.666243,
+      "min_elapsed_ms": 3.184748,
+      "max_elapsed_ms": 4.230865,
+      "median_tokens": 138,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 3.575873,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 3.184748,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 3.666243,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 4.230865,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 3.889643,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 302,
+              "sha256": "419841feb3e510cfe202cdc571002878fd60afafb3e93d135150119cb56a2e41",
+              "tokens": 138,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "status=503",
+            "request=35"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "json",
+      "arm": "native",
+      "argv": [
+        "cat",
+        "records.json"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "cat",
+            "args": [
+              "records.json"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 1.772542,
+      "min_elapsed_ms": 1.645965,
+      "max_elapsed_ms": 1.826494,
+      "median_tokens": 962,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 1.823138,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 2536,
+              "sha256": "e22be55aa1d7be85d45ad4dc1b653329de7d6ed5860255a334f8230475be3b7a",
+              "tokens": 962,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.772542,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 2536,
+              "sha256": "e22be55aa1d7be85d45ad4dc1b653329de7d6ed5860255a334f8230475be3b7a",
+              "tokens": 962,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.768506,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 2536,
+              "sha256": "e22be55aa1d7be85d45ad4dc1b653329de7d6ed5860255a334f8230475be3b7a",
+              "tokens": 962,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.826494,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 2536,
+              "sha256": "e22be55aa1d7be85d45ad4dc1b653329de7d6ed5860255a334f8230475be3b7a",
+              "tokens": 962,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.645965,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 2536,
+              "sha256": "e22be55aa1d7be85d45ad4dc1b653329de7d6ed5860255a334f8230475be3b7a",
+              "tokens": 962,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "json",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "cat",
+        "records.json"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "cat",
+            "args": [
+              "records.json"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 110.180188,
+      "min_elapsed_ms": 103.809339,
+      "max_elapsed_ms": 113.22345,
+      "median_tokens": 320,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 103.809339,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 848,
+              "sha256": "7eea4364066ba5cd1d7803191ec7f34ff7810748d32aa1dfe388f52059dd23d8",
+              "tokens": 320,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 113.039394,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 848,
+              "sha256": "7eea4364066ba5cd1d7803191ec7f34ff7810748d32aa1dfe388f52059dd23d8",
+              "tokens": 320,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 107.856027,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 848,
+              "sha256": "7eea4364066ba5cd1d7803191ec7f34ff7810748d32aa1dfe388f52059dd23d8",
+              "tokens": 320,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 113.22345,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 848,
+              "sha256": "7eea4364066ba5cd1d7803191ec7f34ff7810748d32aa1dfe388f52059dd23d8",
+              "tokens": 320,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 110.180188,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 848,
+              "sha256": "7eea4364066ba5cd1d7803191ec7f34ff7810748d32aa1dfe388f52059dd23d8",
+              "tokens": 320,
+              "matches_saved_original_or_candidate": "candidate"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00",
+            "item-23",
+            "north"
+          ],
+          "markers_absent": []
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "json-rows-v1",
+          "input_tokens": 962,
+          "output_tokens": 320,
+          "restore_exact": false,
+          "restore_contract_verified": true,
+          "restore_contract": "JSON values/types/numeric lexemes",
+          "processing_ms": [
+            0.754108,
+            0.618533,
+            0.608213,
+            0.786608,
+            0.641366
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.021981,
+            0.013575,
+            0.012153,
+            0.011541,
+            0.011662
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.653519
+    },
+    {
+      "workload": "json",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "json",
+        "records.json"
+      ],
+      "execution": "different implementation/argv or unverified child execution",
+      "audit": {
+        "path_child_events": [],
+        "exactly_one_native_argv_cwd_observed": false,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 2.676623,
+      "min_elapsed_ms": 2.517254,
+      "max_elapsed_ms": 3.2818,
+      "median_tokens": 40,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 2.517254,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 103,
+              "sha256": "af0dc9b46e9e51517c83a7480f377100250ae2ac1aed4dced18918b3a45a1999",
+              "tokens": 40,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00"
+          ],
+          "markers_absent": [
+            "item-23",
+            "north"
+          ]
+        },
+        {
+          "elapsed_ms": 2.973912,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 103,
+              "sha256": "af0dc9b46e9e51517c83a7480f377100250ae2ac1aed4dced18918b3a45a1999",
+              "tokens": 40,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00"
+          ],
+          "markers_absent": [
+            "item-23",
+            "north"
+          ]
+        },
+        {
+          "elapsed_ms": 2.620817,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 103,
+              "sha256": "af0dc9b46e9e51517c83a7480f377100250ae2ac1aed4dced18918b3a45a1999",
+              "tokens": 40,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00"
+          ],
+          "markers_absent": [
+            "item-23",
+            "north"
+          ]
+        },
+        {
+          "elapsed_ms": 3.2818,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 103,
+              "sha256": "af0dc9b46e9e51517c83a7480f377100250ae2ac1aed4dced18918b3a45a1999",
+              "tokens": 40,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00"
+          ],
+          "markers_absent": [
+            "item-23",
+            "north"
+          ]
+        },
+        {
+          "elapsed_ms": 2.676623,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 103,
+              "sha256": "af0dc9b46e9e51517c83a7480f377100250ae2ac1aed4dced18918b3a45a1999",
+              "tokens": 40,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "item-00"
+          ],
+          "markers_absent": [
+            "item-23",
+            "north"
+          ]
+        }
+      ]
+    },
+    {
+      "workload": "tests-diagnostics",
+      "arm": "native",
+      "argv": [
+        "fixture-check",
+        "tests"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "fixture-check",
+            "args": [
+              "tests"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 1
+      },
+      "median_elapsed_ms": 10.005863,
+      "min_elapsed_ms": 9.833339,
+      "max_elapsed_ms": 11.29606,
+      "median_tokens": 108,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 9.833339,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 9.940932,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 11.29606,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 11.081256,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 10.005863,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "tests-diagnostics",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "fixture-check",
+        "tests"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "fixture-check",
+            "args": [
+              "tests"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 1
+      },
+      "median_elapsed_ms": 111.79796,
+      "min_elapsed_ms": 100.315319,
+      "max_elapsed_ms": 121.352755,
+      "median_tokens": 108,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 111.79796,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 100.315319,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 109.988236,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 112.125356,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 121.352755,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 343,
+              "sha256": "5f8b7edb025bbc27664273118ae9b456e564fc874bd694f77dd31f394ae1b670",
+              "tokens": 94,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 54,
+              "sha256": "b09f07a802f0a03727f704dbc0de8c719db0e0cbdd7c473641b4d906eb8a2a9d",
+              "tokens": 14,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 94,
+          "output_tokens": 94,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.120828,
+            0.083086,
+            0.092554,
+            0.069039,
+            0.062147
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 14,
+          "output_tokens": 14,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.036769,
+            0.019767,
+            0.01605,
+            0.015159,
+            0.014658
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.09913599999999999
+    },
+    {
+      "workload": "tests-diagnostics",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "test",
+        "fixture-check",
+        "tests"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "fixture-check",
+            "args": [
+              "tests"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 1
+      },
+      "median_elapsed_ms": 14.456572,
+      "min_elapsed_ms": 13.287044,
+      "max_elapsed_ms": 14.749573,
+      "median_tokens": 57,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 14.456572,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 193,
+              "sha256": "3c5de6a4e2fac8695a2218d060aa11e3aae88a9209df63b75e49d4c3e6c04c80",
+              "tokens": 57,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "other"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 14.488713,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 193,
+              "sha256": "3c5de6a4e2fac8695a2218d060aa11e3aae88a9209df63b75e49d4c3e6c04c80",
+              "tokens": 57,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "other"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 13.287044,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 193,
+              "sha256": "3c5de6a4e2fac8695a2218d060aa11e3aae88a9209df63b75e49d4c3e6c04c80",
+              "tokens": 57,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "other"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 14.081126,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 193,
+              "sha256": "3c5de6a4e2fac8695a2218d060aa11e3aae88a9209df63b75e49d4c3e6c04c80",
+              "tokens": 57,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "other"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 14.749573,
+          "exit_code": 1,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 193,
+              "sha256": "3c5de6a4e2fac8695a2218d060aa11e3aae88a9209df63b75e49d4c3e6c04c80",
+              "tokens": 57,
+              "matches_saved_original_or_candidate": "other"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "other"
+            }
+          ],
+          "markers_present": [
+            "validation_07",
+            "received 503",
+            "11 passed"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "control-noop",
+      "arm": "native",
+      "argv": [
+        "true"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "true",
+            "args": [],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 0.48389,
+      "min_elapsed_ms": 0.459975,
+      "max_elapsed_ms": 0.545907,
+      "median_tokens": 0,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 0.545907,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 0.459975,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 0.487256,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 0.48389,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 0.475404,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "control-noop",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "true"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "true",
+            "args": [],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 1.271211,
+      "min_elapsed_ms": 1.223601,
+      "max_elapsed_ms": 1.421843,
+      "median_tokens": 0,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 1.271211,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.421843,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.223601,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.349738,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.223942,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.02156,
+            0.014297,
+            0.012634,
+            0.011873,
+            0.011551
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.018776,
+            0.012844,
+            0.011852,
+            0.011492,
+            0.011311
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.024486
+    },
+    {
+      "workload": "control-noop",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "proxy",
+        "true"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "true",
+            "args": [],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 2.905553,
+      "min_elapsed_ms": 2.727598,
+      "max_elapsed_ms": 2.983219,
+      "median_tokens": 0,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 2.937092,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.905553,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.983219,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.727598,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.903239,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "control-short",
+      "arm": "native",
+      "argv": [
+        "printf",
+        "ready\\n"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "printf",
+            "args": [
+              "ready\\n"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 1.666964,
+      "min_elapsed_ms": 1.646736,
+      "max_elapsed_ms": 1.729472,
+      "median_tokens": 2,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 1.657006,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.666964,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.697572,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.646736,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 1.729472,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "control-short",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "printf",
+        "ready\\n"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "printf",
+            "args": [
+              "ready\\n"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 11.560187,
+      "min_elapsed_ms": 11.417748,
+      "max_elapsed_ms": 11.707944,
+      "median_tokens": 2,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 11.522245,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 11.417748,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 11.707944,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 11.597807,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 11.560187,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 2,
+          "output_tokens": 2,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.053119,
+            0.021039,
+            0.017132,
+            0.01574,
+            0.015189
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.032531,
+            0.018144,
+            0.014126,
+            0.013014,
+            0.012584
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.031258
+    },
+    {
+      "workload": "control-short",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "proxy",
+        "printf",
+        "ready\\n"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "printf",
+            "args": [
+              "ready\\n"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 3.158218,
+      "min_elapsed_ms": 2.827006,
+      "max_elapsed_ms": 3.490182,
+      "median_tokens": 2,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 3.490182,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.827006,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 3.329821,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 2.852934,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 3.158218,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 6,
+              "sha256": "ed1a545bb85e55816bbf9566b028b2a0bc456b88f49f6f266c0401048824194b",
+              "tokens": 2,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "ready"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "control-progress",
+      "arm": "native",
+      "argv": [
+        "fixture-check",
+        "progress"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "fixture-check",
+            "args": [
+              "progress"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 492.27709,
+      "min_elapsed_ms": 490.722577,
+      "max_elapsed_ms": 492.435778,
+      "median_tokens": 56,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 492.27709,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 490.722577,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 492.331112,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 491.393819,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 492.435778,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        }
+      ]
+    },
+    {
+      "workload": "control-progress",
+      "arm": "retok",
+      "argv": [
+        "retok",
+        "run",
+        "--",
+        "fixture-check",
+        "progress"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "fixture-check",
+            "args": [
+              "progress"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 492.558379,
+      "min_elapsed_ms": 492.114595,
+      "max_elapsed_ms": 493.24533,
+      "median_tokens": 56,
+      "tokens_stable": true,
+      "retok_output_verified": true,
+      "samples": [
+        {
+          "elapsed_ms": 492.277631,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 492.558379,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 493.24533,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 492.641064,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 492.114595,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        }
+      ],
+      "saved_original_protocol": [
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 56,
+          "output_tokens": 56,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.166453,
+            0.056416,
+            0.047599,
+            0.044473,
+            0.043362
+          ]
+        },
+        {
+          "version": 1,
+          "encoding": "raw",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "restore_exact": true,
+          "restore_contract_verified": true,
+          "restore_contract": "exact bytes",
+          "processing_ms": [
+            0.026921,
+            0.015519,
+            0.035086,
+            0.02663,
+            0.017163
+          ]
+        }
+      ],
+      "median_warm_processing_ms": 0.074229
+    },
+    {
+      "workload": "control-progress",
+      "arm": "rtk",
+      "argv": [
+        "rtk",
+        "proxy",
+        "fixture-check",
+        "progress"
+      ],
+      "execution": "same native argv/cwd once; exit and fixture contents preserved",
+      "audit": {
+        "path_child_events": [
+          {
+            "program": "fixture-check",
+            "args": [
+              "progress"
+            ],
+            "cwd_is_synthetic_repo": true
+          }
+        ],
+        "exactly_one_native_argv_cwd_observed": true,
+        "fixture_content_unchanged": true,
+        "exit_code": 0
+      },
+      "median_elapsed_ms": 494.240903,
+      "min_elapsed_ms": 493.905222,
+      "max_elapsed_ms": 495.111089,
+      "median_tokens": 56,
+      "tokens_stable": true,
+      "retok_output_verified": null,
+      "samples": [
+        {
+          "elapsed_ms": 495.111089,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 494.902807,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 494.240903,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 493.905222,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        },
+        {
+          "elapsed_ms": 493.940418,
+          "exit_code": 0,
+          "streams": [
+            {
+              "stream": "stdout",
+              "bytes": 160,
+              "sha256": "76c717c06612b635957d90628ab2bce007eb07fd6e9a16bb8074a7285fe31422",
+              "tokens": 56,
+              "matches_saved_original_or_candidate": "raw"
+            },
+            {
+              "stream": "stderr",
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tokens": 0,
+              "matches_saved_original_or_candidate": "raw"
+            }
+          ],
+          "markers_present": [
+            "processed batch 8/8"
+          ],
+          "markers_absent": []
+        }
+      ]
+    }
+  ],
+  "post_run_status_text_observations": {
+    "native": {
+      "headings_present": [
+        "Changes to be committed:",
+        "Changes not staged for commit:",
+        "Untracked files:"
+      ],
+      "headings_absent": []
+    },
+    "retok": {
+      "headings_present": [
+        "Changes to be committed:",
+        "Changes not staged for commit:",
+        "Untracked files:"
+      ],
+      "headings_absent": []
+    },
+    "rtk": {
+      "headings_present": [],
+      "headings_absent": [
+        "Changes to be committed:",
+        "Changes not staged for commit:",
+        "Untracked files:"
+      ]
+    }
+  },
+  "rtk_representation_observations": [
+    "Git status uses two native invocations and porcelain-style status codes; all three selected filenames remain, full headings/instructions do not.",
+    "JSON output displays the first record followed by an indication of 23 more; item-23 and north are absent.",
+    "Test output keeps the selected failure/summary markers and exit 1 but merges the native stderr diagnostic into stdout."
+  ]
+}

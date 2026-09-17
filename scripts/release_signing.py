@@ -45,6 +45,7 @@ import ssl
 import stat
 import struct
 import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.parse
@@ -197,13 +198,29 @@ def write_json(path, value):
 
 
 def publish_directory(source, destination):
-    """Linux atomic rename without replacing a concurrently created destination."""
+    """Atomic same-filesystem, no-replace publication on Linux, macOS, Windows."""
+    if sys.platform == "win32":
+        # Windows rename fails if the destination already exists.
+        os.rename(source, destination)
+        return
+    require(sys.platform in ("linux", "darwin"),
+            f"atomic no-replace publication unsupported on {sys.platform}")
     libc = ctypes.CDLL(None, use_errno=True)
-    rename = libc.renameat2
-    rename.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+    symbol = "renameat2" if sys.platform == "linux" else "renamex_np"
+    try:
+        rename = getattr(libc, symbol)
+    except AttributeError:
+        raise ValueError(f"atomic no-replace publication requires {symbol} on {sys.platform}") from None
+    if sys.platform == "linux":
+        rename.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+        args = (-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
+    else:
+        rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+        args = (os.fsencode(source), os.fsencode(destination), 4)  # RENAME_EXCL
     rename.restype = ctypes.c_int
-    if rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1) != 0:
-        raise OSError(ctypes.get_errno(), "cannot publish fresh signing directory")
+    if rename(*args) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, f"cannot publish fresh directory: {os.strerror(error)}", str(destination))
 
 
 def child_env(home):
@@ -381,6 +398,20 @@ def prepare_apple(root, policy, secret, openssl):
     return cert, key, (private, secret["NOTARY_ISSUER"], secret["NOTARY_KEY_ID"]), team
 
 
+def elf_header(header, size, arch, name):
+    """Shared ELF64 executable and program-header table bounds check."""
+    require(header[:7] == b"\x7fELF\x02\x01\x01",
+            f"{name}: expected little-endian ELF64")
+    kind, machine, version = struct.unpack_from("<HHI", header, 16)
+    offset = struct.unpack_from("<Q", header, 32)[0]
+    header_size, entry_size, count = struct.unpack_from("<HHH", header, 52)
+    require(kind in (2, 3) and version == 1
+            and machine == {"x64": 62, "arm64": 183}[arch]
+            and header_size == 64 and entry_size == 56 and count > 0
+            and offset >= 64 and offset + count * entry_size <= size,
+            f"{name}: invalid ELF executable/architecture/program headers")
+
+
 def binary_shape(path, *, signed=False):
     """Bounded structure checks only; these are not cryptographic verification."""
     regular(path)
@@ -389,9 +420,7 @@ def binary_shape(path, *, signed=False):
         header = stream.read(64)
         require(len(header) == 64, "truncated binary")
         if path.name in LINUX:
-            machine = 62 if path.name.endswith("x64") else 183
-            require(header[:7] == b"\x7fELF\x02\x01\x01" and
-                    struct.unpack_from("<H", header, 18)[0] == machine, "invalid Linux binary")
+            elf_header(header, size, "x64" if path.name.endswith("x64") else "arm64", path.name)
         elif path.name.endswith(".exe"):
             offset = struct.unpack_from("<I", header, 60)[0]
             require(header[:2] == b"MZ" and 64 <= offset <= size - 24, "invalid PE header")

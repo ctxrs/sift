@@ -15,7 +15,10 @@ arguments, source, logs, or release assets.
 
 ## 1. Build unsigned binaries
 
-Build a clean, reviewed commit with `Cargo.lock` locked. The two macOS links
+Build a clean, reviewed commit with `Cargo.lock` locked. Remap absolute source
+and dependency-cache paths with Rust's `--remap-path-prefix` for every target;
+stripping symbols alone does not remove paths embedded in panic messages. Check
+the final artifacts for build-machine paths before publication. The two macOS links
 must reserve room for the Developer ID load command:
 
 ```sh
@@ -59,7 +62,7 @@ On macOS, run the checker for both artifacts. Execute `--version` for every
 architecture the host can run:
 
 ```sh
-scripts/verify_macos_release.sh signed/retok-macos-x64 0.1.1 > macos-x64.json
+scripts/verify_macos_release.sh signed/retok-macos-x64 0.2.0 > macos-x64.json
 scripts/verify_macos_release.sh signed/retok-macos-arm64 > macos-arm64.json
 ```
 
@@ -68,7 +71,7 @@ On Windows x64, use Windows PowerShell or PowerShell 7:
 ```powershell
 scripts/verify_windows_release.ps1 `
   -Artifact signed/retok-windows-x64.exe `
-  -ExpectedVersion 0.1.1 | Set-Content -NoNewline windows-x64.json
+  -ExpectedVersion 0.2.0 | Set-Content -NoNewline windows-x64.json
 ```
 
 Import each result on the release host. Import refuses a different artifact

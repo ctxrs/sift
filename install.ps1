@@ -1,6 +1,25 @@
+[CmdletBinding(DefaultParameterSetName = 'Install')]
+param(
+    [Parameter(ParameterSetName = 'ReplaceRtk')][switch]$ReplaceRtk,
+    [Parameter(ParameterSetName = 'Init')][switch]$Init,
+    [Parameter(ParameterSetName = 'Help')][switch]$Help
+)
+
 # Run in a child scope so piping this script to iex does not change preferences.
 & {
     $ErrorActionPreference = 'Stop'
+    if ($Help) {
+        Write-Output @'
+Usage: install.ps1 [-Init | -ReplaceRtk | -Help]
+No arguments: install the binary and notices only (irm URL | iex).
+-Init: install, then run the installed binary with init.
+-ReplaceRtk: install, then run init --replace-rtk.
+Example: & ([scriptblock]::Create((irm URL))) -ReplaceRtk
+Setup failure keeps the installation and reports a terminating error.
+The installer does not edit shell profiles or PATH.
+'@
+        return
+    }
     if ($env:OS -ne 'Windows_NT') {
         throw 'This installer requires Windows. Use install.sh on Linux or macOS.'
     }
@@ -80,6 +99,16 @@
             throw $installFailure
         }
         Write-Host "Installed retok to $destination"
+        if ($Init -or $ReplaceRtk) {
+            $setupArguments = @('init')
+            if ($ReplaceRtk) { $setupArguments += '--replace-rtk' }
+            try {
+                & $destination @setupArguments
+                if ($LASTEXITCODE -ne 0) { throw "Setup exited with code $LASTEXITCODE." }
+            } catch {
+                throw "Binary installed at $destination, but integration failed. Retry setup with that binary. $_"
+            }
+        }
         Write-Host "Add $installDir to your user PATH if needed, then run retok --help."
     } finally {
         if (-not $keepTempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force }

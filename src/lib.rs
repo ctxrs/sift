@@ -44,37 +44,57 @@ impl Compactor {
         })
     }
 
+    /// Count one complete text using the same ordinary-token policy as compaction.
+    pub fn count_tokens(&self, text: &str) -> usize {
+        self.tokenizer.encode_ordinary(text).len()
+    }
+
     /// Choose only strictly cheaper complete representations. Ties favor raw,
     /// then the first codec candidate. Special-token-looking text is ordinary text.
     pub fn compact(&self, text: &str) -> CompactResult {
-        let input_tokens = self.tokenizer.encode_ordinary(text).len();
-        let mut result = CompactResult {
-            text: text.to_owned(),
-            encoding: Encoding::Raw,
-            input_tokens,
-            output_tokens: input_tokens,
-        };
+        let input_tokens = self.count_tokens(text);
+        let mut selected = None;
+        let mut encoding = Encoding::Raw;
+        let mut output_tokens = input_tokens;
         let candidates = json_codec::candidates(text)
             .into_iter()
-            .chain(text_codec::candidate(text).map(|candidate| (Encoding::TextRunsV1, candidate)))
             .chain(
-                text_codec::prefix_candidate(text)
-                    .map(|candidate| (Encoding::TextPrefixesV1, candidate)),
+                std::iter::once_with(|| {
+                    text_codec::candidate(text).map(|candidate| (Encoding::TextRunsV1, candidate))
+                })
+                .flatten(),
             )
-            .chain(text_refs::candidate(text).map(|candidate| (Encoding::TextRefsV1, candidate)))
+            .chain(
+                std::iter::once_with(|| {
+                    text_codec::prefix_candidate(text)
+                        .map(|candidate| (Encoding::TextPrefixesV1, candidate))
+                })
+                .flatten(),
+            )
+            .chain(
+                std::iter::once_with(|| {
+                    text_refs::candidate(text).map(|candidate| (Encoding::TextRefsV1, candidate))
+                })
+                .flatten(),
+            )
             .chain(
                 text_refs::fragment_candidates(text)
                     .map(|candidate| (Encoding::TextRefsV1, candidate)),
             );
-        for (encoding, candidate) in candidates {
+        for (candidate_encoding, candidate) in candidates {
             let tokens = self.tokenizer.encode_ordinary(&candidate).len();
-            if tokens < result.output_tokens {
-                result.text = candidate;
-                result.encoding = encoding;
-                result.output_tokens = tokens;
+            if tokens < output_tokens {
+                selected = Some(candidate);
+                encoding = candidate_encoding;
+                output_tokens = tokens;
             }
         }
-        result
+        CompactResult {
+            text: selected.unwrap_or_else(|| text.to_owned()),
+            encoding,
+            input_tokens,
+            output_tokens,
+        }
     }
 }
 

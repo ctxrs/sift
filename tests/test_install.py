@@ -1,6 +1,7 @@
 """Offline installer tests: python3 tests/test_install.py (no dependencies)."""
 
 import hashlib
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -57,10 +58,12 @@ elif name == "mv":
 else:
     assert name in ("sha256sum", "shasum"), name
     if name == "shasum":
-        assert args[:2] == ["-a", "256"], args
+        assert args == ["-a", "256"], args
+    else:
+        assert args == [], args
     if os.environ.get("MOCK_CHECKSUM_FAILURE"):
         sys.exit(1)
-    print(hashlib.sha256(Path(args[-1]).read_bytes()).hexdigest() + "  " + args[-1])
+    print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest() + "  -")
 '''
 
 
@@ -103,9 +106,9 @@ class InstallerTests(unittest.TestCase):
         command.write_text("#!" + sys.executable + "\n" + MOCK)
         command.chmod(0o755)
 
-    def run_installer(self):
+    def run_installer(self, *args):
         result = subprocess.run(
-            ["/bin/sh"], input=INSTALLER.read_text(), text=True,
+            ["/bin/sh", "-s", "--", *args], input=INSTALLER.read_text(), text=True,
             env=self.env, cwd=self.root, capture_output=True, timeout=15,
         )
         self.assertEqual(list(self.downloads.iterdir()), [], "downloads must be cleaned up")
@@ -142,6 +145,84 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(notices.read_bytes(), b"previous notices")
         self.assertNotIn("Installed retok", result.stdout)
 
+    def setup_executable(self):
+        payload = ("#!" + sys.executable + "\n" + r'''
+import json, os, sys
+from pathlib import Path
+binary = Path(sys.argv[0])
+assert binary.is_absolute()
+assert binary.with_name("retok.third-party-notices.txt").read_bytes() == (
+    Path(os.environ["MOCK_RELEASE"]) / "retok-linux-x64.third-party-notices.txt"
+).read_bytes()
+Path(os.environ["MOCK_SETUP_LOG"]).write_text(json.dumps(sys.argv))
+sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
+''').encode()
+        asset = "retok-linux-x64"
+        (self.release / asset).write_bytes(payload)
+        lines = self.sums.read_text().splitlines()
+        self.sums.write_text("".join(
+            (hashlib.sha256(payload).hexdigest() + "  " + asset if line.split()[1] == asset else line) + "\n"
+            for line in lines
+        ))
+        self.env["MOCK_SETUP_LOG"] = str(self.root / "setup-args.json")
+        # If setup accidentally uses PATH, fail instead of touching any real binary.
+        shadow = self.bin / "retok"
+        shadow.write_text("#!/bin/sh\nexit 99\n")
+        shadow.chmod(0o755)
+
+    def test_setup_runs_exact_installed_binary_and_arguments(self):
+        self.setup_executable()
+        self.env["RETOK_INSTALL_DIR"] = "relative install dir/bin"
+        self.destination = self.root / "relative install dir/bin/retok"
+        for flag, expected in (("--init", ["init"]), ("--replace-rtk", ["init", "--replace-rtk"])):
+            with self.subTest(flag=flag):
+                result = self.run_installer(flag)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads((self.root / "setup-args.json").read_text()),
+                                 [str(self.destination), *expected])
+
+    def test_no_arguments_never_runs_setup(self):
+        self.setup_executable()
+        self.assert_installed("retok-linux-x64")
+        self.assertFalse((self.root / "setup-args.json").exists())
+
+    def test_setup_failure_retains_installed_binary_and_notices(self):
+        self.setup_executable()
+        self.env["MOCK_SETUP_EXIT"] = "7"
+        for flag in ("--init", "--replace-rtk"):
+            with self.subTest(flag=flag):
+                result = self.run_installer(flag)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Binary installed", result.stderr)
+                self.assertIn("integration failed", result.stderr)
+                self.assertEqual(self.destination.read_bytes(), (self.release / "retok-linux-x64").read_bytes())
+                self.assertEqual(self.destination.with_name("retok.third-party-notices.txt").read_bytes(),
+                                 (self.release / "retok-linux-x64.third-party-notices.txt").read_bytes())
+
+    def test_invalid_flags_and_help_do_not_download_or_create_files(self):
+        before = set(self.root.rglob("*"))
+        for args in (("--unknown",), ("--init", "--replace-rtk"), ("--init", "extra"),
+                     ("--init", "--init"), ("",), ("--help", "extra")):
+            with self.subTest(args=args):
+                result = self.run_installer(*args)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((self.root / "requests").exists())
+                self.assertEqual(set(self.root.rglob("*")), before)
+        result = self.run_installer("--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--replace-rtk", result.stdout)
+        self.assertIn("--init", result.stdout)
+        self.assertFalse((self.root / "requests").exists())
+        self.assertEqual(set(self.root.rglob("*")), before)
+
+    def test_failed_verification_never_runs_setup(self):
+        self.setup_executable()
+        (self.release / "retok-linux-x64.third-party-notices.txt").write_bytes(b"corrupt")
+        result = self.run_installer("--replace-rtk")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / "setup-args.json").exists())
+        self.assertFalse(self.destination.exists())
+
     def test_all_unix_assets_and_upgrade(self):
         for system, arch, asset in (
             ("Linux", "x86_64", "retok-linux-x64"),
@@ -160,6 +241,24 @@ class InstallerTests(unittest.TestCase):
         self.env["MOCK_BASE"] = RELEASES + "/download/v0.1.0"
         self.destination = self.root / "relative dir/bin/retok"
         self.assert_installed("retok-linux-x64")
+
+    def test_real_checksum_utilities_with_special_directory_names(self):
+        (self.bin / "sha256sum").unlink()
+        for utility in ("sha256sum", "shasum"):
+            executable = shutil.which(utility)
+            self.assertIsNotNone(executable, utility + " is required for this regression check")
+            command = self.bin / utility
+            command.symlink_to(executable)
+            try:
+                for special in ("back\\slash", "new\nline"):
+                    with self.subTest(utility=utility, directory=special):
+                        directory = self.root / special
+                        directory.mkdir(exist_ok=True)
+                        self.env.update(TMPDIR=str(directory), RETOK_INSTALL_DIR=str(directory / "bin"))
+                        self.destination = directory / "bin/retok"
+                        self.assert_installed("retok-linux-x64")
+            finally:
+                command.unlink()
 
     def test_binary_marker_and_uppercase_digest(self):
         entries = [line.split() for line in self.sums.read_text().splitlines()]

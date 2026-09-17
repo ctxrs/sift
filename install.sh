@@ -4,6 +4,25 @@ main() (
     set -eu
 
     fail() { printf 'retok: %s\n' "$*" >&2; exit 1; }
+    setup=
+    [ "$#" -le 1 ] || fail 'Use only one of --init, --replace-rtk, or --help.'
+    case "${1:-}" in
+        '') [ "$#" -eq 0 ] || fail 'Unexpected empty argument.' ;;
+        --init) setup=init ;;
+        --replace-rtk) setup=replace-rtk ;;
+        --help)
+            printf '%s\n' \
+                'Usage: install.sh [--init | --replace-rtk | --help]' \
+                'No arguments: install the binary and notices only.' \
+                '--init: install, then run the installed binary with init.' \
+                '--replace-rtk: install, then run init --replace-rtk.' \
+                'Example: curl -fsSL URL | sh -s -- --replace-rtk' \
+                'Setup failure keeps the installation and exits nonzero.' \
+                'The installer does not edit shell profiles or PATH.'
+            exit 0 ;;
+        *) fail "Unknown argument: $1. Use --help." ;;
+    esac
+
     case "$(uname -s):$(uname -m)" in
         Linux:x86_64|Linux:amd64) asset=retok-linux-x64 ;;
         Linux:aarch64|Linux:arm64) asset=retok-linux-aarch64 ;;
@@ -48,9 +67,9 @@ main() (
         [ "${#expected}" -eq 64 ] || fail "Missing or ambiguous SHA-256 checksum for $file."
         case "$expected" in *[!0-9a-fA-F]*) fail "Invalid SHA-256 checksum for $file." ;; esac
         if [ "$checksum" = sha256sum ]; then
-            actual=$(sha256sum "$temp_dir/$file")
+            actual=$(sha256sum < "$temp_dir/$file")
         else
-            actual=$(shasum -a 256 "$temp_dir/$file")
+            actual=$(shasum -a 256 < "$temp_dir/$file")
         fi
         actual=${actual%% *}
         expected=$(printf '%s' "$expected" | tr 'A-F' 'a-f')
@@ -79,7 +98,14 @@ main() (
         fail 'Executable replacement failed; previous notices state restored.'
     fi
     printf 'Installed retok to %s/retok\n' "$install_dir"
+    if [ -n "$setup" ]; then
+        set -- init
+        if [ "$setup" = replace-rtk ]; then set -- "$@" --replace-rtk; fi
+        if ! "$install_dir/retok" "$@"; then
+            fail "Binary installed at $install_dir/retok, but integration failed. Retry setup with that binary."
+        fi
+    fi
     printf 'Add %s to your PATH if needed, then run retok --help.\n' "$install_dir"
 )
 
-main
+main "$@"

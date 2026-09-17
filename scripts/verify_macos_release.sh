@@ -33,7 +33,7 @@ IFS=$'\t' read -r expected_identifier expected_team_hash <<<"${policy}"
 [[ -n "${expected_identifier}" && "${expected_team_hash}" =~ ^[0-9a-f]{64}$ ]] || \
   die "invalid signing contract"
 
-before="$(shasum -a 256 "${artifact}" | awk '{print $1}')"
+before="$(shasum -a 256 < "${artifact}" | awk '{print $1}')"
 codesign --verify --strict --verbose=4 "${artifact}" >/dev/null 2>&1 || \
   die "strict codesign verification failed"
 details="$(codesign -d --verbose=4 "${artifact}" 2>&1)" || die "could not inspect signature"
@@ -50,10 +50,16 @@ grep -Eq '^CodeDirectory .*flags=[^[:space:]]*\([^)]*runtime[^)]*\)' <<<"${detai
 grep -Eq '^Timestamp=.+$' <<<"${details}" || die "signature lacks a secure timestamp"
 
 if [[ -n "${expected_version}" ]]; then
-  version_output="$("${artifact}" --version)" || die "signed executable failed --version"
-  [[ "${version_output}" == "Retok ${expected_version}" ]] || die "unexpected version output"
+  python3 -I - "${artifact}" "${expected_version}" <<'PYVERSION' || die "unexpected version output"
+import subprocess, sys
+result = subprocess.run([sys.argv[1], "--version"], stdin=subprocess.DEVNULL,
+                        capture_output=True, timeout=10, check=False)
+sys.exit(0 if result.returncode == 0
+         and result.stdout == f"Retok {sys.argv[2]}\n".encode()
+         and not result.stderr else 1)
+PYVERSION
 fi
-after="$(shasum -a 256 "${artifact}" | awk '{print $1}')"
+after="$(shasum -a 256 < "${artifact}" | awk '{print $1}')"
 [[ "${after}" == "${before}" ]] || die "artifact changed during verification"
 
 python3 -I - "$(basename "${artifact}")" "${after}" "${team_hash}" <<'PY'

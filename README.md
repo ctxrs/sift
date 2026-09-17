@@ -1,14 +1,29 @@
 # Retok
 
-Retok compacts tool output locally, choosing a reversible representation only
-when it uses fewer ordinary `o200k_base` tokens than the original. It is an
-independent project inspired by RTK's tool-output workflow. It is not affiliated
-with RTK and does not claim RTK command parity.
+Retok reduces tool output before an agent reads it. It runs locally, keeps every
+text byte or JSON value, and selects a compact representation only when its full
+framing uses fewer ordinary `o200k_base` tokens. It is an independent project
+inspired by RTK.
 
-Retok preserves repeated text byte for byte. For supported JSON it preserves
-every value, type, numeric lexeme, row, and key association; JSON whitespace may
-change. Other content passes through. No telemetry, model calls, shell execution,
-background services, or automatic agent/settings changes are involved.
+Use native output hooks to keep command execution and permissions with your
+agent, or run any executable through `retok run`. There are no model calls,
+telemetry, background services, or shell-profile changes. Supported JSON keeps
+values, types, numeric lexemes, rows, and key associations; whitespace and object
+key order can change.
+
+```sh
+retok init --replace-rtk     # Back up and migrate recognized RTK integrations
+retok git status           # Or use an explicit command wrapper
+retok gain                 # Local measured output savings
+```
+
+See [agent integrations and migration](INTEGRATIONS.md) for automatic coverage
+and [RTK workflow coverage](COMPATIBILITY.md) for deliberate differences.
+
+The [command benchmark and charts](benchmarks/results/2026-09-17-development-v0.2.0/README.md)
+compare output tokens, retained information and elapsed time. In that synthetic
+development run, Retok took about 100–112 ms on small workloads versus RTK's
+2.7–14.5 ms. Tokenizer startup is a cost; Retok does not claim to be faster.
 
 ## Install
 
@@ -19,16 +34,31 @@ Linux and macOS (x64 or ARM64; requires `curl` and `sha256sum` or `shasum`):
 curl -fsSL https://raw.githubusercontent.com/ctxrs/retok/main/install.sh | sh
 ```
 
+Install and switch recognized RTK integrations in one command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ctxrs/retok/main/install.sh | sh -s -- --replace-rtk
+```
+
+Use `--init` instead to set up detected agents without removing RTK. Existing
+Retok installations can use `retok init --replace-rtk` directly.
+
 Windows x64, in PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/ctxrs/retok/main/install.ps1 | iex
 ```
 
+To install and switch recognized RTK integrations on Windows:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/ctxrs/retok/main/install.ps1))) -ReplaceRtk
+```
+
 Supported release targets are Linux x64 and aarch64, macOS 13 or newer on x64
 and arm64, and Windows x64. Windows ARM64 and 32-bit systems are not supported.
 The Linux assets are statically linked musl executables and do not require
-glibc. Retok v0.1 does not claim compatibility with a specific older Linux
+glibc. Retok does not claim compatibility with a specific older Linux
 kernel.
 
 Both installers download the binary and its `.third-party-notices.txt` sidecar,
@@ -37,8 +67,9 @@ directory before replacing files. Notices are installed beside the binary as
 `retok.third-party-notices.txt` on Unix or `retok.exe.third-party-notices.txt` on
 Windows. The default directory is `~/.local/bin` on Unix and
 `%LOCALAPPDATA%\Programs\Retok` on Windows. Add that directory to your PATH,
-then run `retok --help`. No administrator access is needed; the installers do
-not change PATH, shell profiles, or agent settings.
+then run `retok --help`. No administrator access is needed. Installation alone
+leaves agent settings untouched; `--init` or `--replace-rtk` explicitly runs setup.
+Neither installer edits PATH or shell profiles.
 
 These commands execute the installer from `ctxrs/retok` on GitHub over HTTPS.
 The installers download release files and `SHA256SUMS` from that same repository
@@ -50,15 +81,15 @@ signature and the Windows binary carries a timestamped Authenticode signature.
 The v0.1.0 binaries remain unsigned. The installers do not disable Gatekeeper,
 SmartScreen, or other operating-system protections.
 
-To select v0.1.0 or a different directory, set the environment variables for the
+To select v0.2.0 or a different directory, set the environment variables for the
 installer (either variable can be used on its own):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ctxrs/retok/main/install.sh | RETOK_VERSION=v0.1.0 RETOK_INSTALL_DIR="$HOME/.local/bin" sh
+curl -fsSL https://raw.githubusercontent.com/ctxrs/retok/main/install.sh | RETOK_VERSION=v0.2.0 RETOK_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 ```powershell
-$env:RETOK_VERSION = 'v0.1.0'
+$env:RETOK_VERSION = 'v0.2.0'
 $env:RETOK_INSTALL_DIR = "$env:LOCALAPPDATA\Programs\Retok"
 irm https://raw.githubusercontent.com/ctxrs/retok/main/install.ps1 | iex
 ```
@@ -87,18 +118,83 @@ representation, including its explanatory header, must beat the original token
 count. Ties keep the original. Special-token-looking strings are counted as
 ordinary text, not special tokens.
 
-For shell pipelines, use your shell's native exit-status handling. In Bash:
+## Run commands
 
-```bash
-set -o pipefail
-your-command 2>&1 | ./target/release/retok compact
+```sh
+retok run -- git status --short
+retok cargo test
+retok proxy git diff                 # Explicit raw output
+retok run -- sh -c 'git log | tail -5' # Compact after the entire pipeline
 ```
 
-`pipefail` makes a failed upstream command produce a failed pipeline; it returns
-the rightmost failing command's status. If you need the original command's exact
-status regardless of Retok's status, capture Bash's `PIPESTATUS` array immediately
-after the pipeline and use element zero. Retok itself does not run commands or
-change their effects. A closed downstream pipe is treated as normal completion.
+`run` passes argv directly to the executable, inheriting stdin, environment and
+working directory. It preserves stdout and stderr separately and returns the
+child's exit status. It never retries a command to recover output. Shorthand
+`retok COMMAND ...` has the same behavior; use `run --` for names that collide
+with Retok's own commands.
+
+TTY output passes through. For noninteractive output, Retok buffers up to 8 MiB
+and waits up to 250 ms after the first output while the command is still running.
+When either threshold is reached it streams the original bytes for the rest of
+that command. Short, complete output is compacted; very small results and invalid
+UTF-8 stay raw. Tokenizer work after completion adds processing time. This keeps
+prompts and ongoing progress visible without truncating output.
+
+Use Retok at the end of a programmatic pipeline. `retok git log | tail -5` would
+make `tail` read the compact representation. To retain native pipeline semantics,
+wrap the whole pipeline in an explicit shell as above, or let a supported native
+output hook compact the final agent-visible result. Retok does not automatically
+rewrite shell commands or install permission allow rules.
+
+`retok pipe` and `retok read` are aliases for `compact`, with the same single-file
+arguments. They do not implement RTK's lossy filtering flags.
+
+## Local usage and original output
+
+```sh
+retok gain --daily --graph
+retok gain --json --history
+retok config --create
+retok recall --list
+retok recall ID                      # Original stdout, when saved
+retok recall ID --stderr
+retok discover --json output.txt     # Potential savings; never executes input
+```
+
+Automatic integrations and captured `run` output record local counts, timing,
+status, and a short tool/executable label. They do not record command arguments.
+`gain` reports measured ordinary `o200k_base` tokens; unmeasured streams are
+excluded. These are output-token measurements, not claims about model billing,
+input-cache costs, task success, or total conversation usage. Plain `compact`
+and `discover` do not change the usage history.
+
+Configuration is `config.json` under `RETOK_CONFIG_DIR`, otherwise
+`$XDG_CONFIG_HOME/retok` or `~/.config/retok` on Unix (including macOS), and
+`%APPDATA%\Retok` on Windows. `retok config` prints it; `--create` writes defaults
+without overwriting an existing file:
+
+```json
+{"enabled":true,"record_usage":true,"keep_originals":false,"exclude_commands":[]}
+```
+
+Disable `record_usage` to stop recording. `enabled:false` disables automatic
+compaction and command-wrapper compaction; explicit `compact` still works.
+`exclude_commands` contains exact executable basenames for `run`, or exact tool
+labels such as `Bash` for Claude or `bash` for plugins. No shell command is parsed to infer an
+executable inside a script.
+
+Original output is saved only when `keep_originals:true`, for complete bounded
+captures; it may contain sensitive data. `recall` reads the saved bytes without
+rerunning a command. Streaming or inherited output is never accumulated for
+recall. Original storage is limited to 100 entries, 100 MiB, and 30 days, pruned
+when another original is saved. Metrics rotate at 10 MiB with one backup.
+`gain --reset` clears metrics and leaves saved originals.
+
+State uses `RETOK_STATE_DIR`, otherwise `$XDG_STATE_HOME/retok` or
+`~/.local/state/retok` on Unix, and `%LOCALAPPDATA%\Retok` on Windows. Unix state
+files/directories have private permissions. Local storage failures do not replace
+command output or change a child's exit status. A busy usage lock skips the
+record after a brief bounded wait; usage history is best effort.
 
 ## JSONL integration
 
@@ -244,8 +340,9 @@ truncate input. Raw restoration streams bytes.
 
 Token reduction is an offline metric for this tokenizer. It does not establish
 provider billing savings, fewer model turns, or unchanged agent success rates.
-Retok supplies representations, not an automatic host integration or universal
-agent hook. Adapters must retain original output when compaction fails.
+Automatic adapters are available for the hosts listed in [INTEGRATIONS.md](INTEGRATIONS.md).
+Other hosts use explicit commands or instructions. Adapters retain original output
+when compaction fails.
 
 ```sh
 cargo test --locked
