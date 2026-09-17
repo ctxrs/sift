@@ -108,22 +108,28 @@ approval rule: Retok can execute arbitrary programs. Setup does not grant comman
 change sandbox settings or trust hooks on the user's behalf. In Codex, approve
 the installed hook through the host's native trust flow before expecting it to run.
 
-A frozen development candidate passed native Linux Codex checks for automatic
-compaction and restoration, execution once, forbidden rules, prompt rules under
-approval-never, concurrent-hook denial, Bash/dash exit status and hook trust.
-These results apply to that candidate and host build. Release artifacts,
-setup-generated registration, project-layer trust and broader command-list or
-quoting combinations still need qualification; they do not establish support
-across Codex versions or other hosts.
+The Linux x64 0.3.0 release passed 41 checks against a specific installed Linux
+Codex build reporting version 0.153.1: automatic compaction and restoration,
+execution once, forbidden/prompt rules, concurrent-hook denial, Bash/dash status and stream handling, generated
+user/project setup, and native hook trust. Tests included spaces/apostrophes in
+Retok's path, quoted arguments, continuations and supported command lists. They
+used a synthetic local provider, not real model tasks. This is evidence for that
+host build and supported POSIX forms, not universal policy equivalence or
+qualification of every stock Codex release, macOS, Windows or PowerShell.
 
 Vibe’s tested denylist remains effective, but a previously allowed command may
 now require confirmation for the wrapper. Setup does not add `command *` or
 other broad approval rules.
 
 Hermes uses a completed-result hook instead of command rewriting; its earlier
-pre-execution prototype was discarded after native deny-rule tests. OpenClaw
-uses a pre-execution route undergoing separate policy qualification. Full native session coverage
-remains distinct from source and native-module fixtures. Setup activates
+pre-execution prototype was discarded after native deny-rule tests. OpenClaw’s
+pre-execution route passed 18 final-artifact checks through its pinned
+native dispatcher, policy, approval and final-spawn paths. Those checks used
+synthetic approval transport/storage and bounded child supervision; they are not
+full gateway UI, plugin discovery, durable-storage or model-review qualification.
+An existing exact-command approval can require another prompt, or be denied when
+asking is disabled. Setup does not add grants to hide that difference. Full native
+sessions remain distinct from source and native-module fixtures. Setup activates
 only the Retok plugin and preserves explicit disables/denies. OpenClaw with an
 existing restrictive plugin allowlist may require explicit `--agent openclaw` to
 add that one plugin; this is separate from command approval. See the

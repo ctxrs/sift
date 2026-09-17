@@ -2,7 +2,7 @@
 
 Retok is an independent tool-output compressor. Generic execution covers many
 of the same programs as RTK, but does not reproduce RTK's command-specific
-parsers, summaries or flags. This page describes the 0.3.0 development source; it
+parsers, summaries or flags. This page describes Retok 0.3.0; it
 does not claim complete parity with every RTK command variant.
 
 | Workflow | Retok's current choice |
@@ -21,7 +21,7 @@ does not claim complete parity with every RTK command variant.
 | Opportunity discovery | `discover FILE...` measures selected saved output. `discover --history PATH --suggest` inspects supported saved Claude/Codex histories and reports observed correction patterns without executing commands or writing rules. |
 | Observed usage/cost import | `ccusage --import FILE` reports a selected local export separately from Retok's measured gain. Costs retain their source qualification; no projected savings or package fetching. |
 | Setup diagnostics | `doctor` checks configured registration, executable availability and Retok settings. It does not prove the host loaded or trusted an adapter. |
-| Distribution | Release binaries and curl/PowerShell installers, plus source builds. Signed/notarized macOS and Authenticode Windows releases, static Linux binaries. |
+| Distribution | Release binaries and curl/PowerShell installers, plus source builds and a source Homebrew formula. Signed/notarized macOS and Authenticode Windows releases, static Linux binaries. |
 
 ## Migrating command lines
 
@@ -77,9 +77,12 @@ Package-runner behavior remains the responsibility of the runner you select.
   available so you can read them with RTK.
 
 Windows executable lookup includes `.exe`, `.com`, `.cmd` and `.bat` through
-PATH/PATHEXT; PowerShell scripts need an explicit interpreter. The new batch-shim
-and terminal-capture paths still require native Windows qualification. Current
-source/fixture coverage must not be read as a release-wide platform pass.
+PATH/PATHEXT; PowerShell scripts need an explicit interpreter. The exact Windows
+x64 release passed native batch-shim, argv/stream/status,
+finite-capture and console-input/output checks. The runner suite also covered
+Ctrl+Break, descendant cleanup and detached background children. These are scoped
+Windows GNU binary checks, not MSVC runtime or arbitrary terminal job-control
+qualification.
 
 Do not alias `rtk` to `retok`. Keep existing integrations until their replacement
 scope and host activation are confirmed.

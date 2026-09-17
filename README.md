@@ -24,14 +24,13 @@ retok gain                 # Local measured output savings
 See [agent integrations and migration](INTEGRATIONS.md) for automatic coverage
 and [RTK workflow coverage](COMPATIBILITY.md) for deliberate differences.
 
-The [command benchmark and charts](benchmarks/results/2026-09-17-development-v0.2.0/README.md)
-compare output tokens, retained information and elapsed time for the earlier
-candidate. A separate synthetic development comparison of the new exact tokenizer
-measured about 39–42 ms per fresh Retok process, versus 116–152 ms for the previous
-Retok release on the same inputs. The prepared tokenizer increases that Linux
-executable from about 7.4 MB to 35.8 MB. These are development measurements, not
-final release timings or evidence that Retok is faster than RTK; the earlier
-comparison is unchanged.
+The [release benchmark and charts](benchmarks/results/2026-09-17-release-v0.3.0/README.md)
+compare output tokens, retained information and elapsed time. On seven small
+synthetic command workloads, the final Linux x64 binary took 41–51 ms versus
+RTK's 2.5–13.4 ms. Retok preserves the requested execution and reversible output;
+it does not claim a speed win over RTK. The prepared tokenizer reduces earlier
+Retok startup work but increases executable size: the Linux x64 release is
+about 37.3 MB. A persistent JSONL process avoids repeated tokenizer initialization.
 
 ## Install
 
@@ -89,15 +88,15 @@ signature and the Windows binary carries a timestamped Authenticode signature.
 The v0.1.0 binaries remain unsigned. The installers do not disable Gatekeeper,
 SmartScreen, or other operating-system protections.
 
-To pin an existing release (v0.2.0 shown) or choose a different directory, set
+To pin an existing release (v0.3.0 shown) or choose a different directory, set
 the installer environment variables (either variable can be used on its own):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ctxrs/retok/main/install.sh | RETOK_VERSION=v0.2.0 RETOK_INSTALL_DIR="$HOME/.local/bin" sh
+curl -fsSL https://raw.githubusercontent.com/ctxrs/retok/main/install.sh | RETOK_VERSION=v0.3.0 RETOK_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 ```powershell
-$env:RETOK_VERSION = 'v0.2.0'
+$env:RETOK_VERSION = 'v0.3.0'
 $env:RETOK_INSTALL_DIR = "$env:LOCALAPPDATA\Programs\Retok"
 irm https://raw.githubusercontent.com/ctxrs/retok/main/install.ps1 | iex
 ```
@@ -107,12 +106,20 @@ Installer checks use synthetic releases and make no network requests:
 `powershell -NoProfile -File tests/install.Tests.ps1` on Windows
 (`pwsh` also works).
 
+For Homebrew, add this repository as an explicit tap and build from the pinned
+release source (requires a Rust build toolchain):
+
+```sh
+brew tap ctxrs/retok https://github.com/ctxrs/retok
+brew install ctxrs/retok/retok
+```
+
 ## Build and use
 
 Requires Rust 1.88 or newer. Cargo downloads dependencies at build time. The
 prepared tokenizer data is embedded in the binary; runtime needs no vocabulary
 download. This reduces initialization work at the cost of a larger executable.
-This README describes the 0.3.0 development source, not a released 0.3.0 artifact.
+This README describes Retok 0.3.0.
 Check your installed version's `retok --help` and subcommand help for available
 features.
 
