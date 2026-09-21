@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFile, writeFile, mkdtemp, rm, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = new URL("../", import.meta.url);
 const runtime = await readFile(new URL("integrations/runtime.js", root), "utf8");
@@ -12,7 +13,21 @@ const unix = {skip:process.platform === "win32"};
 const event = (command, text = "original output") => ({toolName:"bash", input:{command},
   isError:true, details:{truncation:{truncated:true},opaque:7}, content:[{type:"text",text,custom:9}]});
 
-async function fixture(mode, body) {
+function commonJs(source) {
+  for (const [from, to] of [
+    ['import { execFile } from "node:child_process";', 'const { execFile } = require("node:child_process");'],
+    ['import { spawn } from "node:child_process";', 'const { spawn } = require("node:child_process");'],
+    ['import { statSync } from "node:fs";', 'const { statSync } = require("node:fs");'],
+    ['import { StringDecoder } from "node:string_decoder";', 'const { StringDecoder } = require("node:string_decoder");'],
+    ['export default function retok(pi) {', 'module.exports = function retok(pi) {'],
+  ]) {
+    assert.equal(source.split(from).length - 1, 1);
+    source = source.replace(from, to);
+  }
+  return source;
+}
+
+async function fixture(mode, body, moduleType = "module") {
   const dir = await mkdtemp(join(tmpdir(), "retok-pi-adapter-"));
   const executable = join(dir, "retok-test"), log = join(dir, "calls.jsonl");
   const handlers = {};
@@ -45,7 +60,14 @@ lines.on("line", line => {
     await chmod(executable, 0o700);
     const source = runtime.replace("__RETOK_EXECUTABLE__", JSON.stringify(executable))
       .replace("__RETOK_SOURCE__", '"pi"') + adapter;
-    const plugin = (await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`)).default;
+    let plugin;
+    if (moduleType === "commonjs") {
+      const installed = join(dir, "index.cjs");
+      await writeFile(installed, commonJs(source));
+      plugin = (await import(pathToFileURL(installed))).default;
+    } else {
+      plugin = (await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`)).default;
+    }
     plugin({on:(name, handler) => {handlers[name] = handler;}});
     await body(handlers, calls);
   } finally {
@@ -62,6 +84,14 @@ lines.on("line", line => {
     assert.deepEqual(survivors, [], "all synthetic children must close after shutdown");
   }
 }
+
+test("installed CommonJS bundle runs the session transport", unix, async () => {
+  await fixture("normal", async (handlers, calls) => {
+    const patch = await handlers.tool_result(event("cargo test"));
+    assert.equal(patch.content[0].text, "compact 🦀");
+    assert.equal((await calls()).filter(row => row.kind === "request").length, 1);
+  }, "commonjs");
+});
 
 test("command metadata travels in each envelope while event metadata stays opaque", unix, async () => {
   await fixture("normal", async (handlers, calls) => {

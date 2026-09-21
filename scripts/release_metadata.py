@@ -101,7 +101,7 @@ COUNT_PROPERTIES = {
 COUNT_SOURCES = {
     "build.rs": ("retok-build-script-sha256", "7eec11c0d2ba70a0aabc9498be1c59691e8995687a16b2f9ec9d45b346e22a03"),
     "src/tokenizer_data.rs": ("count-schema-sha256", "b54a83728b6afaef8a22eda9beee05d238897dd9ec0ae008e2936d7954a65d2a"),
-    "src/tokenizer.rs": ("tokenizer-source-sha256", "82df1bd7bb14e5800124c66070f8a14d60021ca69c2776d290070616fdb02747"),
+    "src/tokenizer.rs": ("tokenizer-source-sha256", "dc6df526da241ae4367b2c4d7b8d6a2f94df2cb7e962ef6b6e11c972b62e5dfa"),
     "THIRD_PARTY_TOKENIZER.md": ("adapted-notice-sha256", "9909f523206045d9fa3ac2e51af5494a99c15fd8fbd315a61cc7c8694a366278"),
 }
 COUNT_BLOBS = {

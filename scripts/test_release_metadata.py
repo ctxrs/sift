@@ -77,6 +77,12 @@ class MetadataTests(unittest.TestCase):
         self.graph_mock = self.enterContext(patch("release_metadata.cargo_graph", return_value=self.cargo))
         self.write_lock()
 
+    def test_reviewed_count_source_pins_match_repository(self):
+        project = Path(__file__).resolve().parents[1]
+        for path, (_, expected) in metadata.COUNT_SOURCES.items():
+            with self.subTest(path=path):
+                self.assertEqual(metadata.sha256(project / path), expected)
+
     @staticmethod
     def node(name, deps):
         return {"id": name, "deps": [{"pkg": dep, "dep_kinds": [{"kind": kind, "target": None}]}
