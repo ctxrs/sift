@@ -2,12 +2,12 @@
 
 Retok is an independent tool-output compressor. Generic execution covers many
 of the same programs as RTK, but does not reproduce RTK's command-specific
-parsers, summaries or flags. This page describes Retok 0.3.0; it
+parsers, summaries or flags. This page describes the current source; it
 does not claim complete parity with every RTK command variant.
 
 | Workflow | Retok's current choice |
 | --- | --- |
-| Git, GitHub, builds, tests, linters, package managers, containers, cloud CLIs and search | `retok COMMAND ARG...` or `retok run -- COMMAND ARG...` forwards native argv. Default compaction preserves text bytes or supported JSON values. There is no per-tool semantic summary registry. |
+| Git, GitHub, builds, tests, linters, package managers, containers, cloud CLIs and search | `retok COMMAND ARG...` or `retok run -- COMMAND ARG...` forwards native argv. Generic compaction preserves text bytes or supported JSON values. Ordinary Git status and Cargo tests also have concise presentations, described below. |
 | Long finite commands / terminal invocation | `retok run --capture -- COMMAND ...` waits for complete output within a combined 8 MiB bound, including terminal invocation. Progress is delayed; overflow switches to raw output. Default execution keeps interactive/progress passthrough. |
 | Automatic integration | Completion adapters replace eligible final text; pre-execution adapters rewrite supported literal POSIX commands. Unsupported syntax stays unchanged. Gemini/VS Code rewrites are withheld for demonstrated approval-rule regressions; Cursor/Droid await qualification. Host qualification and scopes are listed in [INTEGRATIONS.md](INTEGRATIONS.md). |
 | Migrate RTK setup | `retok init --replace-rtk --dry-run`, then `retok init --replace-rtk`. Stock recognition, exact backups and preservation of unrelated settings; unsupported automatic migrations keep RTK active. |
@@ -47,8 +47,12 @@ Package-runner behavior remains the responsibility of the runner you select.
 
 ## Retained differences and limits
 
-- **Default preservation and explicit selection.** Automatic compaction keeps all
-  supplied text bytes or supported JSON values. Opt-in views can omit content;
+- **Preservation and command presentations.** Generic compaction keeps all
+  supplied text bytes or supported JSON values. Ordinary Git status keeps all
+  displayed paths and states with shorter formatting. Validated Cargo test
+  output can omit passing test rows, with an omission count; failures, ignored
+  tests and diagnostics remain. These command presentations must beat the
+  reversible candidate by complete token count. Opt-in views can omit content;
   their output is not reversible compaction. Diagnostic/test views are heuristics,
   not replacements for RTK's framework parsers, parsed failure totals, cloud
   summaries or source-code views. Savings and convenience vary by workload.

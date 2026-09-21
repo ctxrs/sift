@@ -31,6 +31,7 @@ fn record_observation(observation: runner::Observation<'_>) {
         serde_json::json!({
             "original": stream.original,
             "compacted": stream.compacted,
+            "presented_tokens": stream.presented_tokens,
             "read_bytes": stream.read_bytes,
             "emitted_bytes": stream.emitted_bytes,
         })

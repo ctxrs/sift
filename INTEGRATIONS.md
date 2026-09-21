@@ -50,6 +50,58 @@ or cover every background/interactive path. The JSON hook accepts up to 16 MiB
 of input and selects at most 8 MiB of text; JavaScript completion plugins bound
 selected text to 8 MiB and allow three seconds for compaction.
 
+Pi-only setup installs `extensions/retok/index.js` with a local CommonJS
+`package.json`, including when the surrounding project uses ES modules. It
+replaces an exactly owned `retok.ts` and removes that old entry so only one
+adapter loads. Edited or unowned entries are preserved. The adapter uses a
+session-owned compressor for Bash results; it exits on session shutdown or
+after 30 seconds idle. Recognized literal `retok proxy` and
+`retok run --raw` commands keep their delivered text unchanged and produce no Pi
+compaction usage/original record.
+This uses the completion hooks' existing POSIX subset: opaque compound or
+backslash commands may not expose raw intent and still receive generic lossless
+compaction. The Pi-session adapter explicitly enables delivered-text views for
+recognized Git/Cargo commands and literal `node`/`node.exe` invocations of
+`node_modules/tape/bin/tape` with nonoption file operands (optional `--`). Cargo may replace passing-status rows in complete
+validated libtest blocks with an omitted-line count while retaining all other
+delivered bytes, including failures, nonzero-exit and truncation notices. The
+field is merged host-delivered text, not proof of complete stdout or successful
+execution. A perfectly matching unmarked printed test transcript cannot be
+distinguished from genuine harness output. Git uses the existing long-status
+presentation only for whole fields ending in LF; every path/status is retained.
+Tape recognizes a strict flat TAP13 prefix beginning at byte zero. It may omit
+ordinary passing names and row spelling, labeling the count and exact test-number
+range. Failures, SKIP/TODO names and reasons, comments, diagnostic owners, plans
+and footers remain. A validated terminal Tape footer permits later host notices
+or partial tails to remain byte-exact; it does not establish command success.
+Incomplete/ambiguous structures and default directive/footer combinations stay
+generic. Arbitrary JavaScript, `node --test`, npm wrappers and Tape options are
+outside this view. The complete-stream path still requires complete LF framing.
+Views must beat generic compaction by exact whole-field token count. Session
+responses include `semantic:true` only when a view is selected: `encoding` then
+restores that selected presentation, not omitted passing names or original Git
+layout. Generic `json-v1` and sessions without the opt-in remain lossless.
+Contextual callbacks that cannot use the session (busy, old binary, or transport failure)
+return original text rather than retrying without the command. Missing command
+metadata retains the prior generic behavior, including the one-shot busy fallback.
+PowerShell and Oh My Pi remain one-shot. When setup selects both hosts at the same
+physical plugin file, or a managed template proves prior setup for the other
+host, setup uses the shared one-shot `retok.ts` and removes the native Pi bundle
+entries. This also applies when OMP setup later finds a native Pi bundle at the
+shared root. Uninstalling a shared file affects both.
+An old unlabelled plugin at an aliased Pi/OMP target cannot prove its owner:
+Pi-only setup leaves it unchanged and explains the manual upgrade. Run setup
+when sharing a Pi directory with OMP; another host silently loading that file
+cannot be identified at runtime. Restart an already running host after setup. Pi `/reload` alone does not refresh
+a native CommonJS module after an adapter upgrade or executable relocation;
+restart the Pi process to load the new module.
+
+For successful Claude Bash calls with a literal command and explicit completion
+metadata, the hook also considers the same Git-status and Cargo-test
+presentations as `retok run`. They must beat generic compaction by exact token
+count. The command, permissions, exit metadata and other response fields remain
+unchanged. Shell expressions and other completion hosts keep generic compaction.
+
 Completion adapters remain available on Windows. The POSIX restriction below
 applies to pre-execution rewriting, not to every Retok integration.
 

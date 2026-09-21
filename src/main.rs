@@ -6,6 +6,7 @@ use anyhow::{Context, Result, bail, ensure};
 use retok::{CompactResult, Compactor, Encoding};
 use serde::{Deserialize, Serialize};
 
+mod command_view;
 mod discover;
 mod filter;
 mod hooks;
@@ -17,7 +18,7 @@ mod state;
 mod usage;
 mod views;
 
-const HELP: &str = "Retok — lossless, token-counted tool output compaction
+const HELP: &str = "Retok — token-counted tool output compaction
 
 Usage:
   retok init [--agent HOST] [--replace-rtk] [--project] [--dry-run]
@@ -42,13 +43,16 @@ Usage:
   retok compact --protocol=json-v1
   retok restore --encoding ENCODING [FILE|-]
 
-Encodings: raw, json-v1, json-rows-v1, text-runs-v1, text-prefixes-v1, text-refs-v1
+Encodings: raw, json-v1, json-rows-v1, json-min-v1, json-columns-v1,
+           text-runs-v1, text-prefixes-v1, text-refs-v1, text-lines-v1,
+           text-symbols-v1
 
 Read stdin when FILE is omitted or '-'. Use '--' before a filename starting '-'.
 Plain compact writes only the selected representation, without adding a newline.
 JSONL protocol returns encoding and exact ordinary o200k_base token counts.
 Restore requires an explicit encoding; raw mode also preserves non-UTF-8 bytes.
 Run executes argv directly, preserving stdin, streams and exit status.
+Run may abbreviate ordinary Git status and passing Cargo test rows; --raw preserves output.
 Interactive and long-running output passes through; proxy always passes through.
 ";
 
@@ -63,6 +67,26 @@ struct Request {
     complete: bool,
     #[serde(default)]
     tokenizer: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionRequest {
+    id: u64,
+    request: Request,
+    #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
+    delivered_view: bool,
+}
+
+#[derive(Serialize)]
+struct SessionResponse {
+    id: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    semantic: Option<bool>,
+    #[serde(flatten)]
+    response: Response,
 }
 
 fn default_complete() -> bool {
@@ -81,25 +105,80 @@ fn protocol(
     mut output: impl Write,
     source: Option<&str>,
     tool: Option<&str>,
+    session: bool,
 ) -> Result<bool> {
     let compactor = Compactor::new().context("cannot initialize tokenizer")?;
-    let settings = source.map(|_| state::Settings::load()).transpose()?;
+    let settings = source
+        .filter(|_| !session)
+        .map(|_| state::Settings::load())
+        .transpose()?;
+    if session {
+        output.write_all(b"{\"version\":1,\"session\":1}\n")?;
+        output.flush()?;
+    }
     let mut input = input;
     let mut line = Vec::new();
     let mut failed = false;
+    let mut last_id = 0;
     loop {
         line.clear();
-        if input.read_until(b'\n', &mut line)? == 0 {
+        let read = if session {
+            // JSON escaping can expand an 8 MiB text by six; bound framing too.
+            let read = input
+                .by_ref()
+                .take(48 * 1024 * 1024 + 1025)
+                .read_until(b'\n', &mut line)?;
+            ensure!(
+                line.len() <= 48 * 1024 * 1024 + 1024,
+                "session request too large"
+            );
+            read
+        } else {
+            input.read_until(b'\n', &mut line)?
+        };
+        if read == 0 {
             break;
         }
+        let mut id = None;
+        let mut semantic = false;
         let result = (|| -> Result<(Response, Option<(state::Event, String)>)> {
-            let request: Request = serde_json::from_slice(&line).map_err(|error| {
+            let invalid = |error: serde_json::Error| {
                 anyhow::anyhow!(
                     "invalid JSON request at line {}, column {}",
                     error.line(),
                     error.column()
                 )
-            })?;
+            };
+            let mut raw = false;
+            let mut semantic_argv = None;
+            let request: Request = if session {
+                let envelope: SessionRequest = serde_json::from_slice(&line).map_err(invalid)?;
+                ensure!(
+                    envelope.id > last_id && envelope.id <= 9_007_199_254_740_991,
+                    "session ID must increase within the safe integer range"
+                );
+                last_id = envelope.id;
+                id = Some(envelope.id);
+                ensure!(
+                    envelope.request.text.len() + envelope.command.as_ref().map_or(0, String::len)
+                        <= 8 * 1024 * 1024,
+                    "session command and text too large"
+                );
+                let argv = envelope.command.as_deref().and_then(hooks::literal_argv);
+                raw = argv.as_deref().is_some_and(hooks::explicit_raw);
+                if envelope.delivered_view {
+                    semantic_argv = argv;
+                }
+                envelope.request
+            } else {
+                serde_json::from_slice(&line).map_err(invalid)?
+            };
+            let fresh_settings = if session {
+                source.map(|_| state::Settings::load()).transpose()?
+            } else {
+                None
+            };
+            let settings = if session { &fresh_settings } else { &settings };
             ensure!(
                 request.version == 1,
                 "unsupported protocol version; expected 1"
@@ -111,15 +190,30 @@ fn protocol(
                     .is_none_or(|name| name == "o200k_base"),
                 "unsupported tokenizer; expected o200k_base"
             );
-            // Error/incomplete payloads get the same lossless selection. These
-            // flags describe the source, never permission to drop information.
+            // Error/completion flags never authorize omissions or establish an
+            // exit status. Only the explicit Pi session contract permits a view.
             let _ = (request.is_error, request.complete);
             let started = std::time::Instant::now();
-            let result = if settings
-                .as_ref()
-                .is_none_or(|s| s.enabled && tool.is_none_or(|name| !s.excludes(name)))
+            let result = if !raw
+                && settings
+                    .as_ref()
+                    .is_none_or(|s| s.enabled && tool.is_none_or(|name| !s.excludes(name)))
             {
-                compactor.compact(&request.text)
+                let mut original = compactor.compact(&request.text);
+                if let Some(proposal) = semantic_argv
+                    .as_deref()
+                    .and_then(|argv| command_view::delivered_candidate(argv, &request.text))
+                {
+                    let selected = compactor.compact(&proposal);
+                    if selected.output_tokens < original.output_tokens {
+                        original = CompactResult {
+                            input_tokens: original.input_tokens,
+                            ..selected
+                        };
+                        semantic = true;
+                    }
+                }
+                original
             } else {
                 let tokens = compactor.count_tokens(&request.text);
                 CompactResult {
@@ -129,7 +223,7 @@ fn protocol(
                     output_tokens: tokens,
                 }
             };
-            let record = source.map(|source| {
+            let record = source.filter(|_| !raw).map(|source| {
                 let event = state::Event {
                     unix_millis: state::unix_millis(),
                     command: tool.unwrap_or("tool-output").into(),
@@ -148,7 +242,18 @@ fn protocol(
         })();
         let record = match result {
             Ok((response, record)) => {
-                serde_json::to_writer(&mut output, &response)?;
+                if let Some(id) = id {
+                    serde_json::to_writer(
+                        &mut output,
+                        &SessionResponse {
+                            id,
+                            semantic: semantic.then_some(true),
+                            response,
+                        },
+                    )?;
+                } else {
+                    serde_json::to_writer(&mut output, &response)?;
+                }
                 record
             }
             Err(error) => {
@@ -167,6 +272,17 @@ fn protocol(
             // cannot replace output or turn successful delivery into failure.
             let _ = state::record(event, Some((original.as_bytes(), &[])));
         }
+        if session {
+            // Completion acknowledges the recording attempt, never storage or
+            // provider delivery. Errors retire the session before another request.
+            ensure!(!failed, "session request failed");
+            serde_json::to_writer(
+                &mut output,
+                &serde_json::json!({"version":1,"id":id,"done":true}),
+            )?;
+            output.write_all(b"\n")?;
+            output.flush()?;
+        }
     }
     Ok(failed)
 }
@@ -176,9 +292,13 @@ fn parse_encoding(value: &str) -> Result<Encoding> {
         "raw" => Ok(Encoding::Raw),
         "json-v1" => Ok(Encoding::JsonV1),
         "json-rows-v1" => Ok(Encoding::JsonRowsV1),
+        "json-min-v1" => Ok(Encoding::JsonMinV1),
+        "json-columns-v1" => Ok(Encoding::JsonColumnsV1),
         "text-runs-v1" => Ok(Encoding::TextRunsV1),
         "text-prefixes-v1" => Ok(Encoding::TextPrefixesV1),
         "text-refs-v1" => Ok(Encoding::TextRefsV1),
+        "text-lines-v1" => Ok(Encoding::TextLinesV1),
+        "text-symbols-v1" => Ok(Encoding::TextSymbolsV1),
         _ => bail!("unsupported encoding; use 'retok --help' for supported encodings"),
     }
 }
@@ -220,13 +340,35 @@ fn execute(args: &[OsString], raw: bool, capture: bool, view: Option<&views::Vie
     } else {
         "external".into()
     };
-    runner::run_transformed(
+    let mut semantic_compactor = None;
+    runner::run_presented(
         args,
         runner::Options {
             raw: raw || !settings.enabled || excluded,
             capture,
         },
-        |bytes, _| view.and_then(|view| views::render(view, bytes).ok()),
+        |bytes, stderr| {
+            if let Some(view) = view {
+                return views::render(view, bytes)
+                    .ok()
+                    .map(runner::Presentation::Bytes);
+            }
+            let text = std::str::from_utf8(bytes).ok()?;
+            let proposal = command_view::candidate(args, text, stderr)?;
+            let compactor = semantic_compactor
+                .get_or_insert_with(Compactor::new)
+                .as_ref()
+                .ok()?;
+            let original = compactor.compact(text);
+            let selected = compactor.compact(&proposal);
+            if selected.output_tokens >= original.output_tokens {
+                return Some(runner::Presentation::Compacted(original));
+            }
+            Some(runner::Presentation::Semantic {
+                bytes: selected.text.into_bytes(),
+                tokens: (original.input_tokens, selected.output_tokens),
+            })
+        },
         |observation| {
             let (
                 Some(stdout_bytes),
@@ -242,11 +384,29 @@ fn execute(args: &[OsString], raw: bool, capture: bool, view: Option<&views::Vie
             else {
                 return;
             };
+            let semantic = observation.stdout.presented_tokens.is_some()
+                || observation.stderr.presented_tokens.is_some();
             let counts = |stream: &runner::StreamObservation<'_>| {
                 stream
-                    .compacted
-                    .map(|r| (r.input_tokens as u64, r.output_tokens as u64))
+                    .presented_tokens
+                    .map(|(input, output)| (input as u64, output as u64))
+                    .or_else(|| {
+                        stream
+                            .compacted
+                            .map(|r| (r.input_tokens as u64, r.output_tokens as u64))
+                    })
                     .or_else(|| (stream.read_bytes == Some(0)).then_some((0, 0)))
+                    .or_else(|| {
+                        // A semantic proposal already initialized the shared
+                        // tokenizer. Count the other complete raw stream too,
+                        // without charging startup to ordinary tiny passthrough.
+                        if !semantic || view.is_some() {
+                            return None;
+                        }
+                        let text = std::str::from_utf8(stream.original?).ok()?;
+                        let tokens = Compactor::new().ok()?.count_tokens(text) as u64;
+                        Some((tokens, tokens))
+                    })
             };
             let tokens = counts(&observation.stdout)
                 .zip(counts(&observation.stderr))
@@ -260,7 +420,16 @@ fn execute(args: &[OsString], raw: bool, capture: bool, view: Option<&views::Vie
                 output_bytes: stdout_emitted + stderr_emitted,
                 duration_ms: observation.duration.as_millis().min(u64::MAX as u128) as u64,
                 exit_code: Some(observation.status),
-                source: Some(if view.is_some() { "view" } else { "run" }.into()),
+                source: Some(
+                    if view.is_some() {
+                        "view"
+                    } else if semantic {
+                        "run-view"
+                    } else {
+                        "run"
+                    }
+                    .into(),
+                ),
                 original_id: None,
             };
             let originals = observation.stdout.original.zip(observation.stderr.original);
@@ -411,6 +580,7 @@ fn run() -> Result<i32> {
     let mut file: Option<OsString> = None;
     let mut encoding = None;
     let mut jsonl = false;
+    let mut session = false;
     let mut record_source = None;
     let mut record_tool = None;
     let mut positional = false;
@@ -456,9 +626,10 @@ fn run() -> Result<i32> {
             );
             let option = option_value(value.unwrap(), &mut args)?;
             ensure!(
-                option == "json-v1",
-                "unsupported protocol; expected json-v1"
+                option == "json-v1" || option == "session-v1",
+                "unsupported protocol; expected json-v1 or session-v1"
             );
+            session = option == "session-v1";
             jsonl = true;
         } else if !positional
             && value.is_some_and(|v| v == "--encoding" || v.starts_with("--encoding="))
@@ -485,11 +656,18 @@ fn run() -> Result<i32> {
     );
     if jsonl {
         ensure!(file.is_none(), "JSONL protocol reads stdin; omit FILE");
+        ensure!(
+            !session
+                || (record_source.as_deref() == Some("pi")
+                    && record_tool.as_deref() == Some("bash")),
+            "session-v1 requires Pi Bash recording context"
+        );
         return protocol(
             io::stdin().lock(),
             output,
             record_source.as_deref(),
             record_tool.as_deref(),
+            session,
         )
         .map(i32::from);
     }

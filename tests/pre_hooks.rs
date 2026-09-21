@@ -1,4 +1,7 @@
 #[allow(dead_code)]
+#[path = "../src/command_view.rs"]
+mod command_view;
+#[allow(dead_code)]
 #[path = "../src/hooks.rs"]
 mod hooks;
 #[allow(dead_code)]

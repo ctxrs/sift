@@ -12,7 +12,10 @@ readme = "README.md"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order", "raw_value"] }
-bpe-openai = "=0.3.1"
+regex-automata = "=0.4.18"
+# Keep the runtime archive format identical to the build generator. Conflicting
+# downstream format features must fail compilation, never silently change it.
+rkyv = { version = "=0.8.18", features = ["little_endian", "aligned", "pointer_width_32"] }
 toml_edit = "=0.23.7"
 serde_yaml_ng = "=0.10.0"
 yaml-edit = { version = "=0.3.1", default-features = false }
@@ -21,6 +24,7 @@ fs2 = "0.4"
 sha2 = "0.10"
 
 [dev-dependencies]
+bpe-openai = "=0.3.1"
 tiktoken-rs = "0.12"
 
 [target.'cfg(unix)'.dependencies]
@@ -32,3 +36,12 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 
 [profile.release]
 strip = "symbols"
+
+[build-dependencies]
+bpe-openai = "=0.3.1"
+bpe = "=0.2.2"
+aneubeck-daachorse = "=1.1.1"
+rmp-serde = "=1.3.1"
+serde = { version = "1", features = ["derive"] }
+regex-automata = "=0.4.18"
+rkyv = { version = "=0.8.18", features = ["little_endian", "aligned", "pointer_width_32"] }

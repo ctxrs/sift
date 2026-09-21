@@ -325,6 +325,18 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "empty notices"):
             release.stage(self.source, self.output, self.evidence)
 
+    def test_development_tokenizer_profile_cannot_be_staged(self):
+        path = self.source / (BINARIES[0] + ".cdx.json")
+        document = json.loads(path.read_text(encoding="utf-8"))
+        vocabulary = next(c for c in document["components"] if c["type"] == "data")
+        vocabulary.setdefault("properties", []).append(
+            {"name": "retok:profile-status", "value": "development"}
+        )
+        path.write_text(json.dumps(document), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "development tokenizer profile"):
+            release.stage(self.source, self.output, self.evidence)
+        self.assertFalse(self.output.exists())
+
     @unittest.skipIf(os.name == "nt", "POSIX execute permissions")
     def test_native_execution_cannot_be_skipped_by_removing_permissions(self):
         release.stage(self.source, self.output, self.evidence)

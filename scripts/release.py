@@ -175,7 +175,7 @@ def checksums(directory):
     return "".join(lines).encode("ascii")
 
 
-def validate(directory, with_checksums, project=None):
+def validate(directory, with_checksums, project=None, require_release_profile=False):
     inventory(directory, with_checksums)
     if with_checksums:
         require((directory / "SHA256SUMS").read_bytes() == checksums(directory),
@@ -187,6 +187,11 @@ def validate(directory, with_checksums, project=None):
     for name, (system, arch) in TARGETS.items():
         binary_header(directory / name, system, arch)
         document = metadata(directory, name)
+        if require_release_profile:
+            vocabulary = next(c for c in document["components"] if c["type"] == "data")
+            profile = release_metadata.property_map(vocabulary).get("retok:profile-status")
+            require(profile in (None, "release"),
+                    f"{name}: development tokenizer profile cannot be released")
         if project is not None:
             release_metadata.validate_project(document, project)
     for name, target in TARGETS.items():
@@ -219,7 +224,7 @@ def stage(source, destination, signing_evidence):
         for name in ASSETS:
             shutil.copyfile(source / name, staged / name)
             (staged / name).chmod(0o755 if name in TARGETS else 0o644)
-        validate(staged, with_checksums=False)
+        validate(staged, with_checksums=False, require_release_profile=True)
         release_signing.verify_release_evidence(staged, signing_evidence)
         (staged / "SHA256SUMS").write_bytes(checksums(staged))
         (staged / "SHA256SUMS").chmod(0o644)
@@ -266,7 +271,8 @@ def main():
             outputs[0].write_bytes((json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8"))
             outputs[1].write_bytes(notices.encode("utf-8"))
         else:
-            validate(args.directory, with_checksums=True, project=args.project)
+            validate(args.directory, with_checksums=True, project=args.project,
+                     require_release_profile=True)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
         parser.exit(1, f"release: {error}\n")
     print("Metadata generated." if args.command == "metadata" else "Release assets verified.")
