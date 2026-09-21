@@ -545,6 +545,7 @@ when compaction fails.
 cargo test --locked
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
+node tests/pi_session.mjs
 ```
 
 The code is MIT licensed; dependencies retain their own licenses.
