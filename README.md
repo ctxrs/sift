@@ -29,13 +29,13 @@ sift gain                 # Local measured output savings
 See [agent integrations and migration](INTEGRATIONS.md) for automatic coverage
 and [RTK workflow coverage](COMPATIBILITY.md) for deliberate differences.
 
-The [release benchmark and charts](benchmarks/results/2026-09-17-release-v0.3.0/README.md)
-compare output tokens, retained information and elapsed time. On seven small
-synthetic command workloads, the final Linux x64 binary took 41–51 ms versus
-RTK's 2.5–13.4 ms. That release's Linux x64 executable is about 37.3 MB.
-These measurements apply to v0.3.0, which predates the current count-table
-tokenizer and additional output formats; they do not measure the current source.
-A persistent JSONL process also avoids repeated process startup.
+The [release benchmark and charts](benchmarks/results/2026-09-21-release-v0.4.0/README.md)
+compare output tokens, retained information and elapsed time. The final Linux
+x64 binary was faster than RTK 0.49 on all ten synthetic rows and stayed within
+1.35 ms of native execution. Across the seven non-control workloads, Sift took
+2.3–12.8 ms versus RTK's 3.5–16.2 ms. Sift used 1,518 tokens versus 2,662 raw
+tokens, a 43% reduction; RTK was smaller on five narrow fixtures and tied on two.
+These small fixtures do not establish an aggregate winner or model-task outcome.
 
 ## Install
 

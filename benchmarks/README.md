@@ -5,10 +5,12 @@ RTK 0.49.0 subcommands. It needs Python 3.9+, Git, and ordinary POSIX command-li
 tools. It uses only Python's standard library, installs nothing, and builds no
 binaries. Use a fixed, release-mode Sift candidate after runner changes settle.
 
-The [2026-09-17 release v0.3.0 results](results/2026-09-17-release-v0.3.0/README.md)
+The [2026-09-21 release v0.4.0 results](results/2026-09-21-release-v0.4.0/README.md)
 include sanitized samples, token and elapsed charts, and execution differences
-for the final Linux x64 release. The [earlier v0.2.0 development run](results/2026-09-17-development-v0.2.0/README.md)
-is retained unchanged. Neither run establishes an aggregate win over RTK.
+for the final Linux x64 release. The [v0.3.0 release run](results/2026-09-17-release-v0.3.0/README.md)
+and [earlier v0.2.0 development run](results/2026-09-17-development-v0.2.0/README.md)
+are retained unchanged. These separate runs do not establish controlled
+before/after ratios or an aggregate win over RTK.
 
 ```sh
 python3 benchmarks/compare.py --self-test
@@ -91,8 +93,9 @@ before checking read-only command effects; intentional modified/deleted files re
   then `restore --encoding ENCODING` must reproduce text byte-for-byte, or preserve
   JSON values, types, and numeric lexemes for JSON encodings. JSON whitespace and
   object key order may change; byte equality is separately recorded even for JSON.
-  Each timed
-  Sift stream must equal that candidate or the exact original. Raw marker-like
+  Each timed Sift stream must equal that candidate or the exact original, except
+  the Git status stdout command-aware view, which is checked against independently
+  fixed expected branch and file-status lines rather than decoded. Raw marker-like
   text is never inferred to be encoded. Streams shorter than 256 bytes bypass
   runner compaction; progress may stream raw after the runner's capture window.
   The saved protocol candidate can therefore differ from valid raw runner output.
