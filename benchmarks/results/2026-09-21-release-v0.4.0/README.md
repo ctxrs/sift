@@ -5,9 +5,10 @@ Across all ten rows, Sift's median elapsed time was within 1.35 ms of native
 and lower than RTK's. On the seven non-control workloads, Sift took 2.3–12.8 ms,
 versus native's 1.6–12.1 ms and RTK's 3.5–16.2 ms. RTK still emitted fewer
 tokens on five workloads and tied Sift on two. Sift preserved the requested
-command and exit status. Its encoded outputs restored exactly; the Git status
-view instead retained its displayed paths and branch under separate view
-checks. RTK's command-specific transformations differ, as detailed below. No
+command and exit status. Non-JSON encodings restored byte-for-byte, while JSON
+preserved values, types and numeric lexemes. The Git status view retained its
+displayed paths and branch under separate view checks. RTK's command-specific
+transformations differ, as detailed below. No
 aggregate winner or model-task-success claim follows from these small fixtures.
 
 ## Identity and measurements
