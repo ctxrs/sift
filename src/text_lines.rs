@@ -61,9 +61,8 @@ pub(crate) fn restore(input: &str) -> Result<String> {
         input.len() <= LIMIT,
         "literal lines exceed the 64 MiB input limit"
     );
-    let mut remaining = input
-        .strip_prefix(HEADER)
-        .context("invalid literal-lines header")?;
+    let mut remaining =
+        crate::strip_product_header(input, HEADER).context("invalid literal-lines header")?;
     let mut blocks = Vec::new();
     let mut total = 0usize;
     while !remaining.is_empty() {

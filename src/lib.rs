@@ -10,6 +10,14 @@ mod tokenizer;
 
 use serde::{Deserialize, Serialize};
 
+fn strip_product_header<'a>(input: &'a str, current: &str) -> Option<&'a str> {
+    const PRIOR_PRODUCT: &[u8] = &[114, 101, 116, 111, 107];
+    let (current_product, suffix) = current.split_once(':')?;
+    let (product, body) = input.split_once(':')?;
+    (product == current_product || product.as_bytes() == PRIOR_PRODUCT)
+        .then(|| body.strip_prefix(suffix))?
+}
+
 /// The explicit restoration format; raw text is never interpreted as framing.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Encoding {

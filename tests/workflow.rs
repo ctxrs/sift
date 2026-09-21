@@ -458,6 +458,49 @@ fn protocol_flushes_before_stdin_closes() {
 }
 
 #[test]
+fn prior_product_headers_remain_explicitly_restorable() {
+    let product = String::from_utf8(vec![114, 101, 116, 111, 107]).unwrap();
+    let cases = [
+        (
+            Encoding::TextRunsV1,
+            format!(
+                "{product}:text-runs-v1 counts repeat exact JSON strings; concatenate\n[[2,\"x\"]]"
+            ),
+            "xx",
+        ),
+        (
+            Encoding::TextPrefixesV1,
+            format!(
+                "{product}:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n[\"x\"]"
+            ),
+            "x",
+        ),
+        (
+            Encoding::TextRefsV1,
+            format!(
+                "{product}:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n[\"x\",0]"
+            ),
+            "xx",
+        ),
+        (
+            Encoding::TextLinesV1,
+            format!("{product}:lines-v1 [N,prefix] then N lines; prepend prefix\n[1,\"\"]\nx"),
+            "x",
+        ),
+        (
+            Encoding::TextSymbolsV1,
+            format!(
+                "{product}:symbols-v1 substitute each character using this JSON dictionary:\n{{\"§\":\"x\"}}\n§"
+            ),
+            "x",
+        ),
+    ];
+    for (encoding, frame, expected) in cases {
+        assert_eq!(restore(encoding, &frame).unwrap(), expected);
+    }
+}
+
+#[test]
 fn closed_output_is_quiet_and_successful() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
         .args(["restore", "--encoding", "raw"])

@@ -18,6 +18,22 @@ const ORIGINAL_LIMIT: u64 = 100 * 1024 * 1024;
 const ORIGINAL_AGE: u64 = 30;
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SemanticMode {
+    #[default]
+    Off,
+    Shadow,
+    Select,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SemanticSelection {
+    pub mode: SemanticMode,
+    pub allowed_projects: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
@@ -28,6 +44,7 @@ pub struct Settings {
     pub originals_max_entries: usize,
     pub originals_max_bytes: u64,
     pub originals_max_days: u64,
+    pub semantic_selection: SemanticSelection,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -39,6 +56,7 @@ impl Default for Settings {
             originals_max_entries: 100,
             originals_max_bytes: ORIGINAL_LIMIT,
             originals_max_days: ORIGINAL_AGE,
+            semantic_selection: SemanticSelection::default(),
         }
     }
 }
@@ -76,6 +94,27 @@ impl Settings {
             self.originals_max_days > 0 && self.originals_max_days <= u64::MAX / 86_400_000,
             "originals_max_days must be positive and fit milliseconds"
         );
+        ensure!(
+            self.semantic_selection.allowed_projects.len() <= 256
+                && self.semantic_selection.allowed_projects.iter().all(|p| {
+                    !p.is_empty()
+                        && p.len() <= 4096
+                        && !p.contains('\0')
+                        && Path::new(p).is_absolute()
+                }),
+            "semantic_selection.allowed_projects contains an invalid project"
+        );
+        let mut projects = self
+            .semantic_selection
+            .allowed_projects
+            .iter()
+            .collect::<Vec<_>>();
+        projects.sort();
+        projects.dedup();
+        ensure!(
+            projects.len() == self.semantic_selection.allowed_projects.len(),
+            "semantic_selection.allowed_projects contains duplicates"
+        );
         Ok(())
     }
     pub fn excludes(&self, executable: &str) -> bool {
@@ -89,6 +128,58 @@ impl Settings {
         serde_json::to_writer_pretty(&mut file, &Self::default())?;
         file.write_all(b"\n")?;
         Ok(())
+    }
+
+    fn save_to(&self, path: &Path) -> Result<()> {
+        self.validate()?;
+        let parent = path.parent().context("config path has no parent")?;
+        private_dir(parent)?;
+        if let Ok(meta) = fs::symlink_metadata(path) {
+            ensure!(
+                meta.is_file() && !meta.file_type().is_symlink(),
+                "Sift config must be a regular file"
+            );
+        }
+        let mut bytes = serde_json::to_vec_pretty(self)?;
+        bytes.push(b'\n');
+        for _ in 0..32 {
+            let suffix = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let temporary = parent.join(format!(
+                ".{}.{}.{}.tmp",
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .context("config filename must be UTF-8")?,
+                std::process::id(),
+                suffix
+            ));
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = match options.open(&temporary) {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.into()),
+            };
+            let result = (|| -> Result<()> {
+                file.write_all(&bytes)?;
+                file.flush()?;
+                file.sync_all()?;
+                drop(file);
+                fs::rename(&temporary, path)?;
+                #[cfg(unix)]
+                File::open(parent)?.sync_all()?;
+                Ok(())
+            })();
+            if result.is_err() {
+                let _ = fs::remove_file(&temporary);
+            }
+            return result;
+        }
+        bail!("cannot allocate a temporary Sift config file")
     }
 }
 
@@ -231,6 +322,92 @@ pub fn record(event: Event, originals: Option<(&[u8], &[u8])>) -> Result<()> {
         }
         None => record_at(&state_dir()?, &settings, event, originals),
     }
+}
+
+/// Save a full semantic input without changing usage totals. This deliberately
+/// ignores record_usage and keep_originals; semantic omission is recoverable or
+/// it is not emitted.
+pub fn save_semantic_original(bytes: &[u8]) -> Result<Option<String>> {
+    save_semantic_original_at(&state_dir()?, &Settings::load()?, bytes)
+}
+
+pub fn save_semantic_original_at(
+    dir: &Path,
+    settings: &Settings,
+    bytes: &[u8],
+) -> Result<Option<String>> {
+    settings.validate()?;
+    if bytes.len() as u64 > settings.originals_max_bytes.min(ORIGINAL_LIMIT) {
+        return Ok(None);
+    }
+    let Some(_lock) = try_lock(dir)? else {
+        return Ok(None);
+    };
+    let originals_dir = dir.join("originals");
+    private_dir(&originals_dir)?;
+    let id = save_original(&originals_dir, bytes, &[])?;
+    evict_originals(&originals_dir, &id, settings)?;
+    Ok(Some(id))
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct SemanticUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SemanticReceipt {
+    pub unix_millis: u64,
+    pub status: &'static str,
+    pub disposition: &'static str,
+    pub model: &'static str,
+    pub http_status: Option<u16>,
+    pub usage: Option<SemanticUsage>,
+    pub latency_ms: u64,
+    pub passage_count: usize,
+    pub selected_count: usize,
+    pub omitted_count: usize,
+    pub ordinary_tokens: usize,
+    pub semantic_tokens: Option<usize>,
+    pub memoized: bool,
+}
+
+pub fn record_semantic_receipt(receipt: &SemanticReceipt) -> Result<()> {
+    record_semantic_receipt_at(&state_dir()?, receipt)
+}
+
+pub fn record_semantic_receipt_at(dir: &Path, receipt: &SemanticReceipt) -> Result<()> {
+    ensure!(
+        receipt.model == "jev-1.13.0",
+        "invalid semantic receipt model"
+    );
+    let Some(_lock) = try_lock(dir)? else {
+        return Ok(());
+    };
+    let mut bytes = serde_json::to_vec(receipt)?;
+    bytes.push(b'\n');
+    let path = dir.join("semantic.jsonl");
+    let size = match fs::symlink_metadata(&path) {
+        Ok(meta) => {
+            ensure!(
+                meta.is_file() && !meta.file_type().is_symlink(),
+                "semantic receipts must be a regular file"
+            );
+            meta.len()
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
+        Err(error) => return Err(error.into()),
+    };
+    if size + bytes.len() as u64 > METRICS_LIMIT {
+        let backup = dir.join("semantic.1.jsonl");
+        remove_if_exists(&backup)?;
+        fs::rename(&path, backup)?;
+    }
+    let mut file = private_open(&path, true, false)?;
+    file.write_all(&bytes)?;
+    file.flush()?;
+    Ok(())
 }
 pub fn record_at(
     dir: &Path,
@@ -593,6 +770,7 @@ pub fn recall_with_options_at(
     let mut file = File::open(path)?.take(ORIGINAL_LIMIT);
     // An open handle keeps this stream readable if retention unlinks it. Never
     // hold the shared state lock while waiting for the recall consumer.
+    FileExt::unlock(&_lock)?;
     drop(_lock);
     if options.from.is_none() && options.lines.is_none() && options.grep.is_none() {
         io::copy(&mut file, output)?;
@@ -780,8 +958,16 @@ Only opt-in saved originals are available; commands are never rerun.";
 const CONFIG_HELP: &str = "Usage: sift config [show|--create]
 Show effective settings. --create writes defaults only if no config exists.
 Set originals_max_entries, originals_max_bytes (total), and originals_max_days in config.json.
-Caps must be positive; originals are saved only when keep_originals is true.
+Caps must be positive. Ordinary originals require keep_originals; semantic selection
+always saves its complete input before omission so the result remains recoverable.
 Oversized originals are skipped; measurements are still recorded.";
+const SEMANTIC_HELP: &str = "Usage: sift semantic enable [--project PATH]
+       sift semantic shadow [--project PATH]
+       sift semantic disable
+       sift semantic status
+Enable emits smaller recoverable semantic selections; shadow only records decisions.
+Enable and shadow send the current task and eligible Pi grep result passages to TypeSafe.
+The API key is read from TYPESAFE_API_KEY and is never stored.";
 fn help(args: &[OsString], text: &str, output: &mut impl Write) -> Result<bool> {
     if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
         writeln!(output, "{text}")?;
@@ -1183,5 +1369,89 @@ pub fn config(args: &[OsString]) -> Result<()> {
     }
     serde_json::to_writer_pretty(io::stdout().lock(), &Settings::load_from(&path)?)?;
     writeln!(io::stdout().lock())?;
+    Ok(())
+}
+
+pub fn semantic(args: &[OsString]) -> Result<()> {
+    if help(args, SEMANTIC_HELP, &mut io::stdout().lock())? {
+        return Ok(());
+    }
+    let args = args_utf8(args)?;
+    let action = args
+        .first()
+        .context("semantic: expected enable, shadow, disable, or status")?;
+    ensure!(
+        ["enable", "shadow", "disable", "status"].contains(action),
+        "semantic: expected enable, shadow, disable, or status"
+    );
+    if *action == "disable" || *action == "status" {
+        ensure!(args.len() == 1, "semantic {action} accepts no options");
+    }
+    let path = config_path()?;
+    let mut settings = Settings::load_from(&path)?;
+    if *action == "status" {
+        let current = std::env::current_dir()
+            .ok()
+            .and_then(|path| project_at(&path).ok());
+        let allowed = current
+            .as_ref()
+            .is_some_and(|path| settings.semantic_selection.allowed_projects.contains(path));
+        writeln!(
+            io::stdout().lock(),
+            "mode: {}\ncurrent project: {}\ncurrent project allowed: {}\nTYPESAFE_API_KEY: {}",
+            match settings.semantic_selection.mode {
+                SemanticMode::Off => "off",
+                SemanticMode::Shadow => "shadow",
+                SemanticMode::Select => "select",
+            },
+            current.as_deref().unwrap_or("unavailable"),
+            allowed,
+            if std::env::var_os("TYPESAFE_API_KEY").is_some_and(|v| !v.is_empty()) {
+                "set"
+            } else {
+                "not set"
+            }
+        )?;
+        return Ok(());
+    }
+    if *action == "disable" {
+        settings.semantic_selection.mode = SemanticMode::Off;
+        settings.save_to(&path)?;
+        writeln!(io::stdout().lock(), "Semantic selection disabled.")?;
+        return Ok(());
+    }
+    let project = match args.as_slice() {
+        [_] => project_at(&std::env::current_dir()?)?,
+        [_, "--project", value] => project_at(Path::new(value))?,
+        [_, value] if value.starts_with("--project=") => {
+            project_at(Path::new(value.trim_start_matches("--project=")))?
+        }
+        _ => bail!("semantic {action}: expected [--project PATH]"),
+    };
+    if !settings
+        .semantic_selection
+        .allowed_projects
+        .contains(&project)
+    {
+        settings
+            .semantic_selection
+            .allowed_projects
+            .push(project.clone());
+    }
+    settings.semantic_selection.mode = if *action == "enable" {
+        SemanticMode::Select
+    } else {
+        SemanticMode::Shadow
+    };
+    settings.save_to(&path)?;
+    writeln!(
+        io::stdout().lock(),
+        "Semantic {} for {project}. Eligible Pi grep requests send the current task and eligible result passages to TypeSafe; TYPESAFE_API_KEY is read only from the environment.",
+        if *action == "enable" {
+            "selection enabled"
+        } else {
+            "shadow mode enabled"
+        }
+    )?;
     Ok(())
 }

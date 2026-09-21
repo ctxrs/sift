@@ -10,9 +10,11 @@ mod command_view;
 mod discover;
 mod filter;
 mod hooks;
+mod jev;
 mod pre_hooks;
 mod rewrite;
 mod runner;
+mod semantic;
 mod setup;
 mod state;
 mod usage;
@@ -32,6 +34,7 @@ Usage:
   sift gain [--json] [--history] [--daily] [--graph]
   sift ccusage --import FILE [--json|--csv]
   sift config [--create]
+  sift semantic enable|shadow|disable|status [--project PATH]
   sift recall --list | ID [--stderr]
   sift discover [--json] [FILE ...]
   sift discover --history PATH [--suggest] [--json]
@@ -40,7 +43,7 @@ Usage:
   sift summary|err|test [OPTIONS] -- COMMAND [ARG...]
   sift filter [--capture]
   sift compact [FILE|-]
-  sift compact --protocol=json-v1
+  sift compact --protocol=json-v1|session-v1|session-v2
   sift restore --encoding ENCODING [FILE|-]
 
 Encodings: raw, json-v1, json-rows-v1, json-min-v1, json-columns-v1,
@@ -75,10 +78,16 @@ struct SessionRequest {
     id: u64,
     request: Request,
     #[serde(default)]
+    tool: Option<String>,
+    #[serde(default)]
     command: Option<String>,
     #[serde(default)]
     delivered_view: bool,
+    #[serde(default)]
+    selection: Option<serde_json::Value>,
 }
+
+type ProtocolRecord = Option<(state::Event, String, bool)>;
 
 #[derive(Serialize)]
 struct SessionResponse {
@@ -105,15 +114,27 @@ fn protocol(
     mut output: impl Write,
     source: Option<&str>,
     tool: Option<&str>,
-    session: bool,
+    session: u8,
 ) -> Result<bool> {
     let compactor = Compactor::new().context("cannot initialize tokenizer")?;
     let settings = source
-        .filter(|_| !session)
+        .filter(|_| session == 0)
         .map(|_| state::Settings::load())
         .transpose()?;
-    if session {
-        output.write_all(b"{\"version\":1,\"session\":1}\n")?;
+    let project = (session == 2)
+        .then(|| {
+            std::env::current_dir()
+                .ok()
+                .and_then(|path| state::project_at(&path).ok())
+        })
+        .flatten();
+    let mut jev = jev::Client::new();
+    if session != 0 {
+        serde_json::to_writer(
+            &mut output,
+            &serde_json::json!({"version":1,"session":session}),
+        )?;
+        output.write_all(b"\n")?;
         output.flush()?;
     }
     let mut input = input;
@@ -122,7 +143,7 @@ fn protocol(
     let mut last_id = 0;
     loop {
         line.clear();
-        let read = if session {
+        let read = if session != 0 {
             // JSON escaping can expand an 8 MiB text by six; bound framing too.
             let read = input
                 .by_ref()
@@ -141,7 +162,7 @@ fn protocol(
         }
         let mut id = None;
         let mut semantic = false;
-        let result = (|| -> Result<(Response, Option<(state::Event, String)>)> {
+        let result = (|| -> Result<(Response, ProtocolRecord)> {
             let invalid = |error: serde_json::Error| {
                 anyhow::anyhow!(
                     "invalid JSON request at line {}, column {}",
@@ -151,7 +172,9 @@ fn protocol(
             };
             let mut raw = false;
             let mut semantic_argv = None;
-            let request: Request = if session {
+            let mut semantic_request = None;
+            let mut request_tool = tool.map(str::to_owned);
+            let request: Request = if session != 0 {
                 let envelope: SessionRequest = serde_json::from_slice(&line).map_err(invalid)?;
                 ensure!(
                     envelope.id > last_id && envelope.id <= 9_007_199_254_740_991,
@@ -169,16 +192,38 @@ fn protocol(
                 if envelope.delivered_view {
                     semantic_argv = argv;
                 }
+                ensure!(
+                    session == 2 || envelope.selection.is_none(),
+                    "session-v1 does not accept semantic selection"
+                );
+                ensure!(
+                    session == 2 || envelope.tool.is_none(),
+                    "session-v1 does not accept a per-request tool"
+                );
+                if session == 2 {
+                    ensure!(
+                        matches!(envelope.tool.as_deref(), Some("bash" | "grep")),
+                        "session-v2 requires a supported per-request tool"
+                    );
+                    request_tool.clone_from(&envelope.tool);
+                }
+                semantic_request = (request_tool.as_deref() == Some("grep"))
+                    .then_some(envelope.selection)
+                    .flatten();
                 envelope.request
             } else {
                 serde_json::from_slice(&line).map_err(invalid)?
             };
-            let fresh_settings = if session {
+            let fresh_settings = if session != 0 {
                 source.map(|_| state::Settings::load()).transpose()?
             } else {
                 None
             };
-            let settings = if session { &fresh_settings } else { &settings };
+            let settings = if session != 0 {
+                &fresh_settings
+            } else {
+                &settings
+            };
             ensure!(
                 request.version == 1,
                 "unsupported protocol version; expected 1"
@@ -194,11 +239,10 @@ fn protocol(
             // exit status. Only the explicit Pi session contract permits a view.
             let _ = (request.is_error, request.complete);
             let started = std::time::Instant::now();
-            let result = if !raw
-                && settings
-                    .as_ref()
-                    .is_none_or(|s| s.enabled && tool.is_none_or(|name| !s.excludes(name)))
-            {
+            let mut result = if !raw
+                && settings.as_ref().is_none_or(|s| {
+                    s.enabled && request_tool.as_deref().is_none_or(|name| !s.excludes(name))
+                }) {
                 let mut original = compactor.compact(&request.text);
                 if let Some(proposal) = semantic_argv
                     .as_deref()
@@ -223,20 +267,47 @@ fn protocol(
                     output_tokens: tokens,
                 }
             };
+            let ordinary = result.clone();
+            let mut jev_selected = false;
+            if !raw
+                && session == 2
+                && settings.as_ref().is_some_and(|s| {
+                    s.enabled && request_tool.as_deref().is_none_or(|name| !s.excludes(name))
+                })
+                && let Some(selection) = semantic_request
+                && let Some(selected) = semantic::apply(
+                    selection,
+                    &request.text,
+                    &ordinary,
+                    settings.as_ref().unwrap(),
+                    project.as_deref(),
+                    &compactor,
+                    &mut jev,
+                )
+            {
+                result = selected;
+                semantic = true;
+                jev_selected = true;
+            }
+            let accounted = if jev_selected { &ordinary } else { &result };
             let record = source.filter(|_| !raw).map(|source| {
                 let event = state::Event {
                     unix_millis: state::unix_millis(),
-                    command: tool.unwrap_or("tool-output").into(),
-                    input_tokens: Some(result.input_tokens as u64),
-                    output_tokens: Some(result.output_tokens as u64),
+                    command: request_tool
+                        .as_deref()
+                        .or(tool)
+                        .unwrap_or("tool-output")
+                        .into(),
+                    input_tokens: Some(accounted.input_tokens as u64),
+                    output_tokens: Some(accounted.output_tokens as u64),
                     input_bytes: request.text.len() as u64,
-                    output_bytes: result.text.len() as u64,
+                    output_bytes: accounted.text.len() as u64,
                     duration_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
                     exit_code: None,
                     source: Some(source.into()),
                     original_id: None,
                 };
-                (event, request.text)
+                (event, request.text, jev_selected)
             });
             Ok((Response { version: 1, result }, record))
         })();
@@ -267,12 +338,12 @@ fn protocol(
         };
         output.write_all(b"\n")?;
         output.flush()?;
-        if let Some((event, original)) = record {
+        if let Some((event, original, jev_selected)) = record {
             // Count only successfully delivered responses. Optional storage
             // cannot replace output or turn successful delivery into failure.
-            let _ = state::record(event, Some((original.as_bytes(), &[])));
+            let _ = state::record(event, (!jev_selected).then_some((original.as_bytes(), &[])));
         }
-        if session {
+        if session != 0 {
             // Completion acknowledges the recording attempt, never storage or
             // provider delivery. Errors retire the session before another request.
             ensure!(!failed, "session request failed");
@@ -493,12 +564,13 @@ fn run() -> Result<i32> {
         filter::run(!remaining.is_empty())?;
         return Ok(0);
     }
-    if command == "gain" || command == "config" || command == "recall" {
+    if command == "gain" || command == "config" || command == "recall" || command == "semantic" {
         let remaining: Vec<_> = args.collect();
         match command.to_str().unwrap() {
             "gain" => state::gain(&remaining)?,
             "config" => state::config(&remaining)?,
-            _ => state::recall(&remaining)?,
+            "recall" => state::recall(&remaining)?,
+            _ => state::semantic(&remaining)?,
         }
         return Ok(0);
     }
@@ -580,7 +652,7 @@ fn run() -> Result<i32> {
     let mut file: Option<OsString> = None;
     let mut encoding = None;
     let mut jsonl = false;
-    let mut session = false;
+    let mut session = 0;
     let mut record_source = None;
     let mut record_tool = None;
     let mut positional = false;
@@ -613,7 +685,7 @@ fn run() -> Result<i32> {
             );
             let tool = option_value(value.unwrap(), &mut args)?;
             ensure!(
-                ["bash", "powershell", "exec"].contains(&tool.as_str()),
+                ["bash", "powershell", "exec", "pi"].contains(&tool.as_str()),
                 "unsupported integration tool"
             );
             record_tool = Some(tool);
@@ -626,10 +698,14 @@ fn run() -> Result<i32> {
             );
             let option = option_value(value.unwrap(), &mut args)?;
             ensure!(
-                option == "json-v1" || option == "session-v1",
-                "unsupported protocol; expected json-v1 or session-v1"
+                option == "json-v1" || option == "session-v1" || option == "session-v2",
+                "unsupported protocol; expected json-v1, session-v1, or session-v2"
             );
-            session = option == "session-v1";
+            session = match option.as_str() {
+                "session-v1" => 1,
+                "session-v2" => 2,
+                _ => 0,
+            };
             jsonl = true;
         } else if !positional
             && value.is_some_and(|v| v == "--encoding" || v.starts_with("--encoding="))
@@ -657,10 +733,11 @@ fn run() -> Result<i32> {
     if jsonl {
         ensure!(file.is_none(), "JSONL protocol reads stdin; omit FILE");
         ensure!(
-            !session
+            session == 0
                 || (record_source.as_deref() == Some("pi")
-                    && record_tool.as_deref() == Some("bash")),
-            "session-v1 requires Pi Bash recording context"
+                    && ((session == 1 && record_tool.as_deref() == Some("bash"))
+                        || (session == 2 && record_tool.as_deref() == Some("pi")))),
+            "session-v1 requires Pi Bash and session-v2 requires Pi recording context"
         );
         return protocol(
             io::stdin().lock(),

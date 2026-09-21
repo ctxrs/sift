@@ -39,7 +39,7 @@ host discovery, version, trust, runtime loading or effective permission policy.
 | Claude Code | `PostToolUse`, `sift hook claude` | Requires 2.1.121 or newer; completed Bash/PowerShell text fields. Failed commands do not reach this success-only event. |
 | Copilot CLI | `postToolUse`, `sift hook copilot` | `modifiedResult` contract; completed Bash/PowerShell text. Distinct from the VS Code route below. |
 | Hermes, user scope | `transform_tool_result` plugin | Requires Hermes 2026.9.14 or newer; completed `terminal` output after native result finalization, retaining exit code, error, hints and other metadata. |
-| Pi / Oh My Pi | `tool_result` extension | Completed Bash/PowerShell text blocks; images and metadata retained. |
+| Pi / Oh My Pi | `tool_result` extension | Completed Bash/PowerShell text blocks plus optional successful native `grep` semantic selection; images and metadata retained. |
 | OpenCode / current Kilo | `tool.execute.after` plugin | Completed Bash output, plus OpenCode `shell`; title and metadata retained. Legacy Kilo extensions are a separate integration. |
 
 These adapters receive results after execution and replace only eligible text.
@@ -53,9 +53,10 @@ selected text to 8 MiB and allow three seconds for compaction.
 Pi-only setup installs `extensions/sift/index.js` with a local CommonJS
 `package.json`, including when the surrounding project uses ES modules. It
 replaces an exactly owned `sift.ts` and removes that old entry so only one
-adapter loads. Edited or unowned entries are preserved. The adapter uses a
-session-owned compressor for Bash results; it exits on session shutdown or
-after 30 seconds idle. Recognized literal `sift proxy` and
+adapter loads. Edited or unowned entries are preserved. The adapter uses one
+session-owned compressor for Bash results and successful native Pi `grep`
+results; it exits on session shutdown or after 30 seconds idle. PowerShell stays
+on the bounded one-shot path. Recognized literal `sift proxy` and
 `sift run --raw` commands keep their delivered text unchanged and produce no Pi
 compaction usage/original record.
 This uses the completion hooks' existing POSIX subset: opaque compound or
@@ -78,9 +79,12 @@ Incomplete/ambiguous structures and default directive/footer combinations stay
 generic. Arbitrary JavaScript, `node --test`, npm wrappers and Tape options are
 outside this view. The complete-stream path still requires complete LF framing.
 Views must beat generic compaction by exact whole-field token count. Session
-responses include `semantic:true` only when a view is selected: `encoding` then
-restores that selected presentation, not omitted passing names or original Git
-layout. Generic `json-v1` and sessions without the opt-in remain lossless.
+responses include `semantic:true` only when a delivered view or Jev passage
+selection is used. `encoding` restores a delivered Git/Cargo/Tape presentation,
+not omitted passing names or original Git layout. Jev selections instead carry
+an explicit incomplete notice and a raw `sift recall` ID. Generic `json-v1`,
+session requests without semantic selection, and all semantic failures keep the
+ordinary Sift result.
 Contextual callbacks that cannot use the session (busy, old binary, or transport failure)
 return original text rather than retrying without the command. Missing command
 metadata retains the prior generic behavior, including the one-shot busy fallback.
@@ -95,6 +99,16 @@ when sharing a Pi directory with OMP; another host silently loading that file
 cannot be identified at runtime. Restart an already running host after setup. Pi `/reload` alone does not refresh
 a native CommonJS module after an adapter upgrade or executable relocation;
 restart the Pi process to load the new module.
+
+Pi semantic selection is separately opt-in and project allowlisted. Only a
+successful native `grep` result with exactly one text block is eligible. Pi sends
+the current task and exact result passages to the local Sift child; Sift makes
+the TypeSafe request only when the current canonical checkout is allowlisted and
+the grep path resolves inside that checkout and `TYPESAFE_API_KEY` is set.
+Missing, unresolved, or symlink-escaped paths stay local. `read`, Bash,
+PowerShell, images, errors, ambiguous shapes, and results outside the passage bounds never enter this semantic route.
+See [Optional semantic selection](README.md#optional-semantic-selection) for the
+external data flow, shadow mode, recovery, limits, and evidence.
 
 For successful Claude Bash calls with a literal command and explicit completion
 metadata, the hook also considers the same Git-status and Cargo-test

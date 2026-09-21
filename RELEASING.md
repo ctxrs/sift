@@ -28,8 +28,10 @@ RUSTFLAGS='-C link-arg=-Wl,-headerpad,0x1000' \
   cargo zigbuild --release --locked --target aarch64-apple-darwin
 ```
 
-Build Linux x64 and arm64 as static musl executables and Windows x64 as a GNU
-PE executable. Place only these files in a fresh input directory:
+Build Linux x64 and arm64 as static musl executables with `cargo zigbuild`;
+the HTTPS client's C dependency requires Zig for both musl targets. Build
+Windows x64 as a GNU PE executable. Place only these files in a fresh input
+directory:
 
 ```text
 sift-linux-x64
@@ -62,7 +64,7 @@ On macOS, run the checker for both artifacts. Execute `--version` for every
 architecture the host can run:
 
 ```sh
-scripts/verify_macos_release.sh signed/sift-macos-x64 0.3.0 > macos-x64.json
+scripts/verify_macos_release.sh signed/sift-macos-x64 0.4.0 > macos-x64.json
 scripts/verify_macos_release.sh signed/sift-macos-arm64 > macos-arm64.json
 ```
 
@@ -71,7 +73,7 @@ On Windows x64, use Windows PowerShell or PowerShell 7:
 ```powershell
 scripts/verify_windows_release.ps1 `
   -Artifact signed/sift-windows-x64.exe `
-  -ExpectedVersion 0.3.0 | Set-Content -NoNewline windows-x64.json
+  -ExpectedVersion 0.4.0 | Set-Content -NoNewline windows-x64.json
 ```
 
 Import each result on the release host. Import refuses a different artifact
