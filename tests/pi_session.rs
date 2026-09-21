@@ -17,12 +17,12 @@ impl Session {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "retok-pi-session-{}-{}",
+            "sift-pi-session-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
             .args([
                 "compact",
                 "--protocol=session-v1",
@@ -32,8 +32,8 @@ impl Session {
                 "bash",
             ])
             .current_dir(&root)
-            .env("RETOK_CONFIG_DIR", root.join("config"))
-            .env("RETOK_STATE_DIR", root.join("state"))
+            .env("SIFT_CONFIG_DIR", root.join("config"))
+            .env("SIFT_STATE_DIR", root.join("state"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -115,11 +115,11 @@ fn recognized_raw_has_exact_counts_and_never_records_or_stores() {
         .encode_ordinary(&text)
         .len();
     for (i, command) in [
-        "retok proxy -- cat fixture",
-        "'/opt/tool space/retok' run --capture --raw -- cat fixture",
-        "command /opt/retok.exe run --raw --capture -- cat fixture",
-        "retok run --raw --raw cat fixture",
-        "retok proxy cat --raw",
+        "sift proxy -- cat fixture",
+        "'/opt/tool space/sift' run --capture --raw -- cat fixture",
+        "command /opt/sift.exe run --raw --capture -- cat fixture",
+        "sift run --raw --raw cat fixture",
+        "sift proxy cat --raw",
     ]
     .iter()
     .enumerate()
@@ -137,20 +137,20 @@ fn recognized_raw_has_exact_counts_and_never_records_or_stores() {
 fn ordinary_unknown_and_missing_commands_keep_generic_compaction_and_metrics() {
     let mut session = Session::new();
     let text = "repeated original output without inferred semantics\n".repeat(60);
-    let expected = retok::Compactor::new().unwrap().compact(&text);
+    let expected = sift::Compactor::new().unwrap().compact(&text);
     assert_ne!(expected.text, text);
     let commands = [
         None,
         Some("cat fixture"),
         Some("git status"),
         Some("cargo test"),
-        Some("retok run -- cat --raw"),
-        Some("retok proxy --help"),
-        Some("retok run --raw --"),
+        Some("sift run -- cat --raw"),
+        Some("sift proxy --help"),
+        Some("sift run --raw --"),
         Some("printf x; cat fixture"),
         Some("cat 'file\\name'"),
         Some("cat fixture\ntrue"),
-        Some("retok proxy cat fixture; true"),
+        Some("sift proxy cat fixture; true"),
         Some("'unclosed"),
     ];
     for (i, command) in commands.iter().enumerate() {
@@ -181,7 +181,7 @@ fn git_context_is_opt_in_and_unterminated_fields_stay_generic() {
     for i in 0..60 {
         text.push_str(&format!("\tmodified:   src/ordinary_case_{i:03}.rs\n"));
     }
-    let expected = retok::Compactor::new().unwrap().compact(&text);
+    let expected = sift::Compactor::new().unwrap().compact(&text);
     let response = session.request(1, &text, Some("git status"));
     assert_eq!(response["text"], expected.text);
     assert_eq!(response["input_tokens"], expected.input_tokens);
@@ -191,7 +191,7 @@ fn git_context_is_opt_in_and_unterminated_fields_stay_generic() {
     for i in 0..60 {
         proposal.push_str(&format!("M  src/ordinary_case_{i:03}.rs\n"));
     }
-    let selected = retok::Compactor::new().unwrap().compact(&proposal);
+    let selected = sift::Compactor::new().unwrap().compact(&proposal);
     let response = session.delivered(2, &text, "git status");
     if selected.output_tokens < expected.output_tokens {
         assert_eq!(response["text"], selected.text);
@@ -201,7 +201,7 @@ fn git_context_is_opt_in_and_unterminated_fields_stay_generic() {
         assert!(response.get("semantic").is_none());
     }
     let partial = text.trim_end_matches('\n');
-    let expected = retok::Compactor::new().unwrap().compact(partial);
+    let expected = sift::Compactor::new().unwrap().compact(partial);
     let response = session.delivered(3, partial, "git status");
     assert_eq!(response["text"], expected.text);
     assert!(response.get("semantic").is_none());
@@ -211,7 +211,7 @@ fn git_context_is_opt_in_and_unterminated_fields_stay_generic() {
 fn session_reloads_settings_and_raw_never_records_even_with_originals_enabled() {
     let mut session = Session::new();
     let text = "complete text remains recoverable\n".repeat(50);
-    let expected = retok::Compactor::new().unwrap().compact(&text);
+    let expected = sift::Compactor::new().unwrap().compact(&text);
     assert_eq!(
         session.request(1, &text, Some("cat fixture"))["text"],
         expected.text
@@ -229,7 +229,7 @@ fn session_reloads_settings_and_raw_never_records_even_with_originals_enabled() 
     assert!(!session.root.join("state/originals").exists());
     session.settings(json!({"keep_originals":true}));
     assert_eq!(
-        session.request(5, &text, Some("retok proxy -- cat fixture"))["text"],
+        session.request(5, &text, Some("sift proxy -- cat fixture"))["text"],
         text
     );
     assert_eq!(session.events().len(), 3);
@@ -251,7 +251,7 @@ fn changed_invalid_settings_retire_session_without_new_record() {
         session.input.as_mut().unwrap(),
         "{}",
         json!({"id":2,
-        "command":"retok proxy -- cat fixture", "request":{"version":1,"text":"unchanged"}})
+        "command":"sift proxy -- cat fixture", "request":{"version":1,"text":"unchanged"}})
     )
     .unwrap();
     assert!(session.line().unwrap()["error"].is_string());
@@ -279,7 +279,7 @@ fn combined_utf8_limit_and_invalid_command_metadata_fail_without_recording() {
 
 #[test]
 fn generic_protocol_does_not_accept_command_and_session_requires_pi_bash() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
         .args(["compact", "--protocol=json-v1"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -289,13 +289,13 @@ fn generic_protocol_does_not_accept_command_and_session_requires_pi_bash() {
         .stdin
         .take()
         .unwrap()
-        .write_all(b"{\"version\":1,\"text\":\"ordinary\",\"command\":\"retok proxy cat\"}\n")
+        .write_all(b"{\"version\":1,\"text\":\"ordinary\",\"command\":\"sift proxy cat\"}\n")
         .unwrap();
     let result = child.wait_with_output().unwrap();
     assert!(!result.status.success());
     assert!(serde_json::from_slice::<Value>(&result.stdout).unwrap()["error"].is_string());
     for (source, tool) in [("omp", "bash"), ("pi", "powershell"), ("opencode", "bash")] {
-        let result = Command::new(env!("CARGO_BIN_EXE_retok"))
+        let result = Command::new(env!("CARGO_BIN_EXE_sift"))
             .args([
                 "compact",
                 "--protocol=session-v1",
@@ -313,6 +313,105 @@ fn generic_protocol_does_not_accept_command_and_session_requires_pi_bash() {
 }
 
 #[test]
+fn session_v2_validates_selection_and_fails_open_without_api_key() {
+    static NEXT: AtomicU64 = AtomicU64::new(10_000);
+    let root = std::env::temp_dir().join(format!(
+        "sift-pi-session-v2-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&root).unwrap();
+    fs::create_dir(root.join("config")).unwrap();
+    let project = fs::canonicalize(&root)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    fs::write(
+        root.join("config/config.json"),
+        json!({"record_usage":false,"semantic_selection":{"mode":"select","allowed_projects":[project]}}).to_string(),
+    )
+    .unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
+        .args([
+            "compact",
+            "--protocol=session-v2",
+            "--record-source",
+            "pi",
+            "--record-tool",
+            "pi",
+        ])
+        .current_dir(&root)
+        .env("SIFT_CONFIG_DIR", root.join("config"))
+        .env("SIFT_STATE_DIR", root.join("state"))
+        .env_remove("TYPESAFE_API_KEY")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let read = |output: &mut BufReader<ChildStdout>| {
+        let mut line = String::new();
+        output.read_line(&mut line).unwrap();
+        serde_json::from_str::<Value>(&line).unwrap()
+    };
+    assert_eq!(read(&mut output), json!({"version":1,"session":2}));
+    let text = "alpha repeated output\n".repeat(120);
+    let first = text.len() / 3;
+    let second = first * 2;
+    let selection = json!({"policy":"sift-semantic-v1","task":"find alpha","path":project,"kind":"pi-grep-v1","passages":[
+        {"id":"p1","start":0,"end":first,"required":false},
+        {"id":"p2","start":first,"end":second,"required":false},
+        {"id":"p3","start":second,"end":text.len(),"required":false}
+    ]});
+    let expected = sift::Compactor::new().unwrap().compact(&text);
+    for (id, tool, candidate) in [
+        (1, "grep", json!({"policy":"bad"})),
+        (2, "grep", selection.clone()),
+        (3, "bash", selection),
+    ] {
+        writeln!(
+            input,
+            "{}",
+            json!({"id":id,"tool":tool,"selection":candidate,"request":{"version":1,"text":text}})
+        )
+        .unwrap();
+        let response = read(&mut output);
+        assert_eq!(response["text"], expected.text);
+        assert!(response.get("semantic").is_none());
+        assert_eq!(read(&mut output), json!({"version":1,"id":id,"done":true}));
+    }
+    let (cargo, proposal) = cargo_fixture(false, "");
+    let ordinary = sift::Compactor::new().unwrap().compact(&cargo);
+    let selected = sift::Compactor::new().unwrap().compact(&proposal);
+    writeln!(
+        input,
+        "{}",
+        json!({"id":4,"tool":"bash","command":"cargo test","delivered_view":true,
+            "request":{"version":1,"text":cargo}})
+    )
+    .unwrap();
+    let response = read(&mut output);
+    if selected.output_tokens < ordinary.output_tokens {
+        assert_eq!(response["text"], selected.text);
+        assert_eq!(response["semantic"], true);
+    } else {
+        assert_eq!(response["text"], ordinary.text);
+        assert!(response.get("semantic").is_none());
+    }
+    assert_eq!(read(&mut output), json!({"version":1,"id":4,"done":true}));
+    drop(input);
+    assert!(child.wait().unwrap().success());
+    let receipts = fs::read_to_string(root.join("state/semantic.jsonl")).unwrap();
+    let receipt: Value = serde_json::from_str(receipts.trim()).unwrap();
+    assert_eq!(receipt["status"], "disabled");
+    assert_eq!(receipt["disposition"], "fallback");
+    assert!(!root.join("state/metrics.jsonl").exists());
+    assert!(!root.join("state/originals").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn delivered_selection_marks_semantics_and_keeps_full_original_metrics_and_storage() {
     let mut session = Session::new();
     session.settings(json!({"keep_originals":true}));
@@ -320,16 +419,16 @@ fn delivered_selection_marks_semantics_and_keeps_full_original_metrics_and_stora
         true,
         "\n[Showing lines 8-80 of 80. Full output: /tmp/synthetic.log]\nCommand exited with code 101",
     );
-    let compactor = retok::Compactor::new().unwrap();
+    let compactor = sift::Compactor::new().unwrap();
     let original = compactor.compact(&text);
     let selected = compactor.compact(&proposal);
     assert!(selected.output_tokens < original.output_tokens);
     let response = session.delivered(1, &text, "cargo test --offline");
     assert_eq!(response["semantic"], true);
     assert_eq!(response["text"], selected.text);
-    let encoding: retok::Encoding = serde_json::from_value(response["encoding"].clone()).unwrap();
+    let encoding: sift::Encoding = serde_json::from_value(response["encoding"].clone()).unwrap();
     assert_eq!(
-        retok::restore(encoding, response["text"].as_str().unwrap()).unwrap(),
+        sift::restore(encoding, response["text"].as_str().unwrap()).unwrap(),
         proposal
     );
     assert_ne!(proposal, text);
@@ -363,7 +462,7 @@ fn delivered_selection_marks_semantics_and_keeps_full_original_metrics_and_stora
 fn delivered_view_is_default_off_and_declines_ordinary_unknown_context() {
     let mut session = Session::new();
     let (text, _) = cargo_fixture(false, "partial suffix");
-    let expected = retok::Compactor::new().unwrap().compact(&text);
+    let expected = sift::Compactor::new().unwrap().compact(&text);
     let rows = [
         json!({"id":1,"command":"cargo test","request":{"version":1,"text":text}}),
         json!({"id":2,"command":"cargo test","delivered_view":false,"request":{"version":1,"text":text}}),
@@ -385,7 +484,7 @@ fn delivered_raw_settings_exclusions_and_recording_controls_take_precedence() {
     let mut session = Session::new();
     let (text, _) = cargo_fixture(false, "");
     session.settings(json!({"keep_originals":true}));
-    for (i, command) in ["retok proxy -- cargo test", "retok run --raw -- cargo test"]
+    for (i, command) in ["sift proxy -- cargo test", "sift run --raw -- cargo test"]
         .iter()
         .enumerate()
     {
@@ -422,7 +521,7 @@ fn delivered_exact_token_tie_retains_original_generic_selection() {
         "[1 passing test lines omitted]\n",
     );
     assert!(proposal.len() < text.len());
-    let compactor = retok::Compactor::new().unwrap();
+    let compactor = sift::Compactor::new().unwrap();
     let original = compactor.compact(text);
     let selected = compactor.compact(&proposal);
     assert_eq!(
@@ -452,7 +551,7 @@ fn delivered_flag_is_boolean_and_cannot_enter_generic_protocol() {
         assert!(!session.child.wait().unwrap().success());
         assert!(!session.root.join("state").exists());
     }
-    let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
         .args(["compact", "--protocol=json-v1"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -477,7 +576,7 @@ include!("fixtures/tape_delivered.rs");
 fn tape_session_selects_strict_full_field_minimum_and_preserves_failure_tail() {
     let mut session = Session::new();
     session.settings(json!({"keep_originals":true}));
-    let compactor = retok::Compactor::new().unwrap();
+    let compactor = sift::Compactor::new().unwrap();
     let counter = tiktoken_rs::o200k_base().unwrap();
     for (i, tail) in [
         "",
@@ -517,7 +616,7 @@ fn tape_session_selects_strict_full_field_minimum_and_preserves_failure_tail() {
         );
         let encoding = serde_json::from_value(response["encoding"].clone()).unwrap();
         assert_eq!(
-            retok::restore(encoding, response["text"].as_str().unwrap()).unwrap(),
+            sift::restore(encoding, response["text"].as_str().unwrap()).unwrap(),
             proposal
         );
         let events = session.events();
@@ -540,8 +639,8 @@ fn tape_session_raw_settings_and_unsupported_context_keep_existing_precedence() 
     let (text, _) = tape_fixture("\n\nCommand exited with code 1");
     session.settings(json!({"keep_originals":true}));
     for (i, command) in [
-        "retok proxy -- node node_modules/tape/bin/tape fixture.js",
-        "retok run --raw -- node node_modules/tape/bin/tape fixture.js",
+        "sift proxy -- node node_modules/tape/bin/tape fixture.js",
+        "sift run --raw -- node node_modules/tape/bin/tape fixture.js",
     ]
     .iter()
     .enumerate()
@@ -562,7 +661,7 @@ fn tape_session_raw_settings_and_unsupported_context_keep_existing_precedence() 
         text
     );
     session.settings(json!({}));
-    let generic = retok::Compactor::new().unwrap().compact(&text);
+    let generic = sift::Compactor::new().unwrap().compact(&text);
     for (i, command) in [
         "node other.js",
         "node --test fixture.js",

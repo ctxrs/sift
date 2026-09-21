@@ -12,7 +12,7 @@ struct Temp(PathBuf);
 impl Temp {
     fn new() -> Self {
         let dir = std::env::temp_dir().join(format!(
-            "retok-state-test-{}-{}-{}",
+            "sift-state-test-{}-{}-{}",
             std::process::id(),
             state::unix_millis(),
             NEXT.fetch_add(1, Ordering::Relaxed)
@@ -83,6 +83,81 @@ fn defaults_are_read_only_and_corrupt_config_is_preserved() {
     let settings = Settings::load_from(&path).unwrap();
     assert!(settings.excludes("/usr/bin/git"));
     assert!(!settings.excludes("git-lfs"));
+    assert_eq!(settings.semantic_selection.mode, state::SemanticMode::Off);
+    assert!(settings.semantic_selection.allowed_projects.is_empty());
+}
+
+#[test]
+fn semantic_original_and_receipt_are_private_and_do_not_change_usage() {
+    let temp = Temp::new();
+    let settings = Settings {
+        record_usage: false,
+        keep_originals: false,
+        originals_max_entries: 2,
+        originals_max_bytes: 1024,
+        ..Default::default()
+    };
+    let id = state::save_semantic_original_at(temp.path(), &settings, b"complete raw text")
+        .unwrap()
+        .unwrap();
+    let mut recalled = Vec::new();
+    state::recall_at(temp.path(), &id, false, &mut recalled).unwrap();
+    assert_eq!(recalled, b"complete raw text");
+    state::record_semantic_receipt_at(
+        temp.path(),
+        &state::SemanticReceipt {
+            unix_millis: 1,
+            status: "ok",
+            disposition: "selected",
+            model: "jev-1.13.0",
+            http_status: Some(200),
+            usage: Some(state::SemanticUsage {
+                input_tokens: 20,
+                output_tokens: 2,
+            }),
+            latency_ms: 8,
+            passage_count: 3,
+            selected_count: 1,
+            omitted_count: 2,
+            ordinary_tokens: 100,
+            semantic_tokens: Some(20),
+            memoized: false,
+        },
+    )
+    .unwrap();
+    assert!(state::usage_at(temp.path()).unwrap().events.is_empty());
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(temp.path().join("semantic.jsonl")).unwrap()).unwrap();
+    assert_eq!(receipt["disposition"], "selected");
+    assert!(receipt.get("task").is_none());
+    assert!(receipt.get("text").is_none());
+
+    fs::write(temp.path().join("semantic.jsonl"), b"interrupted").unwrap();
+    state::record_semantic_receipt_at(
+        temp.path(),
+        &state::SemanticReceipt {
+            unix_millis: 2,
+            status: "fallback",
+            disposition: "ordinary",
+            model: "jev-1.13.0",
+            http_status: None,
+            usage: None,
+            latency_ms: 1,
+            passage_count: 0,
+            selected_count: 0,
+            omitted_count: 0,
+            ordinary_tokens: 3,
+            semantic_tokens: None,
+            memoized: false,
+        },
+    )
+    .unwrap();
+    let repaired = fs::read_to_string(temp.path().join("semantic.jsonl")).unwrap();
+    let mut lines = repaired.lines();
+    assert_eq!(lines.next(), Some("interrupted"));
+    let receipt: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    assert_eq!(receipt["disposition"], "ordinary");
+    assert_eq!(lines.next(), None);
 }
 #[test]
 fn concurrent_writers_produce_complete_records() {
@@ -364,7 +439,7 @@ fn text_history_is_readable_and_help_does_not_create_state() {
     assert!(
         String::from_utf8(output)
             .unwrap()
-            .contains("Usage: retok gain")
+            .contains("Usage: sift gain")
     );
     assert!(!dir.exists());
     state::record_at(&dir, &Settings::default(), event(), None).unwrap();
@@ -483,12 +558,12 @@ fn paused_recall_releases_lock_and_command_can_complete() {
         .write(true)
         .open(temp.path().join("state.lock"))
         .unwrap();
-    let available = fs2::FileExt::try_lock_exclusive(&file).is_ok();
+    let lock_error = fs2::FileExt::try_lock_exclusive(&file).err();
     drop(file);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
         .args(["run", "--", "/bin/sh", "-c", "exit 0"])
-        .env("RETOK_STATE_DIR", temp.path())
-        .env("RETOK_CONFIG_DIR", temp.path().join("config"))
+        .env("SIFT_STATE_DIR", temp.path())
+        .env("SIFT_CONFIG_DIR", temp.path().join("config"))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -509,8 +584,8 @@ fn paused_recall_releases_lock_and_command_can_complete() {
     resume.send(()).unwrap();
     assert_eq!(worker.join().unwrap(), b"saved bytes");
     assert!(
-        available,
-        "recall holds the state lock while blocked on its consumer"
+        lock_error.is_none(),
+        "recall holds the state lock while blocked on its consumer: {lock_error:?}"
     );
     assert!(status.expect("command blocked behind recall").success());
     assert_eq!(state::usage_at(temp.path()).unwrap().events.len(), 2);
@@ -909,11 +984,11 @@ fn runner_records_project_and_cli_queries_are_isolated_and_private() {
     fs::write(project.join(".git"), "gitdir: synthetic\n").unwrap();
     let state = temp.path().join("state");
     let config = temp.path().join("config");
-    let mut run = Command::new(env!("CARGO_BIN_EXE_retok"));
+    let mut run = Command::new(env!("CARGO_BIN_EXE_sift"));
     let result = run
         .current_dir(project.join("nested"))
-        .env("RETOK_STATE_DIR", &state)
-        .env("RETOK_CONFIG_DIR", &config)
+        .env("SIFT_STATE_DIR", &state)
+        .env("SIFT_CONFIG_DIR", &config)
         .args(["run", "--", "/bin/sh", "-c", "printf 'synthetic\\n'"])
         .output()
         .unwrap();
@@ -922,10 +997,10 @@ fn runner_records_project_and_cli_queries_are_isolated_and_private() {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    let result = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let result = Command::new(env!("CARGO_BIN_EXE_sift"))
         .current_dir(&project)
-        .env("RETOK_STATE_DIR", &state)
-        .env("RETOK_CONFIG_DIR", &config)
+        .env("SIFT_STATE_DIR", &state)
+        .env("SIFT_CONFIG_DIR", &config)
         .args(["gain", "--project", "--json", "--history"])
         .output()
         .unwrap();
@@ -946,4 +1021,102 @@ fn runner_records_project_and_cli_queries_are_isolated_and_private() {
             & 0o777,
         0o600
     );
+}
+
+#[test]
+fn semantic_cli_canonicalizes_one_project_and_never_stores_the_key() {
+    use std::process::Command;
+    let temp = Temp::new();
+    let project = temp.path().join("project");
+    fs::create_dir_all(project.join("nested")).unwrap();
+    fs::write(project.join(".git"), "gitdir: synthetic\n").unwrap();
+    let config = temp.path().join("config");
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_sift"))
+            .env("SIFT_CONFIG_DIR", &config)
+            .env("SIFT_STATE_DIR", temp.path().join("state"))
+            .env("TYPESAFE_API_KEY", "must-not-be-stored")
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let nested = project.join("nested");
+    let result = run(&["semantic", "enable", "--project", nested.to_str().unwrap()]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(String::from_utf8_lossy(&result.stdout).contains("current task"));
+    let bytes = fs::read(config.join("config.json")).unwrap();
+    assert!(
+        !bytes
+            .windows("must-not-be-stored".len())
+            .any(|part| part == b"must-not-be-stored")
+    );
+    let settings: Settings = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        settings.semantic_selection.mode,
+        state::SemanticMode::Select
+    );
+    assert_eq!(
+        settings.semantic_selection.allowed_projects,
+        [state::project_at(&project).unwrap()]
+    );
+    assert!(
+        run(&["semantic", "shadow", "--project", nested.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let settings = Settings::load_from(&config.join("config.json")).unwrap();
+    assert_eq!(
+        settings.semantic_selection.mode,
+        state::SemanticMode::Shadow
+    );
+    assert_eq!(settings.semantic_selection.allowed_projects.len(), 1);
+    assert!(run(&["semantic", "disable"]).status.success());
+    assert_eq!(
+        Settings::load_from(&config.join("config.json"))
+            .unwrap()
+            .semantic_selection
+            .mode,
+        state::SemanticMode::Off
+    );
+    assert!(fs::read_dir(&config).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".tmp")
+    }));
+}
+
+#[cfg(unix)]
+#[test]
+fn semantic_cli_rejects_a_config_symlink_without_touching_its_target() {
+    use std::os::unix::fs::symlink;
+    use std::process::Command;
+    let temp = Temp::new();
+    let project = temp.path().join("project");
+    let config = temp.path().join("config");
+    fs::create_dir_all(&project).unwrap();
+    fs::create_dir_all(&config).unwrap();
+    let target = temp.path().join("external.json");
+    let original = serde_json::to_vec_pretty(&Settings::default()).unwrap();
+    fs::write(&target, &original).unwrap();
+    symlink(&target, config.join("config.json")).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_sift"))
+        .env("SIFT_CONFIG_DIR", &config)
+        .env("SIFT_STATE_DIR", temp.path().join("state"))
+        .args(["semantic", "enable", "--project", project.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(
+        fs::symlink_metadata(config.join("config.json"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(fs::read(&target).unwrap(), original);
 }

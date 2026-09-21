@@ -1,7 +1,7 @@
 //! Shared prefixes with literal lines, avoiding JSON string framing per line.
 use anyhow::{Context, Result, ensure};
 
-const HEADER: &str = "retok:lines-v1 [N,prefix] then N lines; prepend prefix\n";
+const HEADER: &str = "sift:lines-v1 [N,prefix] then N lines; prepend prefix\n";
 const LIMIT: usize = 64 * 1024 * 1024;
 
 fn emit(output: &mut String, lines: &[&str], prefix: &str) -> Option<()> {
@@ -61,9 +61,8 @@ pub(crate) fn restore(input: &str) -> Result<String> {
         input.len() <= LIMIT,
         "literal lines exceed the 64 MiB input limit"
     );
-    let mut remaining = input
-        .strip_prefix(HEADER)
-        .context("invalid literal-lines header")?;
+    let mut remaining =
+        crate::strip_product_header(input, HEADER).context("invalid literal-lines header")?;
     let mut blocks = Vec::new();
     let mut total = 0usize;
     while !remaining.is_empty() {

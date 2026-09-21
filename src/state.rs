@@ -18,6 +18,22 @@ const ORIGINAL_LIMIT: u64 = 100 * 1024 * 1024;
 const ORIGINAL_AGE: u64 = 30;
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SemanticMode {
+    #[default]
+    Off,
+    Shadow,
+    Select,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SemanticSelection {
+    pub mode: SemanticMode,
+    pub allowed_projects: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
@@ -28,6 +44,7 @@ pub struct Settings {
     pub originals_max_entries: usize,
     pub originals_max_bytes: u64,
     pub originals_max_days: u64,
+    pub semantic_selection: SemanticSelection,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -39,6 +56,7 @@ impl Default for Settings {
             originals_max_entries: 100,
             originals_max_bytes: ORIGINAL_LIMIT,
             originals_max_days: ORIGINAL_AGE,
+            semantic_selection: SemanticSelection::default(),
         }
     }
 }
@@ -51,7 +69,7 @@ impl Settings {
         match File::open(path) {
             Ok(file) => {
                 let settings: Self = serde_json::from_reader(file)
-                    .context("invalid Retok config; file left unchanged")?;
+                    .context("invalid Sift config; file left unchanged")?;
                 ensure!(
                     settings.exclude_commands.iter().all(|s| valid_label(s)),
                     "exclude_commands must contain exact executable basenames"
@@ -76,6 +94,27 @@ impl Settings {
             self.originals_max_days > 0 && self.originals_max_days <= u64::MAX / 86_400_000,
             "originals_max_days must be positive and fit milliseconds"
         );
+        ensure!(
+            self.semantic_selection.allowed_projects.len() <= 256
+                && self.semantic_selection.allowed_projects.iter().all(|p| {
+                    !p.is_empty()
+                        && p.len() <= 4096
+                        && !p.contains('\0')
+                        && Path::new(p).is_absolute()
+                }),
+            "semantic_selection.allowed_projects contains an invalid project"
+        );
+        let mut projects = self
+            .semantic_selection
+            .allowed_projects
+            .iter()
+            .collect::<Vec<_>>();
+        projects.sort();
+        projects.dedup();
+        ensure!(
+            projects.len() == self.semantic_selection.allowed_projects.len(),
+            "semantic_selection.allowed_projects contains duplicates"
+        );
         Ok(())
     }
     pub fn excludes(&self, executable: &str) -> bool {
@@ -89,6 +128,58 @@ impl Settings {
         serde_json::to_writer_pretty(&mut file, &Self::default())?;
         file.write_all(b"\n")?;
         Ok(())
+    }
+
+    fn save_to(&self, path: &Path) -> Result<()> {
+        self.validate()?;
+        let parent = path.parent().context("config path has no parent")?;
+        private_dir(parent)?;
+        if let Ok(meta) = fs::symlink_metadata(path) {
+            ensure!(
+                meta.is_file() && !meta.file_type().is_symlink(),
+                "Sift config must be a regular file"
+            );
+        }
+        let mut bytes = serde_json::to_vec_pretty(self)?;
+        bytes.push(b'\n');
+        for _ in 0..32 {
+            let suffix = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let temporary = parent.join(format!(
+                ".{}.{}.{}.tmp",
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .context("config filename must be UTF-8")?,
+                std::process::id(),
+                suffix
+            ));
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = match options.open(&temporary) {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.into()),
+            };
+            let result = (|| -> Result<()> {
+                file.write_all(&bytes)?;
+                file.flush()?;
+                file.sync_all()?;
+                drop(file);
+                fs::rename(&temporary, path)?;
+                #[cfg(unix)]
+                File::open(parent)?.sync_all()?;
+                Ok(())
+            })();
+            if result.is_err() {
+                let _ = fs::remove_file(&temporary);
+            }
+            return result;
+        }
+        bail!("cannot allocate a temporary Sift config file")
     }
 }
 
@@ -108,9 +199,9 @@ pub fn state_dir() -> Result<PathBuf> {
 }
 fn directory(config: bool) -> Result<PathBuf> {
     if let Some(path) = env_path(if config {
-        "RETOK_CONFIG_DIR"
+        "SIFT_CONFIG_DIR"
     } else {
-        "RETOK_STATE_DIR"
+        "SIFT_STATE_DIR"
     }) {
         return Ok(path);
     }
@@ -118,7 +209,7 @@ fn directory(config: bool) -> Result<PathBuf> {
     {
         Ok(env_path(if config { "APPDATA" } else { "LOCALAPPDATA" })
             .context("Windows application data directory unavailable")?
-            .join("Retok"))
+            .join("Sift"))
     }
     #[cfg(not(windows))]
     {
@@ -127,14 +218,14 @@ fn directory(config: bool) -> Result<PathBuf> {
         } else {
             "XDG_STATE_HOME"
         }) {
-            return Ok(path.join("retok"));
+            return Ok(path.join("sift"));
         }
         Ok(env_path("HOME")
-            .context("HOME unavailable; set RETOK_CONFIG_DIR and RETOK_STATE_DIR")?
+            .context("HOME unavailable; set SIFT_CONFIG_DIR and SIFT_STATE_DIR")?
             .join(if config {
-                ".config/retok"
+                ".config/sift"
             } else {
-                ".local/state/retok"
+                ".local/state/sift"
             }))
     }
 }
@@ -232,6 +323,123 @@ pub fn record(event: Event, originals: Option<(&[u8], &[u8])>) -> Result<()> {
         None => record_at(&state_dir()?, &settings, event, originals),
     }
 }
+
+/// Save a full semantic input without changing usage totals. This deliberately
+/// ignores record_usage and keep_originals; semantic omission is recoverable or
+/// it is not emitted.
+pub fn save_semantic_original(bytes: &[u8]) -> Result<Option<String>> {
+    save_semantic_original_at(&state_dir()?, &Settings::load()?, bytes)
+}
+
+pub fn save_semantic_original_at(
+    dir: &Path,
+    settings: &Settings,
+    bytes: &[u8],
+) -> Result<Option<String>> {
+    settings.validate()?;
+    if bytes.len() as u64 > settings.originals_max_bytes.min(ORIGINAL_LIMIT) {
+        return Ok(None);
+    }
+    let Some(_lock) = try_lock(dir)? else {
+        return Ok(None);
+    };
+    let originals_dir = dir.join("originals");
+    private_dir(&originals_dir)?;
+    let id = save_original(&originals_dir, bytes, &[])?;
+    evict_originals(&originals_dir, &id, settings)?;
+    Ok(Some(id))
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct SemanticUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SemanticReceipt {
+    pub unix_millis: u64,
+    pub status: &'static str,
+    pub disposition: &'static str,
+    pub model: &'static str,
+    pub http_status: Option<u16>,
+    pub usage: Option<SemanticUsage>,
+    pub latency_ms: u64,
+    pub passage_count: usize,
+    pub selected_count: usize,
+    pub omitted_count: usize,
+    pub ordinary_tokens: usize,
+    pub semantic_tokens: Option<usize>,
+    pub memoized: bool,
+}
+
+pub fn record_semantic_receipt(receipt: &SemanticReceipt) -> Result<()> {
+    record_semantic_receipt_at(&state_dir()?, receipt)
+}
+
+pub fn record_semantic_receipt_at(dir: &Path, receipt: &SemanticReceipt) -> Result<()> {
+    ensure!(
+        receipt.model == "jev-1.13.0",
+        "invalid semantic receipt model"
+    );
+    let Some(_lock) = try_lock(dir)? else {
+        return Ok(());
+    };
+    let mut bytes = serde_json::to_vec(receipt)?;
+    bytes.push(b'\n');
+    append_jsonl(
+        dir,
+        "semantic.jsonl",
+        "semantic.1.jsonl",
+        "semantic receipts",
+        &bytes,
+    )
+}
+
+fn append_jsonl(
+    dir: &Path,
+    name: &str,
+    backup_name: &str,
+    label: &str,
+    bytes: &[u8],
+) -> Result<()> {
+    let path = dir.join(name);
+    let size = match fs::symlink_metadata(&path) {
+        Ok(meta) => {
+            ensure!(
+                meta.is_file() && !meta.file_type().is_symlink(),
+                "{label} must be a regular file"
+            );
+            meta.len()
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
+        Err(error) => return Err(error.into()),
+    };
+    // Preserve an interrupted append as a malformed record rather than joining
+    // the next valid event onto it. Never rewrite or discard the damaged bytes.
+    let needs_separator = if size > 0 {
+        let mut file = File::open(&path)?;
+        file.seek(SeekFrom::End(-1))?;
+        let mut last = [0];
+        file.read_exact(&mut last)?;
+        last[0] != b'\n'
+    } else {
+        false
+    };
+    let rotate = size + bytes.len() as u64 + u64::from(needs_separator) > METRICS_LIMIT;
+    if rotate {
+        let backup = dir.join(backup_name);
+        remove_if_exists(&backup)?;
+        fs::rename(&path, backup)?;
+    }
+    let mut file = private_open(&path, true, false)?;
+    if needs_separator && !rotate {
+        file.write_all(b"\n")?;
+    }
+    file.write_all(bytes)?;
+    file.flush()?;
+    Ok(())
+}
 pub fn record_at(
     dir: &Path,
     settings: &Settings,
@@ -240,7 +448,7 @@ pub fn record_at(
 ) -> Result<()> {
     record_project_at(dir, settings, event, originals, None)
 }
-/// Explicit project identity for callers whose command ran outside Retok's cwd.
+/// Explicit project identity for callers whose command ran outside Sift's cwd.
 /// Use project_at to normalize an existing directory before recording/querying.
 pub fn record_project_at(
     dir: &Path,
@@ -280,42 +488,7 @@ pub fn record_project_at(
         project: project.map(str::to_owned),
     })?;
     bytes.push(b'\n');
-    let path = dir.join("metrics.jsonl");
-    let size = match fs::symlink_metadata(&path) {
-        Ok(meta) => {
-            ensure!(
-                meta.is_file() && !meta.file_type().is_symlink(),
-                "metrics must be a regular file"
-            );
-            meta.len()
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => 0,
-        Err(e) => return Err(e.into()),
-    };
-    // Preserve an interrupted append as a malformed record rather than joining
-    // the next valid event onto it. Never rewrite or discard the damaged bytes.
-    let needs_separator = if size > 0 {
-        let mut file = File::open(&path)?;
-        file.seek(SeekFrom::End(-1))?;
-        let mut last = [0];
-        file.read_exact(&mut last)?;
-        last[0] != b'\n'
-    } else {
-        false
-    };
-    let rotate = size + bytes.len() as u64 + u64::from(needs_separator) > METRICS_LIMIT;
-    if rotate {
-        let backup = dir.join("metrics.1.jsonl");
-        remove_if_exists(&backup)?;
-        fs::rename(&path, backup)?;
-    }
-    let mut file = private_open(&path, true, false)?;
-    if needs_separator && !rotate {
-        file.write_all(b"\n")?;
-    }
-    file.write_all(&bytes)?;
-    file.flush()?;
-    Ok(())
+    append_jsonl(dir, "metrics.jsonl", "metrics.1.jsonl", "metrics", &bytes)
 }
 fn private_dir(path: &Path) -> Result<()> {
     let mut builder = fs::DirBuilder::new();
@@ -328,7 +501,7 @@ fn private_dir(path: &Path) -> Result<()> {
     builder.create(path)?;
     ensure!(
         !fs::symlink_metadata(path)?.file_type().is_symlink(),
-        "Retok directory must not be a symlink"
+        "Sift directory must not be a symlink"
     );
     #[cfg(unix)]
     {
@@ -341,7 +514,7 @@ fn private_open(path: &Path, append: bool, new: bool) -> Result<File> {
     if let Ok(meta) = fs::symlink_metadata(path) {
         ensure!(
             meta.is_file() && !meta.file_type().is_symlink(),
-            "Retok state path must be a regular file"
+            "Sift state path must be a regular file"
         );
     }
     let mut options = OpenOptions::new();
@@ -593,6 +766,7 @@ pub fn recall_with_options_at(
     let mut file = File::open(path)?.take(ORIGINAL_LIMIT);
     // An open handle keeps this stream readable if retention unlinks it. Never
     // hold the shared state lock while waiting for the recall consumer.
+    FileExt::unlock(&_lock)?;
     drop(_lock);
     if options.from.is_none() && options.lines.is_none() && options.grep.is_none() {
         io::copy(&mut file, output)?;
@@ -762,26 +936,34 @@ fn utc_date(epoch_days: u64) -> String {
     }
     format!("{year:04}-{:02}-{:02}", month + 1, days + 1)
 }
-const GAIN_HELP: &str = "Usage: retok gain [--json|--csv|--format text|json|csv] [--history]
+const GAIN_HELP: &str = "Usage: sift gain [--json|--csv|--format text|json|csv] [--history]
        [--daily] [--weekly] [--monthly] [--graph] [--project [PATH]]
        [--since TIME] [--until TIME] [--command NAME] [--source NAME]
-       retok gain --reset
+       sift gain --reset
 Show measured token savings from retained records (all projects by default).
 --project defaults to the current checkout; legacy records have no project.
 TIME is YYYY-MM-DD at UTC midnight or Unix milliseconds; since includes, until excludes.
 Weeks start Monday UTC. --graph uses daily buckets unless a period is selected.
 CSV exports totals, selected periods, or --history records. --reset clears metrics only.";
-const RECALL_HELP: &str = "Usage: retok recall --list
-       retok recall ID-OR-PREFIX [--stderr] [--from LINE] [--lines COUNT] [--grep TEXT]
+const RECALL_HELP: &str = "Usage: sift recall --list
+       sift recall ID-OR-PREFIX [--stderr] [--from LINE] [--lines COUNT] [--grep TEXT]
 Without navigation, writes the entire saved stream as raw bytes.
 --from is one-based; --grep is literal and case-sensitive; --lines limits matches.
 Navigation returns at most 200 lines by default (maximum --lines 10000).
 Only opt-in saved originals are available; commands are never rerun.";
-const CONFIG_HELP: &str = "Usage: retok config [show|--create]
+const CONFIG_HELP: &str = "Usage: sift config [show|--create]
 Show effective settings. --create writes defaults only if no config exists.
 Set originals_max_entries, originals_max_bytes (total), and originals_max_days in config.json.
-Caps must be positive; originals are saved only when keep_originals is true.
+Caps must be positive. Ordinary originals require keep_originals; semantic selection
+always saves its complete input before omission so the result remains recoverable.
 Oversized originals are skipped; measurements are still recorded.";
+const SEMANTIC_HELP: &str = "Usage: sift semantic enable [--project PATH]
+       sift semantic shadow [--project PATH]
+       sift semantic disable
+       sift semantic status
+Enable emits smaller recoverable semantic selections; shadow only records decisions.
+Enable and shadow send the current task and eligible Pi grep result passages to TypeSafe.
+The API key is read from TYPESAFE_API_KEY and is never stored.";
 fn help(args: &[OsString], text: &str, output: &mut impl Write) -> Result<bool> {
     if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
         writeln!(output, "{text}")?;
@@ -1183,5 +1365,89 @@ pub fn config(args: &[OsString]) -> Result<()> {
     }
     serde_json::to_writer_pretty(io::stdout().lock(), &Settings::load_from(&path)?)?;
     writeln!(io::stdout().lock())?;
+    Ok(())
+}
+
+pub fn semantic(args: &[OsString]) -> Result<()> {
+    if help(args, SEMANTIC_HELP, &mut io::stdout().lock())? {
+        return Ok(());
+    }
+    let args = args_utf8(args)?;
+    let action = args
+        .first()
+        .context("semantic: expected enable, shadow, disable, or status")?;
+    ensure!(
+        ["enable", "shadow", "disable", "status"].contains(action),
+        "semantic: expected enable, shadow, disable, or status"
+    );
+    if *action == "disable" || *action == "status" {
+        ensure!(args.len() == 1, "semantic {action} accepts no options");
+    }
+    let path = config_path()?;
+    let mut settings = Settings::load_from(&path)?;
+    if *action == "status" {
+        let current = std::env::current_dir()
+            .ok()
+            .and_then(|path| project_at(&path).ok());
+        let allowed = current
+            .as_ref()
+            .is_some_and(|path| settings.semantic_selection.allowed_projects.contains(path));
+        writeln!(
+            io::stdout().lock(),
+            "mode: {}\ncurrent project: {}\ncurrent project allowed: {}\nTYPESAFE_API_KEY: {}",
+            match settings.semantic_selection.mode {
+                SemanticMode::Off => "off",
+                SemanticMode::Shadow => "shadow",
+                SemanticMode::Select => "select",
+            },
+            current.as_deref().unwrap_or("unavailable"),
+            allowed,
+            if std::env::var_os("TYPESAFE_API_KEY").is_some_and(|v| !v.is_empty()) {
+                "set"
+            } else {
+                "not set"
+            }
+        )?;
+        return Ok(());
+    }
+    if *action == "disable" {
+        settings.semantic_selection.mode = SemanticMode::Off;
+        settings.save_to(&path)?;
+        writeln!(io::stdout().lock(), "Semantic selection disabled.")?;
+        return Ok(());
+    }
+    let project = match args.as_slice() {
+        [_] => project_at(&std::env::current_dir()?)?,
+        [_, "--project", value] => project_at(Path::new(value))?,
+        [_, value] if value.starts_with("--project=") => {
+            project_at(Path::new(value.trim_start_matches("--project=")))?
+        }
+        _ => bail!("semantic {action}: expected [--project PATH]"),
+    };
+    if !settings
+        .semantic_selection
+        .allowed_projects
+        .contains(&project)
+    {
+        settings
+            .semantic_selection
+            .allowed_projects
+            .push(project.clone());
+    }
+    settings.semantic_selection.mode = if *action == "enable" {
+        SemanticMode::Select
+    } else {
+        SemanticMode::Shadow
+    };
+    settings.save_to(&path)?;
+    writeln!(
+        io::stdout().lock(),
+        "Semantic {} for {project}. Eligible Pi grep requests send the current task and eligible result passages to TypeSafe; TYPESAFE_API_KEY is read only from the environment.",
+        if *action == "enable" {
+            "selection enabled"
+        } else {
+            "shadow mode enabled"
+        }
+    )?;
     Ok(())
 }

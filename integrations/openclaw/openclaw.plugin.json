@@ -1,8 +1,8 @@
 {
-  "id": "retok-rewrite",
-  "name": "Retok",
+  "id": "sift-rewrite",
+  "name": "Sift",
   "version": "0.1.0",
-  "description": "Rewrite supported shell commands through Retok before execution.",
+  "description": "Rewrite supported shell commands through Sift before execution.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

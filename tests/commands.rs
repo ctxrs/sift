@@ -8,7 +8,7 @@ struct Sandbox(PathBuf);
 impl Sandbox {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
-            "retok-commands-{}-{}",
+            "sift-commands-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -16,12 +16,12 @@ impl Sandbox {
         Self(root)
     }
     fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_retok"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_sift"));
         command
             .args(args)
             .current_dir(&self.0)
-            .env("RETOK_CONFIG_DIR", self.0.join("config"))
-            .env("RETOK_STATE_DIR", self.0.join("state"));
+            .env("SIFT_CONFIG_DIR", self.0.join("config"))
+            .env("SIFT_STATE_DIR", self.0.join("state"));
         command
     }
     fn output(&self, args: &[&str], input: &[u8]) -> Output {
@@ -104,14 +104,14 @@ fn automatic_status_keeps_every_path_and_measures_the_selected_view() {
     )
     .unwrap();
     fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
-    let compactor = retok::Compactor::new().unwrap();
+    let compactor = sift::Compactor::new().unwrap();
     let expected = compactor.compact(&presentation);
     assert!(expected.output_tokens < compactor.compact(&original).output_tokens);
     let output = root.output(&["run", "--", program.to_str().unwrap(), "status"], b"");
     assert!(output.status.success());
     assert_eq!(output.stdout, expected.text.as_bytes());
     assert_eq!(
-        retok::restore(expected.encoding, &expected.text).unwrap(),
+        sift::restore(expected.encoding, &expected.text).unwrap(),
         presentation
     );
     assert_eq!(fs::read(root.0.join("marker")).unwrap(), b"invoked");
@@ -307,7 +307,7 @@ fn run_records_exact_savings_and_recalls_original_without_rerunning() {
     assert_eq!(result.status.code(), Some(7));
     assert!(result.stderr.is_empty());
     let original = "repeated diagnostic preserves all information\n".repeat(300);
-    let expected = retok::Compactor::new().unwrap().compact(&original);
+    let expected = sift::Compactor::new().unwrap().compact(&original);
     assert_eq!(result.stdout, expected.text.as_bytes());
     let gain = root.output(&["gain", "--json", "--history"], b"");
     assert!(gain.status.success());
@@ -347,7 +347,7 @@ fn discover_reports_saved_output_without_execution_or_usage_mutations() {
     let output = root.output(&["discover", "--json", "--", "-output.txt", "binary"], b"");
     assert!(output.status.success());
     let rows: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let compact = retok::Compactor::new().unwrap().compact(&text);
+    let compact = sift::Compactor::new().unwrap().compact(&text);
     assert_eq!(rows[0]["input_tokens"], compact.input_tokens);
     assert_eq!(
         rows[0]["saved_tokens"],

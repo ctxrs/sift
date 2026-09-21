@@ -2,8 +2,8 @@ use std::io::{Read, Write};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
 
-use retok::{Compactor, Encoding, restore};
 use serde_json::{Value, json};
+use sift::{Compactor, Encoding, restore};
 
 fn compactor() -> &'static Compactor {
     static COMPACTOR: OnceLock<Compactor> = OnceLock::new();
@@ -11,7 +11,7 @@ fn compactor() -> &'static Compactor {
 }
 
 fn cli(args: &[&str], input: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -80,7 +80,7 @@ fn inline_comma_repetition_uses_exact_lossless_symbols() {
     assert_eq!(result.encoding, Encoding::TextSymbolsV1);
     let frame = result
         .text
-        .strip_prefix("retok:symbols-v1 substitute each character using this JSON dictionary:\n")
+        .strip_prefix("sift:symbols-v1 substitute each character using this JSON dictionary:\n")
         .unwrap();
     let (dictionary, body) = frame.split_once('\n').unwrap();
     let dictionary: std::collections::HashMap<String, String> =
@@ -136,7 +136,7 @@ fn selector_chooses_the_cheapest_complete_candidate() {
         vec![r#"{"long_field_name":7,"status":"ready"}"#; 100].join(",")
     );
     let runs = format!(
-        "retok:text-runs-v1 counts repeat exact JSON strings; concatenate\n{}",
+        "sift:text-runs-v1 counts repeat exact JSON strings; concatenate\n{}",
         json!([
             [1, "[\n"],
             [99, format!("{row},\n")],
@@ -168,7 +168,7 @@ fn earlier_line_format_keeps_priority_when_an_early_symbol_frame_ties() {
         .map(|i| format!("{prefix}{i}.rs details\n"))
         .collect();
     let lines = format!(
-        "retok:lines-v1 [N,prefix] then N lines; prepend prefix\n[64,\"{prefix}\"]\n{}",
+        "sift:lines-v1 [N,prefix] then N lines; prepend prefix\n[64,\"{prefix}\"]\n{}",
         (0..64)
             .map(|i| format!("{i}.rs details\n"))
             .collect::<String>()
@@ -189,7 +189,7 @@ fn plain_bytes_and_explicit_raw_restore() {
     for input in [
         &b"\xff\0\r\n\x80"[..],
         b"failure: bad input\r\n",
-        b"retok:text-runs-v1 counts repeat exact JSON strings; concatenate\n[[2,\"x\"]]",
+        b"sift:text-runs-v1 counts repeat exact JSON strings; concatenate\n[[2,\"x\"]]",
     ] {
         for args in [&["compact"][..], &["restore", "--encoding=raw"][..]] {
             let output = cli(args, input);
@@ -214,7 +214,7 @@ fn prefix_protocol_and_cli_restore_match_independent_expansion() {
     );
     assert!(response.status.success());
     let result: Value = serde_json::from_slice(&response.stdout).unwrap();
-    let header = "retok:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n";
+    let header = "sift:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n";
     let suffixes: Vec<String> = (0..100).map(|i| format!("{i}.rs\r\n")).collect();
     let expected = format!(
         "{header}{}",
@@ -255,7 +255,7 @@ fn literal_lines_protocol_matches_independent_expansion_and_counts() {
     let suffixes: String = (0..100).map(|i| format!("{i}\r\n")).collect();
     let input: String = (0..100).map(|i| format!("{prefix}{i}\r\n")).collect();
     let expected = format!(
-        "retok:lines-v1 [N,prefix] then N lines; prepend prefix\n{}\n{suffixes}",
+        "sift:lines-v1 [N,prefix] then N lines; prepend prefix\n{}\n{suffixes}",
         json!([100, prefix])
     );
     let response = cli(
@@ -333,11 +333,11 @@ fn symbol_protocol_and_legacy_refs_restore_match_independent_expansion() {
     let result: Value = serde_json::from_slice(&response.stdout).unwrap();
     assert_eq!(result["encoding"], "text-symbols-v1");
     let legacy = format!(
-        "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n{}",
+        "sift:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n{}",
         json!([repeated, between, 0, last, 0])
     );
     let expected = format!(
-        "retok:symbols-v1 substitute each character using this JSON dictionary:\n{}\n§{between}§{last}§",
+        "sift:symbols-v1 substitute each character using this JSON dictionary:\n{}\n§{between}§{last}§",
         json!({"§": repeated})
     );
     assert_eq!(result["text"], expected);
@@ -385,14 +385,14 @@ fn nonadjacent_fragment_candidates_preserve_both_separator_forms() {
         }
         input.push_str(tail);
         let expected = format!(
-            "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n{}",
+            "sift:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n{}",
             serde_json::to_string(&expected_entries).unwrap()
         );
         let symbol_body: String = (0..8)
             .map(|i| format!("§{i}.rs{ending}¶{i}.svg{ending}"))
             .collect();
         let symbols = format!(
-            "retok:symbols-v1 substitute each character using this JSON dictionary:\n{{\"§\":{},\"¶\":{}}}\n{symbol_body}{tail}",
+            "sift:symbols-v1 substitute each character using this JSON dictionary:\n{{\"§\":{},\"¶\":{}}}\n{symbol_body}{tail}",
             serde_json::to_string(first).unwrap(),
             serde_json::to_string(second).unwrap()
         );
@@ -426,7 +426,7 @@ fn protocol_flushes_before_stdin_closes() {
     use std::io::{BufRead, BufReader};
     use std::sync::mpsc;
     use std::time::Duration;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
         .args(["compact", "--protocol=json-v1"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -458,8 +458,51 @@ fn protocol_flushes_before_stdin_closes() {
 }
 
 #[test]
+fn prior_product_headers_remain_explicitly_restorable() {
+    let product = String::from_utf8(vec![114, 101, 116, 111, 107]).unwrap();
+    let cases = [
+        (
+            Encoding::TextRunsV1,
+            format!(
+                "{product}:text-runs-v1 counts repeat exact JSON strings; concatenate\n[[2,\"x\"]]"
+            ),
+            "xx",
+        ),
+        (
+            Encoding::TextPrefixesV1,
+            format!(
+                "{product}:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n[\"x\"]"
+            ),
+            "x",
+        ),
+        (
+            Encoding::TextRefsV1,
+            format!(
+                "{product}:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n[\"x\",0]"
+            ),
+            "xx",
+        ),
+        (
+            Encoding::TextLinesV1,
+            format!("{product}:lines-v1 [N,prefix] then N lines; prepend prefix\n[1,\"\"]\nx"),
+            "x",
+        ),
+        (
+            Encoding::TextSymbolsV1,
+            format!(
+                "{product}:symbols-v1 substitute each character using this JSON dictionary:\n{{\"§\":\"x\"}}\n§"
+            ),
+            "x",
+        ),
+    ];
+    for (encoding, frame, expected) in cases {
+        assert_eq!(restore(encoding, &frame).unwrap(), expected);
+    }
+}
+
+#[test]
 fn closed_output_is_quiet_and_successful() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
         .args(["restore", "--encoding", "raw"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

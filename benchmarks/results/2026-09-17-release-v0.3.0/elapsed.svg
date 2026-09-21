@@ -4,7 +4,7 @@
 <text x="10" y="57" font-size="12" font-family="sans-serif">git-status / native</text>
 <rect x="240" y="45" height="15" width="1.64" fill="#555"/>
 <text x="246.64" y="57" font-size="12">1.35</text>
-<text x="10" y="80" font-size="12" font-family="sans-serif">git-status / retok</text>
+<text x="10" y="80" font-size="12" font-family="sans-serif">git-status / sift</text>
 <rect x="240" y="68" height="15" width="49.86" fill="#1565c0"/>
 <text x="294.86" y="80" font-size="12">41.15</text>
 <text x="10" y="103" font-size="12" font-family="sans-serif">git-status / rtk</text>
@@ -13,7 +13,7 @@
 <text x="10" y="126" font-size="12" font-family="sans-serif">git-diff / native</text>
 <rect x="240" y="114" height="15" width="1.67" fill="#555"/>
 <text x="246.67" y="126" font-size="12">1.38</text>
-<text x="10" y="149" font-size="12" font-family="sans-serif">git-diff / retok</text>
+<text x="10" y="149" font-size="12" font-family="sans-serif">git-diff / sift</text>
 <rect x="240" y="137" height="15" width="50.21" fill="#1565c0"/>
 <text x="295.21" y="149" font-size="12">41.44</text>
 <text x="10" y="172" font-size="12" font-family="sans-serif">git-diff / rtk</text>
@@ -22,7 +22,7 @@
 <text x="10" y="195" font-size="12" font-family="sans-serif">git-log / native</text>
 <rect x="240" y="183" height="15" width="1.74" fill="#555"/>
 <text x="246.74" y="195" font-size="12">1.44</text>
-<text x="10" y="218" font-size="12" font-family="sans-serif">git-log / retok</text>
+<text x="10" y="218" font-size="12" font-family="sans-serif">git-log / sift</text>
 <rect x="240" y="206" height="15" width="49.83" fill="#1565c0"/>
 <text x="294.83" y="218" font-size="12">41.13</text>
 <text x="10" y="241" font-size="12" font-family="sans-serif">git-log / rtk</text>
@@ -31,7 +31,7 @@
 <text x="10" y="264" font-size="12" font-family="sans-serif">listing / native</text>
 <rect x="240" y="252" height="15" width="2.48" fill="#555"/>
 <text x="247.48" y="264" font-size="12">2.05</text>
-<text x="10" y="287" font-size="12" font-family="sans-serif">listing / retok</text>
+<text x="10" y="287" font-size="12" font-family="sans-serif">listing / sift</text>
 <rect x="240" y="275" height="15" width="61.32" fill="#1565c0"/>
 <text x="306.32" y="287" font-size="12">50.62</text>
 <text x="10" y="310" font-size="12" font-family="sans-serif">listing / rtk</text>
@@ -40,7 +40,7 @@
 <text x="10" y="333" font-size="12" font-family="sans-serif">search / native</text>
 <rect x="240" y="321" height="15" width="2.28" fill="#555"/>
 <text x="247.28" y="333" font-size="12">1.88</text>
-<text x="10" y="356" font-size="12" font-family="sans-serif">search / retok</text>
+<text x="10" y="356" font-size="12" font-family="sans-serif">search / sift</text>
 <rect x="240" y="344" height="15" width="61.76" fill="#1565c0"/>
 <text x="306.76" y="356" font-size="12">50.98</text>
 <text x="10" y="379" font-size="12" font-family="sans-serif">search / rtk</text>
@@ -49,7 +49,7 @@
 <text x="10" y="402" font-size="12" font-family="sans-serif">json / native</text>
 <rect x="240" y="390" height="15" width="2.22" fill="#555"/>
 <text x="247.22" y="402" font-size="12">1.83</text>
-<text x="10" y="425" font-size="12" font-family="sans-serif">json / retok</text>
+<text x="10" y="425" font-size="12" font-family="sans-serif">json / sift</text>
 <rect x="240" y="413" height="15" width="61.40" fill="#1565c0"/>
 <text x="306.40" y="425" font-size="12">50.68</text>
 <text x="10" y="448" font-size="12" font-family="sans-serif">json / rtk</text>
@@ -58,7 +58,7 @@
 <text x="10" y="471" font-size="12" font-family="sans-serif">tests-diagnostics / native</text>
 <rect x="240" y="459" height="15" width="12.62" fill="#555"/>
 <text x="257.62" y="471" font-size="12">10.41</text>
-<text x="10" y="494" font-size="12" font-family="sans-serif">tests-diagnostics / retok</text>
+<text x="10" y="494" font-size="12" font-family="sans-serif">tests-diagnostics / sift</text>
 <rect x="240" y="482" height="15" width="59.52" fill="#1565c0"/>
 <text x="304.52" y="494" font-size="12">49.13</text>
 <text x="10" y="517" font-size="12" font-family="sans-serif">tests-diagnostics / rtk</text>
@@ -67,7 +67,7 @@
 <text x="10" y="540" font-size="12" font-family="sans-serif">control-noop / native</text>
 <rect x="240" y="528" height="15" width="0.55" fill="#555"/>
 <text x="245.55" y="540" font-size="12">0.45</text>
-<text x="10" y="563" font-size="12" font-family="sans-serif">control-noop / retok</text>
+<text x="10" y="563" font-size="12" font-family="sans-serif">control-noop / sift</text>
 <rect x="240" y="551" height="15" width="1.29" fill="#1565c0"/>
 <text x="246.29" y="563" font-size="12">1.06</text>
 <text x="10" y="586" font-size="12" font-family="sans-serif">control-noop / rtk</text>
@@ -76,7 +76,7 @@
 <text x="10" y="609" font-size="12" font-family="sans-serif">control-short / native</text>
 <rect x="240" y="597" height="15" width="2.01" fill="#555"/>
 <text x="247.01" y="609" font-size="12">1.66</text>
-<text x="10" y="632" font-size="12" font-family="sans-serif">control-short / retok</text>
+<text x="10" y="632" font-size="12" font-family="sans-serif">control-short / sift</text>
 <rect x="240" y="620" height="15" width="13.67" fill="#1565c0"/>
 <text x="258.67" y="632" font-size="12">11.28</text>
 <text x="10" y="655" font-size="12" font-family="sans-serif">control-short / rtk</text>
@@ -85,7 +85,7 @@
 <text x="10" y="678" font-size="12" font-family="sans-serif">control-progress / native</text>
 <rect x="240" y="666" height="15" width="596.40" fill="#555"/>
 <text x="841.40" y="678" font-size="12">492.28</text>
-<text x="10" y="701" font-size="12" font-family="sans-serif">control-progress / retok</text>
+<text x="10" y="701" font-size="12" font-family="sans-serif">control-progress / sift</text>
 <rect x="240" y="689" height="15" width="597.02" fill="#1565c0"/>
 <text x="842.02" y="701" font-size="12">492.80</text>
 <text x="10" y="724" font-size="12" font-family="sans-serif">control-progress / rtk</text>

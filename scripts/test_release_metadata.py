@@ -50,16 +50,16 @@ class MetadataTests(unittest.TestCase):
         self.project = self.root / "project"
         self.project.mkdir()
         (self.project / "Cargo.toml").write_text(
-            f'[package]\nname="retok"\nversion="{metadata.VERSION}"\n'
+            f'[package]\nname="sift"\nversion="{metadata.VERSION}"\n'
         )
         (self.project / "LICENSE").write_text(MIT)
-        self.binary = self.root / "retok-linux-x64"
+        self.binary = self.root / "sift-linux-x64"
         self.binary.write_bytes(b"Synthetic binary\0" + VOCAB + b"suffix")
         self.supplement = self.root / "synthetic-license"
         self.supplement.write_text(MIT)
         self.runtime_path = self.root / "runtimes.json"
         self.write_runtime_manifest("x86_64-unknown-linux-gnu", ["rust-std"])
-        self.packages = [{"id": "root", "name": "retok", "version": metadata.VERSION}]
+        self.packages = [{"id": "root", "name": "sift", "version": metadata.VERSION}]
         self.lock_entries = []
         self.archives = {}
         self.full_texts = []
@@ -186,13 +186,13 @@ class MetadataTests(unittest.TestCase):
             self.node("vocab-codec", []), self.node("json5", []),
             self.node("serde_yaml_ng", [("unsafe-libyaml", None)]), self.node("unsafe-libyaml", []),
         ])
-        self.cargo["retok-normal-graph"] = {
+        self.cargo["sift-normal-graph"] = {
             "root": ["bpe-openai", "normal", "json5", "serde_yaml_ng"],
             "bpe-openai": ["bpe", "regex-syntax", "unicode-ident"],
             "bpe": [], "regex-syntax": [], "unicode-ident": [], "normal": [], "json5": [],
             "serde_yaml_ng": ["unsafe-libyaml"], "unsafe-libyaml": [],
         }
-        self.cargo["retok-generator-graph"] = {
+        self.cargo["sift-generator-graph"] = {
             "bpe-openai": ["bpe", "regex-syntax", "unicode-ident", "vocab-builder"],
             "bpe": [], "regex-syntax": [], "unicode-ident": [],
             "vocab-builder": ["vocab-codec"], "vocab-codec": [],
@@ -201,7 +201,7 @@ class MetadataTests(unittest.TestCase):
 
     @staticmethod
     def set_property(component, key, value):
-        values = {p["name"].removeprefix("retok:"): p["value"] for p in component["properties"]}
+        values = {p["name"].removeprefix("sift:"): p["value"] for p in component["properties"]}
         values[key] = value
         component["properties"] = metadata.properties(values)
 
@@ -247,8 +247,8 @@ class MetadataTests(unittest.TestCase):
         generator.update({"bpe-openai": ["bpe", "vocab-builder"], "bpe": [],
                           "vocab-builder": ["vocab-codec"], "vocab-codec": [],
                           "rmp-serde": [], "aneubeck-daachorse": [], "build-only": []})
-        self.cargo["retok-normal-graph"] = normal
-        self.cargo["retok-generator-graph"] = generator
+        self.cargo["sift-normal-graph"] = normal
+        self.cargo["sift-generator-graph"] = generator
         self.write_lock()
 
     def test_count_inventory_notices_and_two_complete_binary_ranges(self):
@@ -259,21 +259,21 @@ class MetadataTests(unittest.TestCase):
                          "unicode-ident", "bpe-openai", "bpe", "rmp-serde", "aneubeck-daachorse",
                          "vocab-builder", "vocab-codec", "build-only", "o200k_base", "rust-std"})
         props = metadata.property_map(document["metadata"]["component"])
-        normal = json.loads(props["retok:normal-dependencies"])
-        build = json.loads(props["retok:vocabulary-build-dependencies"])
+        normal = json.loads(props["sift:normal-dependencies"])
+        build = json.loads(props["sift:vocabulary-build-dependencies"])
         self.assertEqual(normal, sorted(components[n]["bom-ref"] for n in
                          ("normal", "rkyv", "regex-automata", "regex-syntax", "unicode-ident")))
         self.assertEqual(build, sorted(components[n]["bom-ref"] for n in
                          ("bpe-openai", "bpe", "rmp-serde", "aneubeck-daachorse",
                           "vocab-builder", "vocab-codec", "build-only")))
         vp = metadata.property_map(components["o200k_base"])
-        self.assertEqual(vp["retok:profile-status"], "development")
+        self.assertEqual(vp["sift:profile-status"], "release")
         for name, raw in self.count_assets.items():
-            offset = int(vp["retok:" + name + "-offset"])
-            self.assertEqual(int(vp["retok:" + name + "-size"]), len(raw))
+            offset = int(vp["sift:" + name + "-offset"])
+            self.assertEqual(int(vp["sift:" + name + "-size"]), len(raw))
             self.assertEqual(self.binary.read_bytes()[offset:offset + len(raw)], raw)
-            self.assertEqual(vp["retok:" + name + "-sha256"], hashlib.sha256(raw).hexdigest())
-        self.assertNotIn("retok:embedded-sha256", vp)
+            self.assertEqual(vp["sift:" + name + "-sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertNotIn("sift:embedded-sha256", vp)
         self.assertEqual(notices.count(metadata.COUNT_NOTICE_START), 1)
         self.assertIn(metadata.COUNT_NOTICE_START + self.adapted_notice + metadata.COUNT_NOTICE_END, notices)
         self.assertNotIn("binary embeds this prepared representation", notices)
@@ -281,9 +281,9 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual((document, notices), self.generate())
         metadata.validate_project(document, self.project)
 
-    def test_count_cargo_trees_use_retoks_normal_and_build_closures(self):
+    def test_count_cargo_trees_use_sifts_normal_and_build_closures(self):
         self.use_count_tokenizer()
-        normal = (f"0retok v{metadata.VERSION}\n1normal v1.2.3\n1rkyv v0.8.18\n"
+        normal = (f"0sift v{metadata.VERSION}\n1normal v1.2.3\n1rkyv v0.8.18\n"
                   "2unicode-ident v1.2.3\n1regex-automata v0.4.18\n2regex-syntax v1.2.3\n")
         generator = (normal + "1bpe-openai v0.3.1\n2bpe v0.2.2\n2vocab-builder v1.2.3\n"
                      "1rmp-serde v1.3.1\n1aneubeck-daachorse v1.1.1\n1build-only v1.2.3\n")
@@ -297,7 +297,7 @@ class MetadataTests(unittest.TestCase):
         metadata.validate_project(document, self.project)
         for call, kinds in zip(run.call_args_list[1:], ("normal", "normal,build")):
             args = call.args[0]
-            self.assertEqual(args[args.index("--package") + 1], "retok")
+            self.assertEqual(args[args.index("--package") + 1], "sift")
             self.assertEqual(args[args.index("--edges") + 1], kinds)
             self.assertIn("--offline", args)
             self.assertIn("--locked", args)
@@ -310,7 +310,7 @@ class MetadataTests(unittest.TestCase):
             if dep["pkg"] == "bpe-openai":
                 dep["dep_kinds"][0]["kind"] = "dev"
         self.assertFalse(metadata.count_generator(dev))
-        for key in ("retok-normal-graph", "retok-generator-graph"):
+        for key in ("sift-normal-graph", "sift-generator-graph"):
             self.cargo.pop(key)
         with self.assertRaisesRegex(ValueError, "feature-resolved Cargo trees"):
             metadata.release_graph(self.cargo)
@@ -334,12 +334,12 @@ class MetadataTests(unittest.TestCase):
     def test_count_sidecar_cannot_redefine_profile_or_embedded_bytes(self):
         self.use_count_tokenizer()
         document, notices = self.generate()
-        for key, value in (("representation", "unreviewed"), ("profile-status", "release"),
+        for key, value in (("representation", "unreviewed"), ("profile-status", "development"),
                            ("archive-endian", "big"), ("dfa-endian", "big"),
                            ("archive-pointer-width", "64"), ("archive-alignment", "unaligned"),
                            ("count-size", "1"), ("dfa-size", "1"), ("embedded-offset", "0"),
                            ("count-offset", "-1"), ("dfa-offset", "999999"),
-                           ("retok-build-script-sha256", "0" * 64),
+                           ("sift-build-script-sha256", "0" * 64),
                            ("count-schema-sha256", "0" * 64), ("tokenizer-source-sha256", "0" * 64),
                            ("source-compressed-sha256", "0" * 64),
                            ("generator-build-script-sha256", "0" * 64)):
@@ -416,8 +416,8 @@ class MetadataTests(unittest.TestCase):
                 metadata.validate(changed, notices, self.binary)
         root = document["metadata"]["component"]
         props = metadata.property_map(root)
-        build = json.loads(props["retok:vocabulary-build-dependencies"])
-        normal = json.loads(props["retok:normal-dependencies"])
+        build = json.loads(props["sift:vocabulary-build-dependencies"])
+        normal = json.loads(props["sift:normal-dependencies"])
         moved = "pkg:cargo/vocab-codec@1.2.3"
         build.remove(moved)
         self.set_property(root, "normal-dependencies", json.dumps(sorted(normal + [moved])))
@@ -439,11 +439,11 @@ class MetadataTests(unittest.TestCase):
                          "json5", "serde_yaml_ng", "unsafe-libyaml", "vocab-builder", "vocab-codec",
                          "o200k_base", "rust-std"})
         props = metadata.property_map(document["metadata"]["component"])
-        self.assertEqual(json.loads(props["retok:vocabulary-build-dependencies"]),
+        self.assertEqual(json.loads(props["sift:vocabulary-build-dependencies"]),
                          ["pkg:cargo/vocab-builder@1.2.3", "pkg:cargo/vocab-codec@1.2.3"])
-        self.assertNotIn("vocab-builder", props["retok:normal-dependencies"])
+        self.assertNotIn("vocab-builder", props["sift:normal-dependencies"])
         vp = metadata.property_map(components["o200k_base"])
-        self.assertEqual(vp["retok:embedded-sha256"], hashlib.sha256(self.packed).hexdigest())
+        self.assertEqual(vp["sift:embedded-sha256"], hashlib.sha256(self.packed).hexdigest())
         self.assertEqual(metadata.component_hash(components["o200k_base"]), hashlib.sha256(VOCAB).hexdigest())
         self.assertNotIn(VOCAB, self.binary.read_bytes())
         self.assertIn("not the raw .tiktoken text", notices)
@@ -512,8 +512,8 @@ class MetadataTests(unittest.TestCase):
         document, notices = self.generate()
         root = document["metadata"]["component"]
         props = metadata.property_map(root)
-        build = json.loads(props["retok:vocabulary-build-dependencies"])
-        normal = json.loads(props["retok:normal-dependencies"])
+        build = json.loads(props["sift:vocabulary-build-dependencies"])
+        normal = json.loads(props["sift:normal-dependencies"])
         self.set_property(root, "normal-dependencies", json.dumps(sorted(normal + [build.pop()])))
         self.set_property(root, "vocabulary-build-dependencies", json.dumps(build))
         metadata.validate(document, notices, self.binary)
@@ -526,7 +526,7 @@ class MetadataTests(unittest.TestCase):
         # inactive build transitive. Neither appears in Cargo's resolved trees.
         next(n for n in self.nodes if n["id"] == "bpe")["deps"] = self.node("bpe", [("vocab-codec", None)])["deps"]
         next(n for n in self.nodes if n["id"] == "vocab-builder")["deps"] = self.node("vocab-builder", [("unused-platform", None)])["deps"]
-        normal_tree = (f"0retok v{metadata.VERSION} (/synthetic/project)\n"
+        normal_tree = (f"0sift v{metadata.VERSION} (/synthetic/project)\n"
                        "1bpe-openai v0.3.1\n2bpe v0.2.2\n2regex-syntax v1.2.3\n"
                        "2unicode-ident v1.2.3 (proc-macro)\n1normal v1.2.3\n")
         build_tree = ("0bpe-openai v0.3.1\n1bpe v0.2.2\n1regex-syntax v1.2.3\n"
@@ -542,7 +542,7 @@ class MetadataTests(unittest.TestCase):
         self.assertNotIn("vocab-codec", names)
         self.assertNotIn("unused-platform", names)
         metadata.validate_project(document, self.project)
-        for call, kinds, name in zip(run.call_args_list[1:], ("normal", "normal,build"), ("retok", "bpe-openai")):
+        for call, kinds, name in zip(run.call_args_list[1:], ("normal", "normal,build"), ("sift", "bpe-openai")):
             args = call.args[0]
             self.assertEqual(args[:6], ["cargo", "tree", "--offline", "--locked", "--target", "aarch64-apple-darwin"])
             self.assertEqual(args[args.index("--edges") + 1], kinds)
@@ -550,17 +550,17 @@ class MetadataTests(unittest.TestCase):
             self.assertIn("--no-dedupe", args)
 
     def test_cargo_tree_parser_fails_closed_and_merges_host_target_instances(self):
-        for text in ("", "not a tree\n", "1retok v" + metadata.VERSION,
-                     f"0retok v{metadata.VERSION}\n2normal v1.2.3\n", "0absent v1.2.3\n"):
+        for text in ("", "not a tree\n", "1sift v" + metadata.VERSION,
+                     f"0sift v{metadata.VERSION}\n2normal v1.2.3\n", "0absent v1.2.3\n"):
             with patch("release_metadata.subprocess.run") as run:
                 run.return_value = subprocess.CompletedProcess([], 0, text, "")
                 with self.subTest(text=text), self.assertRaisesRegex(ValueError, "Cargo tree"):
-                    metadata.cargo_tree_graph(self.project, "target", self.cargo, "normal", "retok")
-        text = (f"0retok v{metadata.VERSION}\n1normal v1.2.3\n2regex-syntax v1.2.3\n"
+                    metadata.cargo_tree_graph(self.project, "target", self.cargo, "normal", "sift")
+        text = (f"0sift v{metadata.VERSION}\n1normal v1.2.3\n2regex-syntax v1.2.3\n"
                 "1normal v1.2.3\n2unicode-ident v1.2.3\n")
         with patch("release_metadata.subprocess.run") as run:
             run.return_value = subprocess.CompletedProcess([], 0, text, "")
-            graph = metadata.cargo_tree_graph(self.project, "target", self.cargo, "normal,build", "retok")
+            graph = metadata.cargo_tree_graph(self.project, "target", self.cargo, "normal,build", "sift")
         self.assertEqual(graph["normal"], ["regex-syntax", "unicode-ident"])
 
     def test_packed_supplements_reject_archive_revision_license_drift(self):
@@ -604,9 +604,9 @@ class MetadataTests(unittest.TestCase):
         })
         self.nodes.append(self.node("yaml-edit", []))
         self.nodes[0]["deps"].append(self.node("root", [("yaml-edit", None)])["deps"][0])
-        if "retok-normal-graph" in self.cargo:
-            self.cargo["retok-normal-graph"]["root"].append("yaml-edit")
-            self.cargo["retok-normal-graph"]["yaml-edit"] = []
+        if "sift-normal-graph" in self.cargo:
+            self.cargo["sift-normal-graph"]["root"].append("yaml-edit")
+            self.cargo["sift-normal-graph"]["yaml-edit"] = []
         self.enterContext(patch.dict(metadata.SUPPLEMENTS, {("yaml-edit", "0.3.1"): (
             metadata.sha256(self.archives["yaml-edit"]), "f" * 40, "https://example.org/yaml-edit")}))
         self.write_lock()
@@ -688,7 +688,7 @@ class MetadataTests(unittest.TestCase):
     def test_legacy_sidecar_without_new_build_inventory_remains_valid(self):
         document, notices = self.generate()
         root = document["metadata"]["component"]
-        root["properties"] = [p for p in root["properties"] if p["name"] != "retok:vocabulary-build-dependencies"]
+        root["properties"] = [p for p in root["properties"] if p["name"] != "sift:vocabulary-build-dependencies"]
         metadata.validate(document, notices, self.binary)
         metadata.validate_project(document, self.project)
         vocab = next(c for c in document["components"] if c["name"] == "o200k_base")
@@ -702,7 +702,7 @@ class MetadataTests(unittest.TestCase):
         for name in ("winapi", "winapi-x86_64-pc-windows-gnu"):
             component = next(c for c in document["components"] if c["name"] == name)
             self.assertEqual(component["licenses"], [{"expression": "MIT OR Apache-2.0"}])
-            self.assertEqual(metadata.property_map(component)["retok:cargo-license-expression"], "MIT/Apache-2.0")
+            self.assertEqual(metadata.property_map(component)["sift:cargo-license-expression"], "MIT/Apache-2.0")
             self.assertEqual(component["hashes"][0]["content"], metadata.sha256(self.archives[name]))
         section = notices.split("===== crate winapi-x86_64-pc-windows-gnu 0.4.0 =====", 1)[1].split("=====", 1)[0]
         self.assertIn(MIT, section)
@@ -787,8 +787,8 @@ class MetadataTests(unittest.TestCase):
         root = document["metadata"]["component"]
         self.assertEqual(root["hashes"][0]["content"], hashlib.sha256(self.binary.read_bytes()).hexdigest())
         props = metadata.property_map(root)
-        self.assertEqual(props["retok:source-commit"], "b" * 40)
-        self.assertEqual(props["retok:target"], "x86_64-unknown-linux-gnu")
+        self.assertEqual(props["sift:source-commit"], "b" * 40)
+        self.assertEqual(props["sift:target"], "x86_64-unknown-linux-gnu")
         edges = {e["ref"]: e["dependsOn"] for e in document["dependencies"]}
         self.assertEqual(edges[root["bom-ref"]], ["pkg:cargo/normal@1.2.3", "pkg:cargo/tiktoken-rs@1.2.3",
                                                   "runtime:rust-std@1.2.3:x86_64-unknown-linux-gnu"])
@@ -838,7 +838,7 @@ class MetadataTests(unittest.TestCase):
                 altered = notices.replace(marker, "")
                 changed = copy.deepcopy(document)
                 for prop in changed["metadata"]["component"]["properties"]:
-                    if prop["name"] == "retok:notices-sha256":
+                    if prop["name"] == "sift:notices-sha256":
                         prop["value"] = hashlib.sha256(altered.encode()).hexdigest()
                 with self.assertRaisesRegex(ValueError, "notice marker"):
                     metadata.validate(changed, altered, self.binary)
@@ -865,7 +865,7 @@ class MetadataTests(unittest.TestCase):
         for edge in document["dependencies"]:
             edge["dependsOn"] = [ref for ref in edge["dependsOn"] if ref != omitted]
         for prop in document["metadata"]["component"]["properties"]:
-            if prop["name"] == "retok:normal-dependencies":
+            if prop["name"] == "sift:normal-dependencies":
                 prop["value"] = json.dumps([ref for ref in json.loads(prop["value"]) if ref != omitted])
         metadata.validate(document, notices, self.binary)
         with self.assertRaisesRegex(ValueError, "Cargo dependency inventory"):
@@ -894,15 +894,15 @@ class MetadataTests(unittest.TestCase):
 
     def test_runtime_inventory_for_every_target_and_optional_gcc(self):
         cases = [
-            ("retok-linux-x64", "x86_64-unknown-linux-gnu", ["rust-std"]),
-            ("retok-linux-aarch64", "aarch64-unknown-linux-gnu", ["rust-std"]),
-            ("retok-linux-x64", "x86_64-unknown-linux-musl", ["rust-std", "musl"]),
-            ("retok-linux-aarch64", "aarch64-unknown-linux-musl", ["rust-std", "musl"]),
-            ("retok-macos-x64", "x86_64-apple-darwin", ["rust-std"]),
-            ("retok-macos-arm64", "aarch64-apple-darwin", ["rust-std"]),
-            ("retok-windows-x64.exe", "x86_64-pc-windows-msvc", ["rust-std"]),
-            ("retok-windows-x64.exe", "x86_64-pc-windows-gnu", ["rust-std", "mingw-w64"]),
-            ("retok-windows-x64.exe", "x86_64-pc-windows-gnu", ["rust-std", "mingw-w64", "gcc-runtime"]),
+            ("sift-linux-x64", "x86_64-unknown-linux-gnu", ["rust-std"]),
+            ("sift-linux-aarch64", "aarch64-unknown-linux-gnu", ["rust-std"]),
+            ("sift-linux-x64", "x86_64-unknown-linux-musl", ["rust-std", "musl"]),
+            ("sift-linux-aarch64", "aarch64-unknown-linux-musl", ["rust-std", "musl"]),
+            ("sift-macos-x64", "x86_64-apple-darwin", ["rust-std"]),
+            ("sift-macos-arm64", "aarch64-apple-darwin", ["rust-std"]),
+            ("sift-windows-x64.exe", "x86_64-pc-windows-msvc", ["rust-std"]),
+            ("sift-windows-x64.exe", "x86_64-pc-windows-gnu", ["rust-std", "mingw-w64"]),
+            ("sift-windows-x64.exe", "x86_64-pc-windows-gnu", ["rust-std", "mingw-w64", "gcc-runtime"]),
         ]
         for name, target, names in cases:
             with self.subTest(target=target, names=names):
@@ -919,7 +919,7 @@ class MetadataTests(unittest.TestCase):
                     self.assertEqual(component["version"], entry["version"])
                     self.assertEqual(component["hashes"][0]["content"], entry["sha256"])
                     self.assertEqual(component["licenses"], [{"expression": entry["license"]}])
-                    self.assertEqual(metadata.property_map(component)["retok:source"], entry["source"])
+                    self.assertEqual(metadata.property_map(component)["sift:source"], entry["source"])
                     self.assertIn(f"===== runtime {entry['name']} 1.2.3 License and attribution =====\n{MIT}", notices)
 
     def test_runtime_manifest_requires_exact_inventory_and_data(self):
@@ -960,8 +960,8 @@ class MetadataTests(unittest.TestCase):
         self.runtime_path.write_text(json.dumps(manifest))
         doc, notices = self.generate()
         props = metadata.property_map(doc["metadata"]["component"])
-        canonical = props["retok:runtime-manifest"]
-        self.assertEqual(hashlib.sha256(canonical.encode()).hexdigest(), props["retok:runtime-manifest-sha256"])
+        canonical = props["sift:runtime-manifest"]
+        self.assertEqual(hashlib.sha256(canonical.encode()).hexdigest(), props["sift:runtime-manifest-sha256"])
         self.assertNotIn("path", canonical)
         self.assertNotIn(str(self.root), json.dumps(doc) + notices)
         self.assertNotIn(private_path.name, json.dumps(doc) + notices)
@@ -980,8 +980,8 @@ class MetadataTests(unittest.TestCase):
         # File contents, rather than local locations, change the canonical binding.
         renamed.write_bytes(b"Changed full synthetic notice")
         changed, _ = self.generate()
-        self.assertNotEqual(props["retok:runtime-manifest-sha256"],
-                            metadata.property_map(changed["metadata"]["component"])["retok:runtime-manifest-sha256"])
+        self.assertNotEqual(props["sift:runtime-manifest-sha256"],
+                            metadata.property_map(changed["metadata"]["component"])["sift:runtime-manifest-sha256"])
 
     def test_missing_empty_or_unreadable_runtime_notice_files_fail(self):
         manifest = json.loads(self.runtime_path.read_text())
@@ -1009,7 +1009,7 @@ class MetadataTests(unittest.TestCase):
         changed = copy.deepcopy(document)
         root = changed["metadata"]["component"]
         for prop in root["properties"]:
-            if prop["name"] == "retok:runtime-manifest-sha256":
+            if prop["name"] == "sift:runtime-manifest-sha256":
                 prop["value"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "runtime manifest SHA256"):
             metadata.validate(changed, notices, self.binary)
@@ -1023,7 +1023,7 @@ class MetadataTests(unittest.TestCase):
         altered = prefix + marker + runtime_notice.replace("Permission is hereby granted", "Removed paragraph")
         changed = copy.deepcopy(document)
         for prop in changed["metadata"]["component"]["properties"]:
-            if prop["name"] == "retok:notices-sha256":
+            if prop["name"] == "sift:notices-sha256":
                 prop["value"] = hashlib.sha256(altered.encode()).hexdigest()
         with self.assertRaisesRegex(ValueError, "runtime notice SHA256"):
             metadata.validate(changed, altered, self.binary)
@@ -1032,7 +1032,7 @@ class MetadataTests(unittest.TestCase):
         document, notices = self.generate()
         regex = next(c for c in document["components"] if c["name"] == "regex-syntax")
         self.assertEqual(regex["licenses"], [{"expression": "(MIT OR Apache-2.0) AND Unicode-DFS-2016"}])
-        self.assertEqual(metadata.property_map(regex)["retok:cargo-license-expression"], "MIT OR Apache-2.0")
+        self.assertEqual(metadata.property_map(regex)["sift:cargo-license-expression"], "MIT OR Apache-2.0")
         self.assertIn("License expression: MIT OR Apache-2.0", notices)
         self.assertIn("Synthetic regex-syntax Unicode data terms and attribution.", notices)
         regex["licenses"] = [{"expression": "MIT OR Apache-2.0"}]
@@ -1042,7 +1042,7 @@ class MetadataTests(unittest.TestCase):
             metadata.validate_project(document, self.project)
         regex["licenses"] = [{"expression": "(MIT OR Apache-2.0) AND Unicode-DFS-2016"}]
         for prop in regex["properties"]:
-            if prop["name"] == "retok:cargo-license-expression":
+            if prop["name"] == "sift:cargo-license-expression":
                 prop["value"] = "MIT"
         with self.assertRaisesRegex(ValueError, "license mismatch"):
             metadata.validate_project(document, self.project)

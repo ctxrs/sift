@@ -1,6 +1,6 @@
-# Releasing Retok
+# Releasing Sift
 
-Retok releases contain five standalone binaries. The release path signs and
+Sift releases contain five standalone binaries. The release path signs and
 notarizes the macOS binaries, Authenticode-signs the Windows binary, verifies
 those exact bytes on their native operating systems, then generates SBOMs and
 checksums. Signing credentials are never available to Cargo or dependency
@@ -28,15 +28,17 @@ RUSTFLAGS='-C link-arg=-Wl,-headerpad,0x1000' \
   cargo zigbuild --release --locked --target aarch64-apple-darwin
 ```
 
-Build Linux x64 and arm64 as static musl executables and Windows x64 as a GNU
-PE executable. Place only these files in a fresh input directory:
+Build Linux x64 and arm64 as static musl executables with `cargo zigbuild`;
+the HTTPS client's C dependency requires Zig for both musl targets. Build
+Windows x64 as a GNU PE executable. Place only these files in a fresh input
+directory:
 
 ```text
-retok-linux-x64
-retok-linux-aarch64
-retok-macos-x64
-retok-macos-arm64
-retok-windows-x64.exe
+sift-linux-x64
+sift-linux-aarch64
+sift-macos-x64
+sift-macos-arm64
+sift-windows-x64.exe
 ```
 
 ## 2. Sign
@@ -62,16 +64,16 @@ On macOS, run the checker for both artifacts. Execute `--version` for every
 architecture the host can run:
 
 ```sh
-scripts/verify_macos_release.sh signed/retok-macos-x64 0.3.0 > macos-x64.json
-scripts/verify_macos_release.sh signed/retok-macos-arm64 > macos-arm64.json
+scripts/verify_macos_release.sh signed/sift-macos-x64 0.4.0 > macos-x64.json
+scripts/verify_macos_release.sh signed/sift-macos-arm64 > macos-arm64.json
 ```
 
 On Windows x64, use Windows PowerShell or PowerShell 7:
 
 ```powershell
 scripts/verify_windows_release.ps1 `
-  -Artifact signed/retok-windows-x64.exe `
-  -ExpectedVersion 0.3.0 | Set-Content -NoNewline windows-x64.json
+  -Artifact signed/sift-windows-x64.exe `
+  -ExpectedVersion 0.4.0 | Set-Content -NoNewline windows-x64.json
 ```
 
 Import each result on the release host. Import refuses a different artifact
@@ -79,11 +81,11 @@ hash, identity, policy, or result shape.
 
 ```sh
 python3 scripts/release_signing.py record-native signing-evidence \
-  signed/retok-macos-x64 macos-x64.json
+  signed/sift-macos-x64 macos-x64.json
 python3 scripts/release_signing.py record-native signing-evidence \
-  signed/retok-macos-arm64 macos-arm64.json
+  signed/sift-macos-arm64 macos-arm64.json
 python3 scripts/release_signing.py record-native signing-evidence \
-  signed/retok-windows-x64.exe windows-x64.json
+  signed/sift-windows-x64.exe windows-x64.json
 python3 scripts/release_signing.py verify signed signing-evidence
 ```
 
@@ -106,3 +108,15 @@ python3 scripts/release.py verify release-assets --project .
 `SHA256SUMS`. Signing evidence remains release-control evidence rather than a
 public asset. Any binary change after signing invalidates the evidence, SBOM,
 and checksums and requires a new release candidate.
+
+## 5. Tag, publish, and update Homebrew
+
+Create the immutable version tag from the reviewed source commit, then publish
+exactly the 16 files in `release-assets`. Download every published asset and
+compare it byte-for-byte with the staged file before announcing the release.
+
+Only after the tag exists, hash that tag's GitHub source archive and update
+`Formula/sift.rb` to the new tag and checksum in a reviewed follow-up change.
+The formula must never point at a version whose immutable archive has not yet
+been verified. Test `brew install --build-from-source` from the updated formula
+before merging it.

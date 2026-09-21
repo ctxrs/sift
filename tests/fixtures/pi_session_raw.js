@@ -46,7 +46,7 @@ function createPiSession() {
     slot.idle.unref();
   }
   function start(key) {
-    const child = spawn(retokExecutable, ["compact", "--protocol=session-v1",
+    const child = spawn(siftExecutable, ["compact", "--protocol=session-v1",
       "--record-source", "pi", "--record-tool", "bash"], {windowsHide:true});
     const slot = {child, key, pending:null, buffer:"", decoder:new StringDecoder("utf8"),
       ready:false, dead:false, closed:false, stderr:0, idle:null, retiring:null};
@@ -120,7 +120,7 @@ function createPiSession() {
       busy = true;
       const started = performance.now();
       try {
-        const stat = statSync(retokExecutable, {bigint:true});
+        const stat = statSync(siftExecutable, {bigint:true});
         const key = JSON.stringify([String(stat.dev), String(stat.ino), String(stat.size),
           String(stat.mtimeNs), process.cwd(), Object.entries(process.env).sort()]);
         if (key === disabled) return await fallback();
@@ -162,7 +162,7 @@ function createPiSession() {
 }
 
 
-export default function retok(pi) {
+export default function sift(pi) {
   const session = true ? createPiSession() : null;
   if (session) pi.on("session_shutdown", () => session.shutdown());
   pi.on("tool_result", async event => {

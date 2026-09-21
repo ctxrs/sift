@@ -1,4 +1,4 @@
-use retok::Compactor;
+use sift::Compactor;
 
 mod candidate {
     include!("../src/tokenizer.rs");
@@ -79,7 +79,7 @@ fn unicode_whitespace_special_looking_and_long_pieces_are_ordinary() {
         }
     }
     // Every Unicode scalar, in bounded inputs with both case and combining-mark
-    // neighbors. This catches differences in the pretokenizer's Unicode classes.
+    // neighbors. This catches differences in the pre-tokenizer's Unicode classes.
     let mut text = String::new();
     for scalar in 0..=0x10ffff {
         if let Some(ch) = char::from_u32(scalar) {
@@ -121,7 +121,7 @@ fn bounded_candidate_counts_preserve_context_boundaries_and_strict_limits() {
         tokenizer.count(&original),
         reference.encode_ordinary(&original).len()
     );
-    // Candidate boundaries must come from its complete original pretokenizer.
+    // Candidate boundaries must come from its complete original pre-tokenizer.
     for text in [
         "",
         "word",

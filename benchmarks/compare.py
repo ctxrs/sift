@@ -43,7 +43,7 @@ def isolated_env(root):
            "GIT_COMMITTER_NAME": "Synthetic Author", "GIT_COMMITTER_EMAIL": "author@example.invalid",
            "GIT_AUTHOR_DATE": "2025-01-01T12:00:00Z", "GIT_COMMITTER_DATE": "2025-01-01T12:00:00Z"}
     for key in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
-                "RETOK_CONFIG_DIR", "RETOK_STATE_DIR", "TMPDIR"):
+                "SIFT_CONFIG_DIR", "SIFT_STATE_DIR", "TMPDIR"):
         directory = root / key.lower()
         directory.mkdir(parents=True)
         env[key] = str(directory)
@@ -124,6 +124,22 @@ WORKLOADS = [
     ("control-short", ["printf", "ready\\n"], ["proxy", "printf", "ready\\n"], ["ready"]),
     ("control-progress", ["fixture-check", "progress"], ["proxy", "fixture-check", "progress"], ["processed batch 8/8"]),
 ]
+
+JSON_ENCODINGS = ("json-v1", "json-rows-v1", "json-min-v1", "json-columns-v1")
+
+# Independently fixed from the synthetic repository state above. Sift's Git
+# status presentation is intentionally not a reversible codec.
+EXPECTED_SIFT_STDOUT = {
+    "git-status": (
+        b"## main\n"
+        b"M  src/module_01.txt\n"
+        b" M src/module_04.txt\n"
+        b" M src/module_07.txt\n"
+        b" M src/module_10.txt\n"
+        b" D src/module_17.txt\n"
+        b"?? notes.txt\n"
+    )
+}
 
 
 def tree_hash(repo):
@@ -220,7 +236,7 @@ def chart(path, rows, metric, caption):
              f'<text x="10" y="22" font-family="sans-serif">{caption}</text>']
     for i, row in enumerate(rows):
         y = 45 + i * 23
-        color = {"native": "#555", "retok": "#1565c0", "rtk": "#bd5d00"}[row["arm"]]
+        color = {"native": "#555", "sift": "#1565c0", "rtk": "#bd5d00"}[row["arm"]]
         label = html.escape(row["workload"] + " / " + row["arm"])
         parts.extend([f'<text x="10" y="{y + 12}" font-size="12" font-family="sans-serif">{label}</text>',
                       f'<rect x="240" y="{y}" height="15" width="{600 * row[metric] / maximum:.2f}" fill="{color}"/>',
@@ -229,13 +245,13 @@ def chart(path, rows, metric, caption):
 
 
 def benchmark(args):
-    retok, rtk = [str(Path(p).resolve(strict=True)) for p in (args.retok, args.rtk)]
+    sift, rtk = [str(Path(p).resolve(strict=True)) for p in (args.sift, args.rtk)]
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=False)
     env = isolated_env(output / "isolated")
     repo = fixture(output, env)
     binaries = {}
-    for name, binary in (("retok", retok), ("rtk", rtk), ("git", shutil.which("git", path=env["PATH"])),
+    for name, binary in (("sift", sift), ("rtk", rtk), ("git", shutil.which("git", path=env["PATH"])),
                          ("python", sys.executable)):
         result, _ = execute([binary, "--version"], repo, env)
         if result.returncode:
@@ -249,28 +265,28 @@ def benchmark(args):
         binaries[name] = {"local_path": str(path), "sha256": digest(path.read_bytes())}
     metadata = {"schema": 1, "binaries": binaries, "harness_sha256": digest(Path(__file__).read_bytes()),
                 "platform": platform.platform(), "repeats": args.repeats,
-                "tokenizer": "ordinary o200k_base, same warmed Retok protocol input_tokens for ALL arms",
+                "tokenizer": "ordinary o200k_base, same warmed Sift protocol input_tokens for ALL arms",
                 "fixture_sha256": tree_hash(repo), "raw_samples_saved": args.save_raw,
                 "timing": "one unmeasured warmup per arm; rotating order; subprocess wall time; no audit shims",
                 "protocol_timing": "warmed compact request round trip, excludes startup, includes JSON/pipe overhead",
                 "memory": "not measured", "rows": []}
     save_json(output / "metadata.json", {k: v for k, v in metadata.items() if k != "rows"})
     shims = audit_shims(output, env)
-    protocol = Protocol(retok, repo, env)
+    protocol = Protocol(sift, repo, env)
     rows = metadata["rows"]
     try:
         for workload, native, rtk_args, markers in WORKLOADS:
-            commands = {"native": native, "retok": [retok, "run", "--", *native], "rtk": [rtk, *rtk_args]}
+            commands = {"native": native, "sift": [sift, "run", "--", *native], "rtk": [rtk, *rtk_args]}
             native_audit, original = audit(native, native, repo, env, shims, output / "audit.jsonl")
             if not native_audit["exactly_one_native_argv_cwd_observed"] or not native_audit["fixture_content_unchanged"]:
                 raise RuntimeError("native audit failed")
             candidates = []
             for raw in (original.stdout, original.stderr):
                 candidate = protocol.ask(raw.decode("utf-8"))
-                restored, _ = execute([retok, "restore", "--encoding", candidate["encoding"]], repo, env,
+                restored, _ = execute([sift, "restore", "--encoding", candidate["encoding"]], repo, env,
                                       candidate["text"].encode())
                 restore_exact = restored.stdout == raw
-                is_json = candidate["encoding"] in ("json-v1", "json-rows-v1")
+                is_json = candidate["encoding"] in JSON_ENCODINGS
                 contract_verified = (json_values(restored.stdout) == json_values(raw)) if is_json else restore_exact
                 if restored.returncode or not contract_verified:
                     raise RuntimeError(f"explicit encoding restore failed: {workload}")
@@ -301,7 +317,14 @@ def benchmark(args):
                     for stream, data, raw, candidate in zip(("stdout", "stderr"),
                             (result.stdout, result.stderr), (original.stdout, original.stderr), candidates):
                         text = data.decode("utf-8")
-                        selection = "raw" if data == raw else ("candidate" if data == candidate["text"].encode() else "other")
+                        if data == raw:
+                            selection = "raw"
+                        elif data == candidate["text"].encode():
+                            selection = "candidate"
+                        elif arm == "sift" and stream == "stdout" and data == EXPECTED_SIFT_STDOUT.get(workload):
+                            selection = "verified-view"
+                        else:
+                            selection = "other"
                         streams.append({"stream": stream, "bytes": len(data), "sha256": digest(data),
                                         "tokens": protocol.ask(text)["input_tokens"],
                                         "matches_saved_original_or_candidate": selection})
@@ -321,15 +344,15 @@ def benchmark(args):
                     status = "incompatible: timed exit differs"
                 exact = all(s["matches_saved_original_or_candidate"] != "other"
                             for sample in arm_samples for s in sample["streams"])
-                if arm == "retok" and not exact:
+                if arm == "sift" and not exact:
                     status = "incompatible: emitted output differs from original and explicit candidate"
                 row = {"workload": workload, "arm": arm, "argv": commands[arm], "execution": status,
                        "audit": checks[arm], "median_elapsed_ms": statistics.median(elapsed),
                        "min_elapsed_ms": min(elapsed), "max_elapsed_ms": max(elapsed),
                        "median_tokens": statistics.median(tokens), "tokens_stable": len(set(tokens)) == 1,
-                       "retok_output_verified": exact if arm == "retok" else None,
+                       "sift_output_verified": exact if arm == "sift" else None,
                        "samples": arm_samples}
-                if arm == "retok":
+                if arm == "sift":
                     row["saved_original_protocol"] = candidates
                     row["median_warm_processing_ms"] = sum(statistics.median(c["processing_ms"]) for c in candidates)
                 rows.append(row)
@@ -343,7 +366,7 @@ def benchmark(args):
     metadata["binary_hashes_unchanged_after_run"] = True
     save_json(output / "results.json", metadata)
     fields = ["workload", "arm", "execution", "median_elapsed_ms", "min_elapsed_ms", "max_elapsed_ms",
-              "median_tokens", "tokens_stable", "retok_output_verified", "median_warm_processing_ms"]
+              "median_tokens", "tokens_stable", "sift_output_verified", "median_warm_processing_ms"]
     with (output / "results.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
@@ -352,15 +375,20 @@ def benchmark(args):
           "End-to-end milliseconds (includes command and startup; lower is faster)")
     chart(output / "token.svg", rows, "median_tokens",
           "Median ordinary o200k_base tokens (stdout + stderr; fewer tokens does not establish retention)")
-    return 1 if any(r["arm"] in ("native", "retok") and not r["execution"].startswith("same native") for r in rows) else 0
+    return 1 if any(r["arm"] in ("native", "sift") and not r["execution"].startswith("same native") for r in rows) else 0
 
 
 class HarnessChecks(unittest.TestCase):
     def test_json_restoration_contract(self):
+        self.assertEqual(
+            set(JSON_ENCODINGS),
+            {"json-v1", "json-rows-v1", "json-min-v1", "json-columns-v1"},
+        )
         self.assertEqual(json_values('{"b": [true, null], "a": 1.00}'),
                          json_values('{"a":1.00,"b":[true,null]}'))
         self.assertNotEqual(json_values('{"a":1.00}'), json_values('{"a":1.0}'))
         self.assertNotEqual(json_values('{"a":true}'), json_values('{"a":1}'))
+        self.assertEqual(EXPECTED_SIFT_STDOUT["git-status"].count(b"\n"), 7)
 
     def test_isolation_fixture_audit_and_classification(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -381,7 +409,7 @@ class HarnessChecks(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn(b"received 503", result.stderr)
             with self.assertRaises(FileExistsError):
-                benchmark(argparse.Namespace(retok=__file__, rtk=__file__, output=str(root)))
+                benchmark(argparse.Namespace(sift=__file__, rtk=__file__, output=str(root)))
 
     def test_duplicate_execution_and_mutation_are_not_compatible(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -400,17 +428,17 @@ class HarnessChecks(unittest.TestCase):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--retok", help="final candidate binary path")
+    parser.add_argument("--sift", help="final candidate binary path")
     parser.add_argument("--rtk", help="pinned native RTK 0.49.0 binary path")
     parser.add_argument("--output", help="new local artifact directory; must not exist")
     parser.add_argument("--repeats", type=int, choices=(5, 7), default=5)
     parser.add_argument("--save-raw", action="store_true")
-    parser.add_argument("--self-test", action="store_true", help="test harness only, no Retok/RTK benchmark")
+    parser.add_argument("--self-test", action="store_true", help="test harness only, no Sift/RTK benchmark")
     args = parser.parse_args()
     if args.self_test:
         return not unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(HarnessChecks)).wasSuccessful()
-    if not all((args.retok, args.rtk, args.output)):
-        parser.error("--retok, --rtk and --output are required")
+    if not all((args.sift, args.rtk, args.output)):
+        parser.error("--sift, --rtk and --output are required")
     return benchmark(args)
 
 

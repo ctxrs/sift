@@ -8,11 +8,11 @@
 use crate::rewrite::{self, Shell};
 use crate::state::{self, Settings};
 use anyhow::Result;
-use retok::Compactor;
 use serde::de::{self, MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
+use sift::Compactor;
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fmt;
@@ -37,7 +37,7 @@ pub(crate) fn literal_argv(command: &str) -> Option<Vec<OsString>> {
         .collect()
 }
 
-/// Match only Retok's leading raw flags, never a child's --raw argument.
+/// Match only Sift's leading raw flags, never a child's --raw argument.
 pub(crate) fn explicit_raw(argv: &[OsString]) -> bool {
     let argv = if argv.first().is_some_and(|word| word == "command") {
         &argv[1..]
@@ -47,7 +47,7 @@ pub(crate) fn explicit_raw(argv: &[OsString]) -> bool {
     if !argv
         .first()
         .and_then(|word| word.to_str())
-        .is_some_and(|program| matches!(program.rsplit('/').next(), Some("retok" | "retok.exe")))
+        .is_some_and(|program| matches!(program.rsplit('/').next(), Some("sift" | "sift.exe")))
         || !argv
             .get(1)
             .is_some_and(|word| word == "run" || word == "proxy")

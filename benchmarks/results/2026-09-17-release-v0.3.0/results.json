@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "binaries": {
-    "retok": {
+    "sift": {
       "sha256": "4019e56d8598c493e8e2d7c947529cfd3190fae56f0682ca06f0fc666976a494",
-      "version": "Retok 0.3.0"
+      "version": "Sift 0.3.0"
     },
     "rtk": {
       "sha256": "dd97f3c0a08f91ed90d3e87e05520c448bfda112b3cb101847ccb4d5444c9b07",
@@ -38,7 +38,7 @@
   },
   "harness_sha256": "1f0f1d413bbeca6ac81dd825d244791b7408f5a77242a1f12ffe7652f4ac266c",
   "repeats": 7,
-  "tokenizer": "ordinary o200k_base, same warmed Retok protocol input_tokens for ALL arms",
+  "tokenizer": "ordinary o200k_base, same warmed Sift protocol input_tokens for ALL arms",
   "fixture_sha256": "4e227dd1fd874eb552a6eaf24ff3ce9d70665692ef680cbc620a3c65f01ff2c4",
   "raw_samples_saved": true,
   "timing": "one unmeasured warmup per arm; rotating order; subprocess wall time; no audit shims",
@@ -72,7 +72,7 @@
       "max_elapsed_ms": 1.60563,
       "median_tokens": 144,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.458673,
@@ -260,9 +260,9 @@
     },
     {
       "workload": "git-status",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "git",
@@ -288,7 +288,7 @@
       "max_elapsed_ms": 43.689816,
       "median_tokens": 144,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 40.845617,
@@ -550,7 +550,7 @@
       "max_elapsed_ms": 5.340843,
       "median_tokens": 43,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 5.173929,
@@ -763,7 +763,7 @@
       "max_elapsed_ms": 1.606942,
       "median_tokens": 507,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.508918,
@@ -944,9 +944,9 @@
     },
     {
       "workload": "git-diff",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "git",
@@ -972,7 +972,7 @@
       "max_elapsed_ms": 42.493556,
       "median_tokens": 506,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 40.394409,
@@ -1226,7 +1226,7 @@
       "max_elapsed_ms": 5.894374,
       "median_tokens": 429,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 5.504331,
@@ -1434,7 +1434,7 @@
       "max_elapsed_ms": 1.537221,
       "median_tokens": 374,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.383242,
@@ -1615,9 +1615,9 @@
     },
     {
       "workload": "git-log",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "git",
@@ -1645,7 +1645,7 @@
       "max_elapsed_ms": 41.724841,
       "median_tokens": 280,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 41.132226,
@@ -1901,7 +1901,7 @@
       "max_elapsed_ms": 4.385196,
       "median_tokens": 139,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 4.072729,
@@ -2109,7 +2109,7 @@
       "max_elapsed_ms": 2.283043,
       "median_tokens": 429,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 2.186552,
@@ -2290,9 +2290,9 @@
     },
     {
       "workload": "listing",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "ls",
@@ -2320,7 +2320,7 @@
       "max_elapsed_ms": 51.981838,
       "median_tokens": 249,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 50.233571,
@@ -2575,7 +2575,7 @@
       "max_elapsed_ms": 4.535669,
       "median_tokens": 187,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 4.191361,
@@ -2785,7 +2785,7 @@
       "max_elapsed_ms": 2.050676,
       "median_tokens": 138,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.915963,
@@ -2966,9 +2966,9 @@
     },
     {
       "workload": "search",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "grep",
@@ -2998,7 +2998,7 @@
       "max_elapsed_ms": 51.742669,
       "median_tokens": 138,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 50.980746,
@@ -3254,7 +3254,7 @@
       "max_elapsed_ms": 4.212031,
       "median_tokens": 138,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 3.753118,
@@ -3460,7 +3460,7 @@
       "max_elapsed_ms": 1.940489,
       "median_tokens": 962,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.940489,
@@ -3648,9 +3648,9 @@
     },
     {
       "workload": "json",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "cat",
@@ -3676,7 +3676,7 @@
       "max_elapsed_ms": 51.055276,
       "median_tokens": 320,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 51.055276,
@@ -3921,7 +3921,7 @@
       "max_elapsed_ms": 2.683807,
       "median_tokens": 40,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 2.681752,
@@ -4141,7 +4141,7 @@
       "max_elapsed_ms": 10.803135,
       "median_tokens": 108,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 10.479706,
@@ -4329,9 +4329,9 @@
     },
     {
       "workload": "tests-diagnostics",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "fixture-check",
@@ -4357,7 +4357,7 @@
       "max_elapsed_ms": 50.20086,
       "median_tokens": 108,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 49.812889,
@@ -4611,7 +4611,7 @@
       "max_elapsed_ms": 14.05517,
       "median_tokens": 57,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 13.958979,
@@ -4821,7 +4821,7 @@
       "max_elapsed_ms": 0.534685,
       "median_tokens": 0,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 0.443103,
@@ -4981,9 +4981,9 @@
     },
     {
       "workload": "control-noop",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "true"
@@ -5006,7 +5006,7 @@
       "max_elapsed_ms": 1.298542,
       "median_tokens": 0,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 0.996915,
@@ -5229,7 +5229,7 @@
       "max_elapsed_ms": 3.048192,
       "median_tokens": 0,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 2.927625,
@@ -5414,7 +5414,7 @@
       "max_elapsed_ms": 1.765219,
       "median_tokens": 2,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.6434,
@@ -5588,9 +5588,9 @@
     },
     {
       "workload": "control-short",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "printf",
@@ -5616,7 +5616,7 @@
       "max_elapsed_ms": 11.405357,
       "median_tokens": 2,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 11.196094,
@@ -5856,7 +5856,7 @@
       "max_elapsed_ms": 3.563932,
       "median_tokens": 2,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 2.660112,
@@ -6055,7 +6055,7 @@
       "max_elapsed_ms": 492.369346,
       "median_tokens": 56,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 492.346043,
@@ -6229,9 +6229,9 @@
     },
     {
       "workload": "control-progress",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "fixture-check",
@@ -6257,7 +6257,7 @@
       "max_elapsed_ms": 493.136178,
       "median_tokens": 56,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 493.136178,
@@ -6497,7 +6497,7 @@
       "max_elapsed_ms": 502.313946,
       "median_tokens": 56,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 495.14204,
