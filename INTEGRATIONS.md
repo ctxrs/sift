@@ -107,7 +107,7 @@ the TypeSafe request only when the current canonical checkout is allowlisted and
 the grep path resolves inside that checkout and `TYPESAFE_API_KEY` is set.
 Missing, unresolved, or symlink-escaped paths stay local. `read`, Bash,
 PowerShell, images, errors, ambiguous shapes, and results outside the passage bounds never enter this semantic route.
-See [Optional semantic selection](README.md#optional-semantic-selection) for the
+See [Optional semantic selection](docs/reference.md#optional-semantic-selection) for the
 external data flow, shadow mode, recovery, limits, and evidence.
 
 For successful Claude Bash calls with a literal command and explicit completion
