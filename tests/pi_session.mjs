@@ -1,7 +1,7 @@
 // Synthetic adapter transport only: no Pi host, model, or workload commands.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile, mkdtemp, rm, chmod } from "node:fs/promises";
+import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 const root = new URL("../", import.meta.url);
 const runtime = await readFile(new URL("integrations/runtime.js", root), "utf8");
 const adapter = await readFile(new URL("integrations/pi_session.js", root), "utf8");
-const unix = {skip:process.platform === "win32"};
+const isolated = {concurrency:false};
 const event = (command, text = "original output") => ({toolName:"bash", input:{command},
   isError:true, details:{truncation:{truncated:true},opaque:7}, content:[{type:"text",text,custom:9}]});
 
@@ -29,13 +29,13 @@ function commonJs(source) {
 
 async function fixture(mode, body, moduleType = "module") {
   const dir = await mkdtemp(join(tmpdir(), "retok-pi-adapter-"));
-  const executable = join(dir, "retok-test"), log = join(dir, "calls.jsonl");
+  const previousCwd = process.cwd();
+  const executable = process.execPath, program = join(dir, "compact"), log = join(dir, "calls.jsonl");
   const handlers = {};
   const calls = async () => (await readFile(log, "utf8").catch(() => "")).trim().split("\n")
     .filter(Boolean).map(line => JSON.parse(line));
   try {
-    await writeFile(executable, `#!${process.execPath}
-const fs = require("node:fs"), readline = require("node:readline");
+    await writeFile(program, `const fs = require("node:fs"), readline = require("node:readline");
 const mode = ${JSON.stringify(mode)}, log = ${JSON.stringify(log)};
 const session = process.argv.includes("--protocol=session-v1");
 const record = row => fs.appendFileSync(log, JSON.stringify(row) + "\\n");
@@ -57,7 +57,7 @@ lines.on("line", line => {
   if (mode === "delay" && session) setTimeout(reply, 80); else reply();
 });
 `);
-    await chmod(executable, 0o700);
+    process.chdir(dir);
     const source = runtime.replace("__RETOK_EXECUTABLE__", JSON.stringify(executable))
       .replace("__RETOK_SOURCE__", '"pi"') + adapter;
     let plugin;
@@ -80,12 +80,13 @@ lines.on("line", line => {
     });
     // Test-owned synthetic processes only; never inspect/kill unrelated peers.
     for (const row of survivors) { try {process.kill(row.pid, "SIGKILL");} catch {} }
+    process.chdir(previousCwd);
     await rm(dir, {recursive:true, force:true});
     assert.deepEqual(survivors, [], "all synthetic children must close after shutdown");
   }
 }
 
-test("installed CommonJS bundle runs the session transport", unix, async () => {
+test("installed CommonJS bundle runs the session transport", isolated, async () => {
   await fixture("normal", async (handlers, calls) => {
     const patch = await handlers.tool_result(event("cargo test"));
     assert.equal(patch.content[0].text, "compact 🦀");
@@ -93,7 +94,7 @@ test("installed CommonJS bundle runs the session transport", unix, async () => {
   }, "commonjs");
 });
 
-test("command metadata travels in each envelope while event metadata stays opaque", unix, async () => {
+test("command metadata travels in each envelope while event metadata stays opaque", isolated, async () => {
   await fixture("normal", async (handlers, calls) => {
     const original = event("cat 'file\\name'; true");
     original.content.push({type:"image",data:"AA==",mimeType:"image/png"}, {type:"text",text:"second",custom:10});
@@ -115,7 +116,7 @@ test("command metadata travels in each envelope while event metadata stays opaqu
   });
 });
 
-test("contextual busy fallback is original; legacy busy and PowerShell remain one-shot", unix, async () => {
+test("contextual busy fallback is original; legacy busy and PowerShell remain one-shot", isolated, async () => {
   await fixture("delay", async (handlers, calls) => {
     const first = handlers.tool_result(event("cat fixture"));
     assert.equal(await handlers.tool_result(event("retok proxy -- cat fixture")), undefined);
@@ -133,7 +134,7 @@ test("contextual busy fallback is original; legacy busy and PowerShell remain on
 });
 
 for (const mode of ["old", "wrong-id", "hang", "bad-semantic"]) {
-  test(`contextual ${mode} failure never retries through command-blind compaction`, unix, async () => {
+  test(`contextual ${mode} failure never retries through command-blind compaction`, isolated, async () => {
     await fixture(mode, async (handlers, calls) => {
       assert.equal(await handlers.tool_result(event("retok run --raw -- cat fixture")), undefined);
       if (mode === "old") {
@@ -145,7 +146,7 @@ for (const mode of ["old", "wrong-id", "hang", "bad-semantic"]) {
   });
 }
 
-test("semantic response is accepted only for an opted-in contextual request", unix, async () => {
+test("semantic response is accepted only for an opted-in contextual request", isolated, async () => {
   await fixture("semantic", async handlers => {
     const original = event("cargo test");
     const before = structuredClone(original);
@@ -156,7 +157,7 @@ test("semantic response is accepted only for an opted-in contextual request", un
   });
 });
 
-test("combined UTF-8 command bytes include every block; oversized callbacks never spawn", unix, async () => {
+test("combined UTF-8 command bytes include every block; oversized callbacks never spawn", isolated, async () => {
   await fixture("normal", async (handlers, calls) => {
     const original = event("🦀".repeat(1024 * 1024));
     original.content.push({type:"text",text:"second"});
