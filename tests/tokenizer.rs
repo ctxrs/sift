@@ -1,7 +1,27 @@
 use retok::Compactor;
 
+mod candidate {
+    include!("../src/tokenizer.rs");
+
+    // Inspect actual token IDs without adding a decoding/encoding API to the
+    // production count-only type. Public Compactor counts are checked too.
+    pub fn encode(text: &str) -> Vec<u32> {
+        let tokenizer = o200k_base();
+        tokenizer
+            .pieces(text)
+            .flat_map(|piece| tokenizer.tables.encode(piece.as_bytes()))
+            .collect()
+    }
+}
+
 fn assert_encoding(text: &str, reference: &tiktoken_rs::CoreBPE, compactor: &Compactor) {
     let expected = reference.encode_ordinary(text);
+    assert_eq!(
+        candidate::encode(text),
+        expected,
+        "embedded encoding differs for {:?}",
+        text.chars().take(100).collect::<String>()
+    );
     assert_eq!(
         bpe_openai::o200k_base().encode(text),
         expected,
@@ -9,6 +29,7 @@ fn assert_encoding(text: &str, reference: &tiktoken_rs::CoreBPE, compactor: &Com
         text.chars().take(100).collect::<String>()
     );
     assert_eq!(compactor.count_tokens(text), expected.len());
+    assert_eq!(candidate::o200k_base().count(text), expected.len());
 }
 
 #[test]
@@ -87,5 +108,41 @@ fn synthetic_mixed_token_sequences_match_without_chunking() {
             bytes.extend(reference.decode_bytes(&[(state % 199_998) as u32]).unwrap());
         }
         assert_encoding(&String::from_utf8_lossy(&bytes), &reference, &compactor);
+    }
+}
+
+#[test]
+fn bounded_candidate_counts_preserve_context_boundaries_and_strict_limits() {
+    let reference = tiktoken_rs::o200k_base().unwrap();
+    let tokenizer = candidate::o200k_base();
+    let original =
+        " repeated pieces aren't chunks: café 字 🦀\r\n\tword! <|endoftext|>\n".repeat(80);
+    assert_eq!(
+        tokenizer.count(&original),
+        reference.encode_ordinary(&original).len()
+    );
+    // Candidate boundaries must come from its complete original pretokenizer.
+    for text in [
+        "",
+        "word",
+        "wordword",
+        " wordword",
+        "word\r\n word",
+        "aren'taren't",
+        "café café字",
+        "🦀\u{301}字!",
+        "<|endoftext|>word",
+        "\n\n\t word ",
+        "prefix never present in original; new pieces still need exact BPE",
+        &original,
+    ] {
+        let expected = reference.encode_ordinary(text).len();
+        assert_eq!(tokenizer.count(text), expected);
+        for limit in [0, expected.saturating_sub(1), expected, expected + 1] {
+            assert_eq!(
+                tokenizer.count_below(text, limit),
+                (expected < limit).then_some(expected)
+            );
+        }
     }
 }

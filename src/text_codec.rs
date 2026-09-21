@@ -64,7 +64,7 @@ pub(crate) fn prefix_candidate(input: &str) -> Option<String> {
         return None;
     }
     let lines: Vec<&str> = input.split_inclusive('\n').collect();
-    let mut entries = Vec::new();
+    let mut entries = Vec::with_capacity(lines.len());
     let (mut i, mut offset, mut literal_start) = (0, 0, 0);
     let mut factored = false;
     while i + 1 < lines.len() {
@@ -87,7 +87,7 @@ pub(crate) fn prefix_candidate(input: &str) -> Option<String> {
                 .collect(),
         ));
         let literal = &input[offset..offset + length];
-        if serde_json::to_string(&group).ok()?.len() < serde_json::to_string(literal).ok()?.len() {
+        if crate::json_length::serialized(&group)? < crate::json_length::serialized(literal)? {
             if literal_start < offset {
                 entries.push(PrefixEntry::Literal(&input[literal_start..offset]));
             }

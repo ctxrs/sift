@@ -199,6 +199,231 @@ class MetadataTests(unittest.TestCase):
         values[key] = value
         component["properties"] = metadata.properties(values)
 
+    def use_count_tokenizer(self):
+        self.use_packed_tokenizer()
+        # Independent tiny bytes, including a tail anchor for the count archive.
+        self.count_assets = {"count": b"Synthetic count body\0count-tail!",
+                             "dfa": b"dfa-head!\0Synthetic automaton body"}
+        self.binary.write_bytes(b"Executable\0" + self.count_assets["count"] + b"padding\0"
+                                + self.count_assets["dfa"] + b"trailer")
+        blobs = {}
+        for name, raw in self.count_assets.items():
+            anchor = b"count-tail!" if name == "count" else b"dfa-head!"
+            blobs[name] = {"size": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+                           "anchor": anchor, "anchor-offset": raw.index(anchor)}
+        self.enterContext(patch("release_metadata.COUNT_BLOBS", blobs))
+        self.adapted_notice = "# Synthetic adapted source\n\nFull attribution.\n\n" + MIT
+        sources = {}
+        for path, (prop, _) in metadata.COUNT_SOURCES.items():
+            raw = (self.adapted_notice if path.endswith(".md") else "// Synthetic " + path + "\n").encode()
+            file = self.project / path
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(raw)
+            sources[path] = (prop, hashlib.sha256(raw).hexdigest())
+        self.enterContext(patch("release_metadata.COUNT_SOURCES", sources))
+        pins = {}
+        for name, (version, _) in metadata.COUNT_PACKAGES.items():
+            self.add_crate(name, version)
+            self.nodes.append(self.node(name, []))
+            pins[name] = (version, metadata.sha256(self.archives[name]))
+        self.enterContext(patch("release_metadata.COUNT_PACKAGES", pins))
+        self.nodes[0]["deps"] = self.node("root", [
+            ("normal", None), ("rkyv", None), ("regex-automata", None),
+            ("bpe-openai", "build"), ("bpe", "build"), ("rmp-serde", "build"),
+            ("aneubeck-daachorse", "build"), ("rkyv", "build"), ("regex-automata", "build"),
+            ("build-only", "build"), ("tiktoken-rs", "dev"), ("dev-only", "dev")])["deps"]
+        normal = {"root": ["normal", "rkyv", "regex-automata"], "normal": [],
+                  "rkyv": ["unicode-ident"], "regex-automata": ["regex-syntax"],
+                  "regex-syntax": [], "unicode-ident": []}
+        generator = copy.deepcopy(normal)
+        generator["root"] += ["bpe-openai", "bpe", "rmp-serde", "aneubeck-daachorse", "build-only"]
+        generator["normal"] = ["build-only"]
+        generator.update({"bpe-openai": ["bpe", "vocab-builder"], "bpe": [],
+                          "vocab-builder": ["vocab-codec"], "vocab-codec": [],
+                          "rmp-serde": [], "aneubeck-daachorse": [], "build-only": []})
+        self.cargo["retok-normal-graph"] = normal
+        self.cargo["retok-generator-graph"] = generator
+        self.write_lock()
+
+    def test_count_inventory_notices_and_two_complete_binary_ranges(self):
+        self.use_count_tokenizer()
+        document, notices = self.generate()
+        components = {c["name"]: c for c in document["components"]}
+        self.assertEqual(set(components), {"normal", "rkyv", "regex-automata", "regex-syntax",
+                         "unicode-ident", "bpe-openai", "bpe", "rmp-serde", "aneubeck-daachorse",
+                         "vocab-builder", "vocab-codec", "build-only", "o200k_base", "rust-std"})
+        props = metadata.property_map(document["metadata"]["component"])
+        normal = json.loads(props["retok:normal-dependencies"])
+        build = json.loads(props["retok:vocabulary-build-dependencies"])
+        self.assertEqual(normal, sorted(components[n]["bom-ref"] for n in
+                         ("normal", "rkyv", "regex-automata", "regex-syntax", "unicode-ident")))
+        self.assertEqual(build, sorted(components[n]["bom-ref"] for n in
+                         ("bpe-openai", "bpe", "rmp-serde", "aneubeck-daachorse",
+                          "vocab-builder", "vocab-codec", "build-only")))
+        vp = metadata.property_map(components["o200k_base"])
+        self.assertEqual(vp["retok:profile-status"], "development")
+        for name, raw in self.count_assets.items():
+            offset = int(vp["retok:" + name + "-offset"])
+            self.assertEqual(int(vp["retok:" + name + "-size"]), len(raw))
+            self.assertEqual(self.binary.read_bytes()[offset:offset + len(raw)], raw)
+            self.assertEqual(vp["retok:" + name + "-sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertNotIn("retok:embedded-sha256", vp)
+        self.assertEqual(notices.count(metadata.COUNT_NOTICE_START), 1)
+        self.assertIn(metadata.COUNT_NOTICE_START + self.adapted_notice + metadata.COUNT_NOTICE_END, notices)
+        self.assertNotIn("binary embeds this prepared representation", notices)
+        self.assertNotIn(str(self.root), notices + json.dumps(document))
+        self.assertEqual((document, notices), self.generate())
+        metadata.validate_project(document, self.project)
+
+    def test_count_cargo_trees_use_retoks_normal_and_build_closures(self):
+        self.use_count_tokenizer()
+        normal = (f"0retok v{metadata.VERSION}\n1normal v1.2.3\n1rkyv v0.8.18\n"
+                  "2unicode-ident v1.2.3\n1regex-automata v0.4.18\n2regex-syntax v1.2.3\n")
+        generator = (normal + "1bpe-openai v0.3.1\n2bpe v0.2.2\n2vocab-builder v1.2.3\n"
+                     "1rmp-serde v1.3.1\n1aneubeck-daachorse v1.1.1\n1build-only v1.2.3\n")
+        with patch("release_metadata.subprocess.run") as run:
+            run.side_effect = [subprocess.CompletedProcess([], 0, output, "")
+                               for output in (json.dumps(self.cargo), normal, generator)]
+            resolved = ORIGINAL_CARGO_GRAPH(self.project, "x86_64-unknown-linux-gnu")
+        self.graph_mock.return_value = resolved
+        document, _ = self.generate()
+        self.assertNotIn("vocab-codec", {c["name"] for c in document["components"]})
+        metadata.validate_project(document, self.project)
+        for call, kinds in zip(run.call_args_list[1:], ("normal", "normal,build")):
+            args = call.args[0]
+            self.assertEqual(args[args.index("--package") + 1], "retok")
+            self.assertEqual(args[args.index("--edges") + 1], kinds)
+            self.assertIn("--offline", args)
+            self.assertIn("--locked", args)
+
+    def test_count_requires_unambiguous_build_generator_and_resolved_graph(self):
+        self.use_count_tokenizer()
+        self.assertTrue(metadata.count_generator(self.cargo))
+        dev = copy.deepcopy(self.cargo)
+        for dep in dev["resolve"]["nodes"][0]["deps"]:
+            if dep["pkg"] == "bpe-openai":
+                dep["dep_kinds"][0]["kind"] = "dev"
+        self.assertFalse(metadata.count_generator(dev))
+        for key in ("retok-normal-graph", "retok-generator-graph"):
+            self.cargo.pop(key)
+        with self.assertRaisesRegex(ValueError, "feature-resolved Cargo trees"):
+            metadata.release_graph(self.cargo)
+        for names, normal in (({"bpe-openai", "tiktoken-rs"}, {"tiktoken-rs"}),
+                              ({"bpe-openai", "tiktoken-rs"}, set()), (set(), set())):
+            with self.subTest(names=names), self.assertRaisesRegex(ValueError, "ambiguous"):
+                metadata.tokenizer_mode(names, normal)
+
+    def test_count_locator_checks_full_bytes_and_not_first_anchor(self):
+        self.use_count_tokenizer()
+        original = self.binary.read_bytes()
+        self.binary.write_bytes(b"count-tail!dfa-head!" + original)
+        self.generate()  # False anchors cannot conceal the later complete blobs.
+        for name, raw in self.count_assets.items():
+            for replacement in (b"", raw[:-1], raw[:-1] + b"\xff", raw + raw):
+                self.binary.write_bytes(original.replace(raw, replacement))
+                with self.subTest(name=name, replacement=replacement), self.assertRaisesRegex(
+                        ValueError, "missing, ambiguous or unreviewed embedded"):
+                    self.generate()
+
+    def test_count_sidecar_cannot_redefine_profile_or_embedded_bytes(self):
+        self.use_count_tokenizer()
+        document, notices = self.generate()
+        for key, value in (("representation", "unreviewed"), ("profile-status", "release"),
+                           ("archive-endian", "big"), ("dfa-endian", "big"),
+                           ("archive-pointer-width", "64"), ("archive-alignment", "unaligned"),
+                           ("count-size", "1"), ("dfa-size", "1"), ("embedded-offset", "0"),
+                           ("count-offset", "-1"), ("dfa-offset", "999999"),
+                           ("retok-build-script-sha256", "0" * 64),
+                           ("count-schema-sha256", "0" * 64), ("tokenizer-source-sha256", "0" * 64),
+                           ("source-compressed-sha256", "0" * 64),
+                           ("generator-build-script-sha256", "0" * 64)):
+            changed = copy.deepcopy(document)
+            self.set_property(next(c for c in changed["components"] if c["name"] == "o200k_base"), key, value)
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                metadata.validate(changed, notices, self.binary)
+        original = self.binary.read_bytes()
+        for name, raw in self.count_assets.items():
+            changed = copy.deepcopy(document)
+            altered = bytes([raw[0] ^ 1]) + raw[1:]
+            self.binary.write_bytes(original.replace(raw, altered))
+            changed["metadata"]["component"]["hashes"] = metadata.hashes(metadata.sha256(self.binary))
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "embedded " + name + " SHA-256"):
+                metadata.validate(changed, notices, self.binary)
+            vocab = next(c for c in changed["components"] if c["name"] == "o200k_base")
+            self.set_property(vocab, name + "-sha256", hashlib.sha256(altered).hexdigest())
+            with self.assertRaisesRegex(ValueError, "unreviewed count"):
+                metadata.validate(changed, notices, self.binary)
+
+    def test_count_full_adapted_notice_required_after_notice_rehash(self):
+        self.use_count_tokenizer()
+        document, notices = self.generate()
+        for replacement in ("", self.adapted_notice.replace("Full attribution.", "Omitted."),
+                             self.adapted_notice.replace("Permission is hereby granted", "Removed terms"),
+                             self.adapted_notice + metadata.COUNT_NOTICE_START):
+            altered = notices.replace(self.adapted_notice, replacement, 1)
+            changed = copy.deepcopy(document)
+            self.set_property(changed["metadata"]["component"], "notices-sha256", hashlib.sha256(altered.encode()).hexdigest())
+            with self.subTest(replacement=replacement[:40]), self.assertRaisesRegex(ValueError, "adapted tokenizer notice"):
+                metadata.validate(changed, altered, self.binary)
+        vocab = next(c for c in document["components"] if c["name"] == "o200k_base")
+        self.set_property(vocab, "adapted-notice-sha256", "0" * 64)
+        with self.assertRaisesRegex(ValueError, "unreviewed count"):
+            metadata.validate(document, notices, self.binary)
+
+    def test_count_assets_must_not_overlap_even_when_both_hashes_match(self):
+        self.use_count_tokenizer()
+        # A synthetic profile with a DFA wholly inside the count blob exercises
+        # the range invariant independently of either blob's digest check.
+        raw = b"Outer count prefix\0" + self.count_assets["dfa"] + b"count-tail!"
+        blobs = copy.deepcopy(metadata.COUNT_BLOBS)
+        blobs["count"].update({"size": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+                               "anchor-offset": raw.index(b"count-tail!")})
+        self.binary.write_bytes(raw)
+        with patch("release_metadata.COUNT_BLOBS", blobs), self.assertRaisesRegex(ValueError, "overlapping"):
+            self.generate()
+
+    def test_count_source_files_must_match_in_generation_and_project_validation(self):
+        self.use_count_tokenizer()
+        document, _ = self.generate()
+        for path in metadata.COUNT_SOURCES:
+            file = self.project / path
+            original = file.read_bytes()
+            for raw in (None, original + b"// altered\n"):
+                if raw is None:
+                    file.unlink()
+                else:
+                    file.write_bytes(raw)
+                with self.subTest(path=path, missing=raw is None):
+                    with self.assertRaises((ValueError, FileNotFoundError)):
+                        self.generate()
+                    with self.assertRaises((ValueError, FileNotFoundError)):
+                        metadata.validate_project(document, self.project)
+            file.write_bytes(original)
+
+    def test_count_archive_identity_inventory_and_project_edges_are_checked(self):
+        self.use_count_tokenizer()
+        document, notices = self.generate()
+        for name in ("bpe-openai", "bpe", *metadata.COUNT_PACKAGES):
+            changed = copy.deepcopy(document)
+            next(c for c in changed["components"] if c["name"] == name)["hashes"] = metadata.hashes("0" * 64)
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "archive identity"):
+                metadata.validate(changed, notices, self.binary)
+        root = document["metadata"]["component"]
+        props = metadata.property_map(root)
+        build = json.loads(props["retok:vocabulary-build-dependencies"])
+        normal = json.loads(props["retok:normal-dependencies"])
+        moved = "pkg:cargo/vocab-codec@1.2.3"
+        build.remove(moved)
+        self.set_property(root, "normal-dependencies", json.dumps(sorted(normal + [moved])))
+        self.set_property(root, "vocabulary-build-dependencies", json.dumps(build))
+        metadata.validate(document, notices, self.binary)
+        with self.assertRaisesRegex(ValueError, "Cargo normal/build inventory"):
+            metadata.validate_project(document, self.project)
+        with self.archives["rmp-serde"].open("ab") as stream:
+            stream.write(b"changed generator archive")
+        with self.assertRaisesRegex(ValueError, "cached crate checksum"):
+            self.generate()
+
     def test_packed_inventory_full_notices_and_exact_binary_binding(self):
         self.use_packed_tokenizer()
         document, notices = metadata.generate(self.project, self.binary, "x86_64-unknown-linux-gnu",

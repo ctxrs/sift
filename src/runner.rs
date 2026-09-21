@@ -25,8 +25,22 @@ type Packet = (bool, io::Result<Vec<u8>>);
 pub struct StreamObservation<'a> {
     pub original: Option<&'a [u8]>,
     pub compacted: Option<&'a CompactResult>,
+    /// Exact original/emitted counts for a semantic presentation. These do not
+    /// imply that the original stream can be restored from the presentation.
+    pub presented_tokens: Option<(usize, usize)>,
     pub read_bytes: Option<u64>,
     pub emitted_bytes: Option<u64>,
+}
+
+pub enum Presentation {
+    Bytes(Vec<u8>),
+    #[allow(dead_code)] // API consumers may use only explicit byte transforms.
+    Compacted(CompactResult),
+    #[allow(dead_code)] // The CLI supplies semantic proposals; direct runners need not.
+    Semantic {
+        bytes: Vec<u8>,
+        tokens: (usize, usize),
+    },
 }
 
 pub struct Observation<'a> {
@@ -104,6 +118,22 @@ pub fn run_transformed(
     mut transform: impl FnMut(&[u8], bool) -> Option<Vec<u8>>,
     observer: impl FnOnce(Observation<'_>),
 ) -> anyhow::Result<i32> {
+    run_presented(
+        args,
+        options,
+        |bytes, stderr| transform(bytes, stderr).map(Presentation::Bytes),
+        observer,
+    )
+}
+
+/// Present complete captured streams. Explicit views may leave counts unknown;
+/// semantic proposals supply exact counts without claiming reversible encoding.
+pub fn run_presented(
+    args: &[OsString],
+    options: Options,
+    mut transform: impl FnMut(&[u8], bool) -> Option<Presentation>,
+    observer: impl FnOnce(Observation<'_>),
+) -> anyhow::Result<i32> {
     let started = Instant::now();
     let (program, args) = args
         .split_first()
@@ -164,8 +194,11 @@ pub fn run_transformed(
     let emitted_bytes: [Arc<AtomicU64>; 2] = Default::default();
     let mut originals: Option<[Vec<u8>; 2]> = None;
     let mut compacted: [Option<CompactResult>; 2] = [None, None];
+    let mut presented_tokens = [None, None];
     let mut process = Process {
         emitted_bytes: emitted_bytes.clone(),
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        exit_notification: exit_notification(&child),
         child,
         #[cfg(unix)]
         signals,
@@ -221,7 +254,7 @@ pub fn run_transformed(
                 passthrough = true;
             }
             if !capture || eof {
-                std::thread::sleep(TICK);
+                process.wait_for_exit()?;
                 continue;
             }
             let timeout = if passthrough || options.capture {
@@ -256,7 +289,17 @@ pub fn run_transformed(
             for (index, bytes) in originals.as_ref().unwrap().iter().enumerate() {
                 process.check()?;
                 if let Some(output) = transform(bytes, index == 1) {
-                    process.write(index == 1, &output)?;
+                    match output {
+                        Presentation::Bytes(bytes) => process.write(index == 1, &bytes)?,
+                        Presentation::Compacted(result) => {
+                            process.write(index == 1, result.text.as_bytes())?;
+                            compacted[index] = Some(result);
+                        }
+                        Presentation::Semantic { bytes, tokens } => {
+                            process.write(index == 1, &bytes)?;
+                            presented_tokens[index] = Some(tokens);
+                        }
+                    }
                     process.check()?;
                     continue;
                 }
@@ -304,6 +347,7 @@ pub fn run_transformed(
     let stream = |index: usize| StreamObservation {
         original: originals.as_ref().map(|streams| streams[index].as_slice()),
         compacted: compacted[index].as_ref(),
+        presented_tokens: presented_tokens[index],
         read_bytes: capture.then(|| read_bytes[index].load(Ordering::Relaxed)),
         emitted_bytes: capture.then(|| emitted_bytes[index].load(Ordering::Relaxed)),
     };
@@ -367,6 +411,8 @@ fn exit_code(status: ExitStatus) -> i32 {
 
 struct Process {
     emitted_bytes: [Arc<AtomicU64>; 2],
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    exit_notification: Option<std::os::fd::OwnedFd>,
     child: Child,
     #[cfg(unix)]
     signals: Signals,
@@ -379,6 +425,75 @@ struct Process {
     complete: bool,
 }
 impl Process {
+    /// Wait until exit or the next cancellation check. A fixed sleep adds its
+    /// entire interval even when a short-lived child has already finished.
+    fn wait_for_exit(&self) -> io::Result<()> {
+        #[cfg(target_os = "linux")]
+        if let Some(notification) = &self.exit_notification {
+            use std::os::fd::AsRawFd;
+            let mut descriptor = libc::pollfd {
+                fd: notification.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // SAFETY: the owned descriptor and pollfd remain live during poll.
+            let result = unsafe { libc::poll(&mut descriptor, 1, TICK.as_millis() as i32) };
+            if result < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() != io::ErrorKind::Interrupted {
+                    return Err(error);
+                }
+            }
+            return Ok(());
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(notification) = &self.exit_notification {
+            use std::os::fd::AsRawFd;
+            // SAFETY: kevent is a plain C event record; zero initializes all fields.
+            let mut event: libc::kevent = unsafe { std::mem::zeroed() };
+            let timeout = libc::timespec {
+                tv_sec: 0,
+                tv_nsec: TICK.as_nanos() as _,
+            };
+            // SAFETY: the event output and timeout remain valid for this call.
+            let result = unsafe {
+                libc::kevent(
+                    notification.as_raw_fd(),
+                    std::ptr::null(),
+                    0,
+                    &mut event,
+                    1,
+                    &timeout,
+                )
+            };
+            if result < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() != io::ErrorKind::Interrupted {
+                    return Err(error);
+                }
+            }
+            return Ok(());
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawHandle;
+            use windows_sys::Win32::Foundation::WAIT_FAILED;
+            use windows_sys::Win32::System::Threading::WaitForSingleObject;
+            // SAFETY: Child owns a process handle for the duration of this wait.
+            let result =
+                unsafe { WaitForSingleObject(self.child.as_raw_handle(), TICK.as_millis() as u32) };
+            if result == WAIT_FAILED {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        {
+            std::thread::sleep(TICK);
+            Ok(())
+        }
+    }
+
     fn check(&mut self) -> io::Result<()> {
         #[cfg(unix)]
         {
@@ -512,6 +627,45 @@ impl Process {
         }
         Ok(())
     }
+}
+
+#[cfg(target_os = "linux")]
+fn exit_notification(child: &Child) -> Option<std::os::fd::OwnedFd> {
+    use std::os::fd::FromRawFd;
+    // SAFETY: pidfd_open takes integer arguments and returns a fresh descriptor.
+    // Older kernels or a restricted syscall policy keep the existing polling path.
+    let descriptor = unsafe { libc::syscall(libc::SYS_pidfd_open, child.id(), 0u32) };
+    (descriptor >= 0).then(|| unsafe { std::os::fd::OwnedFd::from_raw_fd(descriptor as i32) })
+}
+
+#[cfg(target_os = "macos")]
+fn exit_notification(child: &Child) -> Option<std::os::fd::OwnedFd> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    // SAFETY: kqueue takes no arguments and returns a fresh owned descriptor.
+    let descriptor = unsafe { libc::kqueue() };
+    if descriptor < 0 {
+        return None;
+    }
+    let notification = unsafe { std::os::fd::OwnedFd::from_raw_fd(descriptor) };
+    // SAFETY: kevent is a plain C event record; zero initializes all fields.
+    let mut event: libc::kevent = unsafe { std::mem::zeroed() };
+    event.ident = child.id() as _;
+    event.filter = libc::EVFILT_PROC;
+    event.flags = libc::EV_ADD | libc::EV_ONESHOT;
+    event.fflags = libc::NOTE_EXIT;
+    // SAFETY: the live queue and initialized change record are valid. A child
+    // that already exited can reject registration; ordinary try_wait handles it.
+    let result = unsafe {
+        libc::kevent(
+            notification.as_raw_fd(),
+            &event,
+            1,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null(),
+        )
+    };
+    (result == 0).then_some(notification)
 }
 impl Drop for Process {
     fn drop(&mut self) {

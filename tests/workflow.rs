@@ -69,10 +69,55 @@ fn json_values_numbers_and_rows_survive_selection() {
 }
 
 #[test]
+fn inline_comma_repetition_uses_exact_lossless_symbols() {
+    let input = format!(
+        "diagnostic: {}\"quoted,a,b\" 雪🦀\r\nfinal\0",
+        (0..80)
+            .map(|i| format!("source/generated/modules/component_{i}.rs,"))
+            .collect::<String>()
+    );
+    let result = compactor().compact(&input);
+    assert_eq!(result.encoding, Encoding::TextSymbolsV1);
+    let frame = result
+        .text
+        .strip_prefix("retok:symbols-v1 substitute each character using this JSON dictionary:\n")
+        .unwrap();
+    let (dictionary, body) = frame.split_once('\n').unwrap();
+    let dictionary: std::collections::HashMap<String, String> =
+        serde_json::from_str(dictionary).unwrap();
+    assert!(dictionary.len() <= 32);
+    assert!(dictionary.keys().all(|key| key.chars().count() == 1));
+    // Expand the written grammar independently, visiting original characters only.
+    let decoded: String = body
+        .chars()
+        .map(|c| {
+            dictionary
+                .get(&c.to_string())
+                .cloned()
+                .unwrap_or_else(|| c.to_string())
+        })
+        .collect();
+    assert_eq!(decoded.as_bytes(), input.as_bytes());
+    let tokenizer = tiktoken_rs::o200k_base().unwrap();
+    assert_eq!(result.input_tokens, tokenizer.encode_ordinary(&input).len());
+    assert_eq!(
+        result.output_tokens,
+        tokenizer.encode_ordinary(&result.text).len()
+    );
+    assert!(result.output_tokens < result.input_tokens);
+    let restored = cli(
+        &["restore", "--encoding", "text-symbols-v1"],
+        result.text.as_bytes(),
+    );
+    assert!(restored.status.success(), "{:?}", restored.stderr);
+    assert_eq!(restored.stdout, input.as_bytes());
+}
+
+#[test]
 fn selector_chooses_the_cheapest_complete_candidate() {
     let row = r#"{ "long_field_name": 7, "status": "ready" }"#;
     let input = format!("[\n{}{row}\n]\n", format!("{row},\n").repeat(99));
-    // Independently spell out all three representations, including their headers.
+    // Independently spell out the competing JSON/RLE representations and framing.
     let minified = format!(
         "JSON v1 (all values):\n[{}]",
         vec![r#"{"long_field_name":7,"status":"ready"}"#; 100].join(",")
@@ -80,6 +125,15 @@ fn selector_chooses_the_cheapest_complete_candidate() {
     let table = format!(
         "JSON rows v1 (each row maps to the columns in order):\n{{\"columns\":[\"long_field_name\",\"status\"],\"rows\":[{}]}}",
         vec![r#"[7,"ready"]"#; 100].join(",")
+    );
+    let columns = concat!(
+        "JSON columns v1: arrays are columns; scalars repeat for all rows\n",
+        r#"{"rows":100,"columns":{"long_field_name":7,"status":"ready"}}"#
+    )
+    .to_owned();
+    let plain_json = format!(
+        "[{}]",
+        vec![r#"{"long_field_name":7,"status":"ready"}"#; 100].join(",")
     );
     let runs = format!(
         "retok:text-runs-v1 counts repeat exact JSON strings; concatenate\n{}",
@@ -93,7 +147,9 @@ fn selector_chooses_the_cheapest_complete_candidate() {
     let candidates = [
         (Encoding::Raw, &input),
         (Encoding::JsonV1, &minified),
+        (Encoding::JsonMinV1, &plain_json),
         (Encoding::JsonRowsV1, &table),
+        (Encoding::JsonColumnsV1, &columns),
         (Encoding::TextRunsV1, &runs),
     ];
     let (encoding, text) = candidates
@@ -103,6 +159,29 @@ fn selector_chooses_the_cheapest_complete_candidate() {
     let result = compactor().compact(&input);
     assert_eq!(result.encoding, encoding);
     assert_eq!(&result.text, text);
+}
+
+#[test]
+fn earlier_line_format_keeps_priority_when_an_early_symbol_frame_ties() {
+    let prefix = "source/generated/components/Widget";
+    let input: String = (0..64)
+        .map(|i| format!("{prefix}{i}.rs details\n"))
+        .collect();
+    let lines = format!(
+        "retok:lines-v1 [N,prefix] then N lines; prepend prefix\n[64,\"{prefix}\"]\n{}",
+        (0..64)
+            .map(|i| format!("{i}.rs details\n"))
+            .collect::<String>()
+    );
+    let tokenizer = tiktoken_rs::o200k_base().unwrap();
+    assert_eq!(tokenizer.encode_ordinary(&lines).len(), 283);
+    // The multi-entry symbol dictionary also costs 283, and is counted first.
+    // Its exact contents are an encoder choice; the earlier format must win.
+    let result = compactor().compact(&input);
+    assert_eq!(result.encoding, Encoding::TextLinesV1);
+    assert_eq!(result.text, lines);
+    assert_eq!(result.output_tokens, 283);
+    assert_eq!(restore(result.encoding, &result.text).unwrap(), input);
 }
 
 #[test]
@@ -171,6 +250,41 @@ fn prefix_protocol_and_cli_restore_match_independent_expansion() {
 }
 
 #[test]
+fn literal_lines_protocol_matches_independent_expansion_and_counts() {
+    let prefix = "~/项目/🦀/shared/packages/very-long-component/";
+    let suffixes: String = (0..100).map(|i| format!("{i}\r\n")).collect();
+    let input: String = (0..100).map(|i| format!("{prefix}{i}\r\n")).collect();
+    let expected = format!(
+        "retok:lines-v1 [N,prefix] then N lines; prepend prefix\n{}\n{suffixes}",
+        json!([100, prefix])
+    );
+    let response = cli(
+        &["compact", "--protocol=json-v1"],
+        format!("{}\n", json!({"version":1,"text":input})).as_bytes(),
+    );
+    assert!(response.status.success());
+    let result: Value = serde_json::from_slice(&response.stdout).unwrap();
+    assert_eq!(result["encoding"], "text-lines-v1");
+    assert_eq!(result["text"], expected);
+    let tokenizer = tiktoken_rs::o200k_base().unwrap();
+    assert_eq!(
+        result["input_tokens"],
+        tokenizer.encode_ordinary(&input).len()
+    );
+    assert_eq!(
+        result["output_tokens"],
+        tokenizer.encode_ordinary(&expected).len()
+    );
+    assert!(result["output_tokens"].as_u64().unwrap() < result["input_tokens"].as_u64().unwrap());
+    let restored = cli(
+        &["restore", "--encoding", "text-lines-v1"],
+        expected.as_bytes(),
+    );
+    assert!(restored.status.success());
+    assert_eq!(restored.stdout, input.as_bytes());
+}
+
+#[test]
 fn protocol_recovers_from_request_errors_and_preserves_flags() {
     let text = "failed: missing artifact\r\n".repeat(100);
     let request =
@@ -205,7 +319,7 @@ fn protocol_recovers_from_request_errors_and_preserves_flags() {
 }
 
 #[test]
-fn reference_protocol_and_cli_restore_match_independent_expansion() {
+fn symbol_protocol_and_legacy_refs_restore_match_independent_expansion() {
     let repeated = "warning: packages/synthetic/components/navigation/LongComponentName.rs: required configuration value unavailable; supply the complete configuration before retrying the operation\r\n";
     let between = "another event\n";
     let last = "separate event\n";
@@ -217,10 +331,14 @@ fn reference_protocol_and_cli_restore_match_independent_expansion() {
     );
     assert!(response.status.success());
     let result: Value = serde_json::from_slice(&response.stdout).unwrap();
-    assert_eq!(result["encoding"], "text-refs-v1");
-    let expected = format!(
+    assert_eq!(result["encoding"], "text-symbols-v1");
+    let legacy = format!(
         "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n{}",
         json!([repeated, between, 0, last, 0])
+    );
+    let expected = format!(
+        "retok:symbols-v1 substitute each character using this JSON dictionary:\n{}\n§{between}§{last}§",
+        json!({"§": repeated})
     );
     assert_eq!(result["text"], expected);
     let tokenizer = tiktoken_rs::o200k_base().unwrap();
@@ -232,9 +350,12 @@ fn reference_protocol_and_cli_restore_match_independent_expansion() {
         result["output_tokens"],
         tokenizer.encode_ordinary(&expected).len()
     );
-    let restored = cli(&["restore", "--encoding=text-refs-v1"], expected.as_bytes());
-    assert!(restored.status.success());
-    assert_eq!(restored.stdout, input.as_bytes());
+    assert!(tokenizer.encode_ordinary(&expected).len() < tokenizer.encode_ordinary(&legacy).len());
+    for (encoding, encoded) in [("text-symbols-v1", expected), ("text-refs-v1", legacy)] {
+        let restored = cli(&["restore", "--encoding", encoding], encoded.as_bytes());
+        assert!(restored.status.success());
+        assert_eq!(restored.stdout, input.as_bytes());
+    }
 }
 
 #[test]
@@ -267,17 +388,30 @@ fn nonadjacent_fragment_candidates_preserve_both_separator_forms() {
             "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n{}",
             serde_json::to_string(&expected_entries).unwrap()
         );
+        let symbol_body: String = (0..8)
+            .map(|i| format!("§{i}.rs{ending}¶{i}.svg{ending}"))
+            .collect();
+        let symbols = format!(
+            "retok:symbols-v1 substitute each character using this JSON dictionary:\n{{\"§\":{},\"¶\":{}}}\n{symbol_body}{tail}",
+            serde_json::to_string(first).unwrap(),
+            serde_json::to_string(second).unwrap()
+        );
         let result = compactor().compact(&input);
-        assert_eq!(result.encoding, Encoding::TextRefsV1);
-        assert_eq!(result.text, expected);
+        assert_eq!(result.encoding, Encoding::TextSymbolsV1);
+        assert_eq!(result.text, symbols);
         assert_eq!(result.input_tokens, tokenizer.encode_ordinary(&input).len());
         assert_eq!(
             result.output_tokens,
-            tokenizer.encode_ordinary(&expected).len()
+            tokenizer.encode_ordinary(&symbols).len()
         );
         assert!(result.output_tokens < result.input_tokens);
+        assert!(result.output_tokens < tokenizer.encode_ordinary(&expected).len());
         assert_eq!(
-            restore(result.encoding, &expected).unwrap().as_bytes(),
+            restore(result.encoding, &symbols).unwrap().as_bytes(),
+            input.as_bytes()
+        );
+        assert_eq!(
+            restore(Encoding::TextRefsV1, &expected).unwrap().as_bytes(),
             input.as_bytes()
         );
     }

@@ -5,14 +5,16 @@
 //! bytes and unsupported results are omitted, not estimated. Originals are
 //! stored only with the state's explicit keep_originals opt-in.
 
+use crate::rewrite::{self, Shell};
 use crate::state::{self, Settings};
 use anyhow::Result;
-use retok::{CompactResult, Compactor};
+use retok::Compactor;
 use serde::de::{self, MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::fmt;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -20,6 +22,58 @@ use std::time::Instant;
 
 const MAX_INPUT: usize = 16 * 1024 * 1024;
 const MAX_TEXT: usize = 8 * 1024 * 1024;
+
+/// The existing completion-hook POSIX subset; unknown syntax stays lossless.
+pub(crate) fn literal_argv(command: &str) -> Option<Vec<OsString>> {
+    if command.contains(['\\', '\r', '\0']) {
+        return None;
+    }
+    rewrite::lex(command, Shell::Posix)?
+        .into_iter()
+        .map(|token| match (token.word, token.operator) {
+            (Some(word), None) => Some(OsString::from(word)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Match only Retok's leading raw flags, never a child's --raw argument.
+pub(crate) fn explicit_raw(argv: &[OsString]) -> bool {
+    let argv = if argv.first().is_some_and(|word| word == "command") {
+        &argv[1..]
+    } else {
+        argv
+    };
+    if !argv
+        .first()
+        .and_then(|word| word.to_str())
+        .is_some_and(|program| matches!(program.rsplit('/').next(), Some("retok" | "retok.exe")))
+        || !argv
+            .get(1)
+            .is_some_and(|word| word == "run" || word == "proxy")
+    {
+        return false;
+    }
+    let mut raw = argv[1] == "proxy";
+    let mut remaining = &argv[2..];
+    while remaining
+        .first()
+        .is_some_and(|word| word == "--raw" || word == "--capture")
+    {
+        raw |= remaining[0] == "--raw";
+        remaining = &remaining[1..];
+    }
+    if remaining
+        .first()
+        .is_some_and(|word| word == "--help" || word == "-h")
+    {
+        return false;
+    }
+    if remaining.first().is_some_and(|word| word == "--") {
+        remaining = &remaining[1..];
+    }
+    raw && !remaining.is_empty()
+}
 
 // Keep values opaque: Value's arbitrary_precision number marker is also a
 // legal user object key. Re-encoding through Value can change such objects.
@@ -87,18 +141,19 @@ impl Object {
 
 /// Return a changed host envelope only when a complete selected text wins.
 /// Unknown, malformed, oversized, or unprocessable input is a no-op, including
-/// tokenizer initialization failure. No host policy or command is interpreted.
+/// tokenizer initialization failure. Literal Claude Bash argv can select the
+/// existing command presentation; no shell expression is evaluated or rewritten.
 // The CLI uses the observer-enabled path; retain this pure API for callers/tests.
 #[allow(dead_code)]
 pub fn transform(host: &str, input: &str) -> Result<Option<String>> {
-    Ok(transform_inner(host, input, &[], &mut |_, _, _, _, _| {}).unwrap_or(None))
+    Ok(transform_inner(host, input, &[], &mut |_, _, _, _, _, _, _| {}).unwrap_or(None))
 }
 
 fn transform_inner(
     host: &str,
     input: &str,
     exclusions: &[String],
-    measured: &mut impl FnMut(&str, &str, &str, &CompactResult, u64),
+    measured: &mut impl FnMut(&str, &str, &str, &str, usize, usize, u64),
 ) -> Result<Option<String>> {
     // Codex's current post hook omits native status/metadata and replacement
     // discards that context. Even text resembling legacy framing can be raw
@@ -195,6 +250,49 @@ fn transform_inner(
     if !(256..=MAX_TEXT).contains(&total) {
         return Ok(None);
     }
+    // Establish literal POSIX argv once, shared by explicit raw handling and
+    // Claude presentation. PowerShell and unknown terminal backends are opaque.
+    let argv = if matches!(
+        (host, tool.as_str()),
+        ("claude", "Bash") | ("copilot", "bash")
+    ) || (host == "hermes"
+        && cfg!(unix)
+        && std::env::var("TERMINAL_ENV").as_deref() == Ok("local"))
+    {
+        let arguments = if host == "copilot" {
+            // Native Copilot toolArgs is a JSON object encoded as a string.
+            root.string("toolArgs")
+                .and_then(|json| serde_json::from_str::<Object>(&json).ok())
+        } else {
+            root.object("tool_input")
+        };
+        arguments
+            .and_then(|input| input.string("command"))
+            // The shared rewrite lexer is permissive about backslashes inside
+            // double quotes and treats CR as whitespace. Neither establishes
+            // exact POSIX argv, so keep those commands on the lossless path.
+            .and_then(|command| literal_argv(&command))
+    } else {
+        None
+    };
+    if argv.as_deref().is_some_and(explicit_raw) {
+        // No replacement and no measured event for explicitly raw output.
+        return Ok(None);
+    }
+    // Claude's success-only PostToolUse normally omits exitCode. An explicit
+    // status must agree with success; unsupported metadata stays lossless.
+    let semantic_argv = argv.as_deref().filter(|_| {
+        host == "claude"
+            && tool == "Bash"
+            && ["interrupted", "isImage"].iter().all(|flag| {
+                response.get(flag).is_some_and(|value| {
+                    serde_json::from_str::<bool>(value.get()).ok() == Some(false)
+                })
+            })
+            && response
+                .get("exitCode")
+                .is_none_or(|value| serde_json::from_str::<i32>(value.get()).ok() == Some(0))
+    });
     let compactor = Compactor::new()?;
     let mut changed = false;
     for (field, text) in texts {
@@ -202,13 +300,44 @@ fn transform_inner(
             continue;
         }
         let start = Instant::now();
-        let result = compactor.compact(&text);
+        let original = compactor.compact(&text);
+        let mut emitted = original.text;
+        let mut output_tokens = original.output_tokens;
+        if field == "stdout"
+            && let Some(argv) = semantic_argv
+        {
+            // Claude can trim the last LF from complete native output. Supply
+            // it only to the existing parser, then undo it on the proposal.
+            let terminated = (!text.ends_with('\n')).then(|| format!("{text}\n"));
+            if let Some(proposal) =
+                crate::command_view::candidate(argv, terminated.as_deref().unwrap_or(&text), false)
+            {
+                let proposal = if terminated.is_some() {
+                    proposal.strip_suffix('\n').unwrap_or(&proposal)
+                } else {
+                    &proposal
+                };
+                let selected = compactor.compact(proposal);
+                if selected.output_tokens < output_tokens {
+                    emitted = selected.text;
+                    output_tokens = selected.output_tokens;
+                }
+            }
+        }
         let duration_ms = start.elapsed().as_millis().min(u64::MAX as u128) as u64;
-        if result.output_tokens < result.input_tokens {
-            response.set_text(field, &result.text)?;
+        if output_tokens < original.input_tokens {
+            response.set_text(field, &emitted)?;
             changed = true;
         }
-        measured(&tool, field, &text, &result, duration_ms);
+        measured(
+            &tool,
+            field,
+            &text,
+            &emitted,
+            original.input_tokens,
+            output_tokens,
+            duration_ms,
+        );
     }
     if !changed {
         return Ok(None);
@@ -262,17 +391,17 @@ pub fn run(host: &str) -> Result<()> {
                 host,
                 input,
                 &settings.exclude_commands,
-                &mut |tool, field, text, result, duration_ms| {
+                &mut |tool, field, text, emitted, input_tokens, output_tokens, duration_ms| {
                     if !settings.record_usage {
                         return;
                     }
                     let event = state::Event {
                         unix_millis: state::unix_millis(),
                         command: format!("{tool}.{field}"),
-                        input_tokens: Some(result.input_tokens as u64),
-                        output_tokens: Some(result.output_tokens as u64),
+                        input_tokens: Some(input_tokens as u64),
+                        output_tokens: Some(output_tokens as u64),
                         input_bytes: text.len() as u64,
-                        output_bytes: result.text.len() as u64,
+                        output_bytes: emitted.len() as u64,
                         duration_ms,
                         exit_code: None,
                         source: Some(format!("hook-{host}")),

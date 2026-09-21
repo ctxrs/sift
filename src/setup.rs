@@ -1048,6 +1048,8 @@ impl Change {
 pub struct Plan {
     pub changes: Vec<Change>,
     pub messages: Vec<String>,
+    // Pi bundle ownership depends on unchanged files and discovery entries too.
+    pi_bundles: Vec<PiBundleCheck>,
 }
 impl Plan {
     fn read(&self, path: &Path) -> Result<Option<Vec<u8>>> {
@@ -1101,6 +1103,9 @@ impl Plan {
     /// Compare every original before committing, then each file again immediately before replacement.
     /// Rollback only files that still contain our own write; preserve concurrent user edits.
     pub fn apply(&self) -> Result<Vec<PathBuf>> {
+        for bundle in &self.pi_bundles {
+            bundle.check()?;
+        }
         for c in &self.changes {
             c.check()?;
         }
@@ -2118,21 +2123,82 @@ fn settings_paths(h: &Host) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-fn plugin_template(h: &Host) -> Result<String> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PluginKind {
+    LegacyV1,
+    PiSession,
+    PiCommonJs,
+    OmpOneShot,
+    SharedOneShot,
+}
+impl PluginKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::LegacyV1 => "legacy one-shot",
+            Self::PiSession => "Pi session reuse",
+            Self::PiCommonJs => "Pi session reuse (native CommonJS)",
+            Self::OmpOneShot => "OMP one-shot",
+            Self::SharedOneShot => "shared Pi/OMP one-shot",
+        }
+    }
+}
+fn plugin_template(h: &Host, kind: PluginKind) -> Result<String> {
     let source = if h.name == "omp" { "pi" } else { h.name };
     let runtime = include_str!("../integrations/runtime.js")
         .replace("__RETOK_SOURCE__", &serde_json::to_string(source)?);
     let adapter = match source {
+        "pi" if matches!(kind, PluginKind::PiSession | PluginKind::PiCommonJs) => {
+            include_str!("../integrations/pi_session.js")
+        }
         "pi" => include_str!("../integrations/pi.js"),
         "opencode" => include_str!("../integrations/opencode.js"),
         "kilo" => include_str!("../integrations/kilo.js"),
         _ => unreachable!(),
     };
-    Ok(format!(
-        "// retok managed plugin v1; edits prevent automatic replacement/removal\n{runtime}\n{adapter}"
-    ))
+    let owner = match kind {
+        PluginKind::LegacyV1 => "v1",
+        PluginKind::PiSession => "v2 pi-session",
+        PluginKind::PiCommonJs => "v3 pi-session-cjs",
+        PluginKind::OmpOneShot => "v2 omp-one-shot",
+        PluginKind::SharedOneShot => "v2 pi-omp-one-shot",
+    };
+    let mut text = format!(
+        "// retok managed plugin {owner}; edits prevent automatic replacement/removal\n{runtime}\n{adapter}"
+    );
+    if kind == PluginKind::PiCommonJs {
+        // Render the same adapter; only module syntax differs from the TS entry.
+        for (from, to) in [
+            (
+                "import { execFile } from \"node:child_process\";",
+                "const { execFile } = require(\"node:child_process\");",
+            ),
+            (
+                "import { spawn } from \"node:child_process\";",
+                "const { spawn } = require(\"node:child_process\");",
+            ),
+            (
+                "import { statSync } from \"node:fs\";",
+                "const { statSync } = require(\"node:fs\");",
+            ),
+            (
+                "import { StringDecoder } from \"node:string_decoder\";",
+                "const { StringDecoder } = require(\"node:string_decoder\");",
+            ),
+            (
+                "export default function retok(pi) {",
+                "module.exports = function retok(pi) {",
+            ),
+        ] {
+            ensure!(
+                text.matches(from).count() == 1,
+                "Pi module template changed: {from}"
+            );
+            text = text.replacen(from, to, 1);
+        }
+    }
+    Ok(text)
 }
-fn plugin_text(h: &Host, roots: &Roots) -> Result<String> {
+fn plugin_text(h: &Host, roots: &Roots, kind: PluginKind) -> Result<String> {
     ensure!(
         roots.executable.is_absolute(),
         "plugin executable path must be absolute"
@@ -2141,20 +2207,335 @@ fn plugin_text(h: &Host, roots: &Roots) -> Result<String> {
         .executable
         .to_str()
         .context("plugin executable path must be UTF-8")?;
-    Ok(plugin_template(h)?.replace("__RETOK_EXECUTABLE__", &serde_json::to_string(executable)?))
+    Ok(plugin_template(h, kind)?
+        .replace("__RETOK_EXECUTABLE__", &serde_json::to_string(executable)?))
 }
-fn owned_plugin(bytes: &[u8], h: &Host) -> bool {
-    plugin_executable(bytes, h).is_some()
-}
-fn plugin_executable(bytes: &[u8], h: &Host) -> Option<PathBuf> {
+fn plugin_owner(bytes: &[u8], h: &Host) -> Option<(PathBuf, PluginKind)> {
     let text = std::str::from_utf8(bytes).ok()?;
-    let template = plugin_template(h).ok()?;
-    let (prefix, suffix) = template.split_once("__RETOK_EXECUTABLE__")?;
-    let literal = text.strip_prefix(prefix)?.strip_suffix(suffix)?;
-    let executable: String = serde_json::from_str(literal).ok()?;
-    (Path::new(&executable).is_absolute()
-        && serde_json::to_string(&executable).is_ok_and(|canonical| canonical == literal))
-    .then(|| PathBuf::from(executable))
+    let kinds: &[PluginKind] = if matches!(h.name, "pi" | "omp") {
+        &[
+            PluginKind::LegacyV1,
+            PluginKind::PiSession,
+            PluginKind::PiCommonJs,
+            PluginKind::OmpOneShot,
+            PluginKind::SharedOneShot,
+        ]
+    } else {
+        &[PluginKind::LegacyV1]
+    };
+    kinds.iter().find_map(|&kind| {
+        let template = plugin_template(h, kind).ok()?;
+        let (prefix, suffix) = template.split_once("__RETOK_EXECUTABLE__")?;
+        let remainder = text.strip_prefix(prefix)?;
+        let literal = remainder.strip_suffix(suffix).or_else(|| {
+            if kind != PluginKind::PiSession {
+                return None;
+            }
+            // Exact preceding managed Pi session templates; only the canonical
+            // executable literal varies. Never accept arbitrary marker-owned JS.
+            use sha2::{Digest, Sha256};
+            let (literal, tail) = remainder.split_once(";\n")?;
+            let old = format!("{prefix}__RETOK_EXECUTABLE__;\n{tail}");
+            [
+                "0b3ff6d799cdf2ad6bc167da8a817083faed755da88e7315689fbada12ebeea7",
+                "23aae68bda735b5230a7b2ea3dd4c49ffb126c28b8a88e9a001f7f87b3f57472",
+            ]
+            .contains(&format!("{:x}", Sha256::digest(old.as_bytes())).as_str())
+            .then_some(literal)
+        })?;
+        let executable: String = serde_json::from_str(literal).ok()?;
+        (Path::new(&executable).is_absolute()
+            && serde_json::to_string(&executable).is_ok_and(|canonical| canonical == literal))
+        .then(|| (PathBuf::from(executable), kind))
+    })
+}
+
+const PI_PACKAGE: &str =
+    "{\n  \"name\": \"retok-pi\",\n  \"private\": true,\n  \"type\": \"commonjs\"\n}\n";
+
+fn pi_bundle_entries(dir: &Path) -> Result<Vec<OsString>> {
+    let mut names = match fs::read_dir(dir) {
+        Ok(entries) => entries
+            .map(|e| e.map(|e| e.file_name()))
+            .collect::<std::io::Result<Vec<_>>>()?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => vec![],
+        Err(e) => return Err(e.into()),
+    };
+    names.sort();
+    Ok(names)
+}
+
+#[derive(Debug)]
+struct PiBundleCheck {
+    dir: PathBuf,
+    entries: Vec<OsString>,
+    files: Vec<Change>,
+}
+impl PiBundleCheck {
+    fn new(h: &Host) -> Result<Self> {
+        let dir = h.root.join("extensions/retok");
+        let mut files = vec![];
+        for path in [
+            dir.join("package.json"),
+            dir.join("index.js"),
+            h.plugin.clone().unwrap(),
+        ] {
+            // Use the original filesystem even when an alias has pending writes.
+            // These checks are prerequisites only, never mutations or backups.
+            let before = read(&path)?;
+            files.push(Change {
+                target: config_target(&path)?,
+                link: file_link(&path)?,
+                path,
+                after: before.clone(),
+                before,
+            });
+        }
+        Ok(Self {
+            entries: pi_bundle_entries(&dir)?,
+            dir,
+            files,
+        })
+    }
+    fn check(&self) -> Result<()> {
+        ensure!(
+            pi_bundle_entries(&self.dir)? == self.entries,
+            "Pi bundle entries changed since planning: {}",
+            self.dir.display()
+        );
+        for file in &self.files {
+            file.check()?;
+        }
+        Ok(())
+    }
+}
+
+// Bundle ownership is exact and all-or-nothing, including the module boundary.
+// Keep changes in Plan so relocation, backups, link pinning and rollback agree
+// with the other adapters. Backups are inert under Pi's one-level discovery.
+struct PiBundle {
+    files: Vec<(PathBuf, Option<Vec<u8>>)>,
+    owner: Option<(PathBuf, PluginKind)>,
+    edited: bool,
+}
+impl PiBundle {
+    fn read(plan: &Plan, h: &Host) -> Result<Self> {
+        let dir = h.root.join("extensions/retok");
+        let mut files = vec![];
+        for name in ["package.json", "index.js"] {
+            let path = dir.join(name);
+            files.push((path.clone(), plan.read(&path)?));
+        }
+        let package = files[0].1.as_deref();
+        let code = files[1].1.as_deref();
+        let owner = code
+            .and_then(|b| plugin_owner(b, h))
+            .filter(|(_, kind)| *kind == PluginKind::PiCommonJs);
+        let mut edited = package.is_some_and(|b| b != PI_PACKAGE.as_bytes())
+            || (code.is_some() && owner.is_none());
+        // index.ts takes precedence over index.js in Pi's directory discovery.
+        // Unrelated bundle contents are not an invitation to adopt the directory.
+        for name in pi_bundle_entries(&dir)? {
+            let name = name.to_string_lossy();
+            edited |= !["package.json", "index.js"].contains(&name.as_ref())
+                && !["package.json.retok-backup-", "index.js.retok-backup-"]
+                    .iter()
+                    .any(|prefix| name.starts_with(prefix));
+        }
+        let owner = owner.filter(|_| package == Some(PI_PACKAGE.as_bytes()) && !edited);
+        Ok(Self {
+            files,
+            owner,
+            edited,
+        })
+    }
+    fn present(&self) -> bool {
+        self.edited || self.files.iter().any(|(_, bytes)| bytes.is_some())
+    }
+    fn change(self, plan: &mut Plan, h: &Host, roots: &Roots, install: bool) -> Result<()> {
+        plan.pi_bundles.push(PiBundleCheck::new(h)?);
+        for (path, before) in self.files {
+            let after = if !install {
+                None
+            } else if path.file_name().is_some_and(|n| n == "package.json") {
+                Some(PI_PACKAGE.as_bytes().to_vec())
+            } else {
+                Some(plugin_text(h, roots, PluginKind::PiCommonJs)?.into_bytes())
+            };
+            plan.change(path, before, after)?;
+        }
+        Ok(())
+    }
+}
+
+// Only Pi and OMP share this template family. Defer their writes until the
+// existing host-selection/migration logic has established the actual consumers.
+fn pi_plugin_changes(
+    plan: &mut Plan,
+    requests: &[(Host, bool)],
+    roots: &Roots,
+    o: &Options,
+) -> Result<()> {
+    let targets = requests
+        .iter()
+        .map(|(h, _)| config_target(h.plugin.as_ref().unwrap()))
+        .collect::<Result<Vec<_>>>()?;
+    for (index, (h, _)) in requests.iter().enumerate() {
+        let target = &targets[index];
+        if targets[..index].contains(target) {
+            continue;
+        }
+        let path = h.plugin.as_ref().unwrap();
+        let before = plan.read(path)?;
+        let owner = before.as_deref().and_then(|bytes| plugin_owner(bytes, h));
+        let bundle = PiBundle::read(plan, h)?;
+        if o.show {
+            continue;
+        }
+        if o.uninstall {
+            if bundle.edited {
+                plan.messages.push(format!(
+                    "{}: edited or unowned plugin bundle preserved",
+                    h.name
+                ));
+            } else {
+                bundle.change(plan, h, roots, false)?;
+            }
+            if let Some((_, kind)) = owner {
+                if kind == PluginKind::SharedOneShot {
+                    plan.messages.push(
+                        "Shared Pi/OMP plugin removal affects both consumers at this physical file"
+                            .into(),
+                    );
+                }
+                plan.change(path.clone(), before, None)?;
+            } else if before.is_some() {
+                plan.messages
+                    .push(format!("{}: edited or unowned plugin preserved", h.name));
+            }
+            continue;
+        }
+        ensure!(
+            before.is_none() || owner.is_some(),
+            "edited or unowned plugin; unchanged: {}",
+            path.display()
+        );
+        ensure!(
+            !bundle.edited,
+            "edited or unowned Pi plugin bundle; unchanged: {}",
+            h.root.join("extensions/retok").display()
+        );
+        // Even a missing package file must not erase the recorded Pi consumer.
+        let mut pi = bundle.files[1].1.is_some();
+        let mut omp = false;
+        for ((request, legacy), request_target) in requests.iter().zip(&targets) {
+            if request_target != target {
+                continue;
+            }
+            ensure!(
+                !legacy || o.replace,
+                "RTK plugin is present; review/remove it before installing Retok for {}",
+                request.name
+            );
+            pi |= request.name == "pi";
+            omp |= request.name == "omp";
+        }
+        match owner.as_ref().map(|(_, kind)| kind) {
+            Some(PluginKind::PiSession | PluginKind::PiCommonJs) => pi = true,
+            Some(PluginKind::OmpOneShot) => omp = true,
+            Some(PluginKind::SharedOneShot) => {
+                pi = true;
+                omp = true;
+            }
+            Some(PluginKind::LegacyV1) if pi && !omp => {
+                let other = host("omp", roots, o.project);
+                if config_target(other.plugin.as_ref().unwrap())? == *target {
+                    ensure!(
+                        !requests
+                            .iter()
+                            .zip(&targets)
+                            .any(|((_, legacy), t)| *legacy && t == target),
+                        "ambiguous Pi/OMP ownership; RTK plugin preserved until replacement is ready"
+                    );
+                    plan.messages.push("pi: legacy one-shot plugin unchanged: aliased Pi/OMP target has ambiguous ownership; review both consumers and remove the unchanged legacy plugin manually before Pi-only upgrade, or select both hosts for shared one-shot setup".into());
+                    continue;
+                }
+            }
+            _ => (),
+        }
+        // An existing file alias in a distinct OMP directory is also a consumer.
+        // Preserve the shared one-shot entry instead of leaving that alias dangling.
+        if pi && !omp && before.is_some() {
+            let other = host("omp", roots, o.project);
+            if other.plugin.as_ref().unwrap().exists()
+                && config_target(other.plugin.as_ref().unwrap())? == *target
+                && config_target(&other.root)? != config_target(&h.root)?
+            {
+                omp = true;
+            }
+        }
+        // A bundle-directory/file alias can share native Pi without sharing the
+        // legacy TS path. Move both consumers to their own shared one-shot entry.
+        let other = host(if h.name == "pi" { "omp" } else { "pi" }, roots, o.project);
+        let other_index = other.root.join("extensions/retok/index.js");
+        let alias = if bundle.files[1].1.is_some()
+            && other_index.exists()
+            && config_target(&other_index)? == config_target(&bundle.files[1].0)?
+            && config_target(other.plugin.as_ref().unwrap())? != *target
+        {
+            let other_bundle = PiBundle::read(plan, &other)?;
+            let other_path = other.plugin.as_ref().unwrap();
+            let other_before = plan.read(other_path)?;
+            ensure!(
+                !other_bundle.edited
+                    && (other_before.is_none()
+                        || other_before
+                            .as_deref()
+                            .and_then(|b| plugin_owner(b, &other))
+                            .is_some()),
+                "edited or unowned shared Pi/OMP alias; unchanged"
+            );
+            ensure!(
+                plan.read(&other_path.with_file_name("rtk.ts"))?.is_none(),
+                "RTK plugin at shared Pi/OMP alias; select both consumers for replacement"
+            );
+            pi = true;
+            omp = true;
+            Some((other, other_before, other_bundle))
+        } else {
+            None
+        };
+        let kind = if pi && omp {
+            PluginKind::SharedOneShot
+        } else if pi {
+            PluginKind::PiCommonJs
+        } else {
+            PluginKind::OmpOneShot
+        };
+        plan.messages
+            .push(format!("{}: install {}", path.display(), kind.label()));
+        if let Some((other, other_before, other_bundle)) = alias {
+            plan.change(
+                other.plugin.clone().unwrap(),
+                other_before,
+                Some(plugin_text(&other, roots, PluginKind::SharedOneShot)?.into_bytes()),
+            )?;
+            other_bundle.change(plan, &other, roots, false)?;
+        }
+        if kind == PluginKind::PiCommonJs {
+            bundle.change(plan, h, roots, true)?;
+            // Remove only an exactly owned old entry, so Pi discovers one adapter.
+            plan.change(path.clone(), before, None)?;
+        } else {
+            plan.change(
+                path.clone(),
+                before,
+                Some(plugin_text(h, roots, kind)?.into_bytes()),
+            )?;
+            bundle.change(plan, h, roots, false)?;
+        }
+    }
+    Ok(())
 }
 
 const HELP: &str = "Usage: retok init [--agent HOST | --all] [--global | -g | --project]
@@ -2455,6 +2836,7 @@ fn plan_using_stock(
         return Ok(plan);
     }
     let mut selected = 0;
+    let mut pi_plugins = vec![];
     for &name in HOSTS {
         if name == "antigravity" && o.agent.is_none() && !(o.replace && o.project) {
             continue;
@@ -2618,22 +3000,33 @@ fn plan_using_stock(
             ));
             continue;
         }
-        let plugin_text = h
-            .plugin
-            .as_ref()
-            .map(|_| plugin_text(&h, roots))
-            .transpose()?;
-        let plugin_executable = h
+        let mut installed_owner = h
             .plugin
             .as_ref()
             .map(|path| plan.read(path))
             .transpose()?
             .flatten()
-            .and_then(|bytes| plugin_executable(&bytes, &h));
-        let plugin_installed = plugin_executable
-            .as_deref()
-            .is_some_and(executable_available);
-        if let Some(executable) = &plugin_executable {
+            .and_then(|bytes| plugin_owner(&bytes, &h));
+        if let Some(path) = h.plugin.as_ref().filter(|_| matches!(name, "pi" | "omp")) {
+            let bundle = PiBundle::read(&plan, &h)?;
+            if bundle.present() {
+                // Two entries or an incomplete/edited package are not configured.
+                installed_owner = if plan.read(path)?.is_none() {
+                    bundle.owner
+                } else {
+                    None
+                };
+                if installed_owner.is_none() {
+                    plan.messages.push(format!(
+                        "{name}: native Pi bundle incomplete, edited, or conflicts with retok.ts"
+                    ));
+                }
+            }
+        }
+        let plugin_installed = installed_owner
+            .as_ref()
+            .is_some_and(|(executable, _)| executable_available(executable));
+        if let Some((executable, kind)) = &installed_owner {
             plan.messages.push(format!(
                 "{name}: plugin executable {} ({})",
                 if plugin_installed {
@@ -2643,6 +3036,12 @@ fn plan_using_stock(
                 },
                 executable.display()
             ));
+            if matches!(name, "pi" | "omp") {
+                plan.messages.push(format!(
+                    "{name}: installed {}; host runtime not probed",
+                    kind.label()
+                ));
+            }
         }
         let instruction_installed = h
             .instructions
@@ -2690,6 +3089,9 @@ fn plan_using_stock(
                 "{name}: host version, discovery, trust and runtime loading not probed"
             ));
         }
+        if matches!(name, "pi" | "omp") && h.plugin.is_some() {
+            pi_plugins.push((h.clone(), has_legacy_plugin));
+        }
         if o.show {
             continue;
         }
@@ -2722,11 +3124,12 @@ fn plan_using_stock(
             }
         }
         instruction_change(&mut plan, &h, o.uninstall)?;
-        if let (Some(path), Some(text)) = (&h.plugin, plugin_text) {
+        if let Some(path) = h.plugin.as_ref().filter(|_| !matches!(name, "pi" | "omp")) {
+            let text = plugin_text(&h, roots, PluginKind::LegacyV1)?;
             let before = plan.read(path)?;
             let owned = before
                 .as_deref()
-                .is_some_and(|bytes| owned_plugin(bytes, &h));
+                .is_some_and(|bytes| plugin_owner(bytes, &h).is_some());
             if o.uninstall {
                 if owned {
                     plan.change(path.clone(), before, None)?;
@@ -2748,6 +3151,7 @@ fn plan_using_stock(
             }
         }
     }
+    pi_plugin_changes(&mut plan, &pi_plugins, roots, &o)?;
     if selected == 0 {
         plan.messages.push("No matching agent integration found. Select a host with --agent HOST; use --project for local-only setup.".into());
     }
