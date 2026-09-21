@@ -1,10 +1,11 @@
 """Offline metadata for default-feature Retok builds; requires Python 3.11+.
 
 Cargo's target-filtered normal-edge closure includes proc-macro support crates.
-For packed builds, cargo tree supplies feature-resolved normal/build edges;
+For generated tokenizers, cargo tree supplies feature-resolved normal/build edges;
 cargo metadata alone unifies features across dev, host and target contexts.
-Dev edges are excluded. Build-only edges of the vocabulary generator are
-inventoried separately from the normal closure. Package hashes identify cached
+Dev edges are excluded. Build-only edges of the vocabulary generator (Retok's
+root for count-table and DFA generation) are inventoried separately from the
+normal closure. Package hashes identify cached
 .crate archives, not compiled object code. The caller supplies the build's source
 commit and target; those assertions cannot be recovered from an arbitrary executable.
 
@@ -87,6 +88,42 @@ PACKED_PROPERTIES = {
     "embedded-size": "32176874",
 }
 PACKED_VOCAB_SHA256 = "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d"
+
+# Provisional development profile. These exact observed bytes are not evidence
+# of native-target or cross-toolchain determinism. New bytes require review;
+# an OUT_DIR or SBOM cannot redefine the accepted representation.
+COUNT_PROPERTIES = {
+    "representation": "Retok count-only rkyv and dense DFA v1",
+    "profile-status": "development",
+    "archive-endian": "little", "archive-alignment": "aligned",
+    "archive-pointer-width": "32", "dfa-endian": "little",
+}
+COUNT_SOURCES = {
+    "build.rs": ("retok-build-script-sha256", "7eec11c0d2ba70a0aabc9498be1c59691e8995687a16b2f9ec9d45b346e22a03"),
+    "src/tokenizer_data.rs": ("count-schema-sha256", "b54a83728b6afaef8a22eda9beee05d238897dd9ec0ae008e2936d7954a65d2a"),
+    "src/tokenizer.rs": ("tokenizer-source-sha256", "dc6df526da241ae4367b2c4d7b8d6a2f94df2cb7e962ef6b6e11c972b62e5dfa"),
+    "THIRD_PARTY_TOKENIZER.md": ("adapted-notice-sha256", "9909f523206045d9fa3ac2e51af5494a99c15fd8fbd315a61cc7c8694a366278"),
+}
+COUNT_BLOBS = {
+    "count": {
+        "size": 12943388, "sha256": "05aa5a9e1c928a27c87a49c7de61662127fbb0b219e336e4df9b959043fae863",
+        "anchor-offset": 12943356,
+        "anchor": bytes.fromhex("3e0d0300200fa3ff3e0c0300b47b0300e48aa6ff00700600dccaf3ff3e0d0300"),
+    },
+    "dfa": {
+        "size": 2810256, "sha256": "35fb93366158e0c20023060c0de83c585fdb6443a387780e6c0c4f547cfe0288",
+        "anchor-offset": 0,
+        "anchor": bytes.fromhex("727573742d72656765782d6175746f6d6174612d6466612d64656e7365000000"),
+    },
+}
+COUNT_PACKAGES = {
+    "rkyv": ("0.8.18", "d9776093b7ca170454ab1406954f7b7d97a57c51dc6c0642957fb2ef25c2d399"),
+    "regex-automata": ("0.4.18", "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2"),
+    "aneubeck-daachorse": ("1.1.1", "a902604543851c9ccc59d6252eb77502a9e01d6bf7205dd2ab4b543bd22cbda3"),
+    "rmp-serde": ("1.3.1", "72f81bee8c8ef9b577d1681a70ebbc962c232461e397b22c208c43c04b67a155"),
+}
+COUNT_NOTICE_START = "===== Adapted tokenizer source =====\n"
+COUNT_NOTICE_END = "===== End adapted tokenizer source =====\n"
 # Supplements pin archive identity and revision. MIT texts come from reviewed
 # upstream files; yaml-edit uses its authenticated Apache-2.0 declaration and
 # complete canonical Apache terms, with that distinct provenance made explicit.
@@ -396,13 +433,33 @@ def cargo_graph(project, target):
     )
     metadata = json.loads(result.stdout)
     _, packages, _ = normal_graph(metadata)
-    if any(p["name"] == "bpe-openai" for p in packages.values()):
+    count = count_generator(metadata)
+    require(not count or not any(p["name"] in ("bpe-openai", "tiktoken-rs") for p in packages.values()),
+            "ambiguous normal/build tokenizer dependencies")
+    if count or any(p["name"] == "bpe-openai" for p in packages.values()):
         # metadata's flat feature union can report unused dependencies, e.g.
         # base64 as normal and zlib-rs as a build input. tree uses build contexts.
         metadata["retok-normal-graph"] = cargo_tree_graph(project, target, metadata, "normal", "retok")
         metadata["retok-generator-graph"] = cargo_tree_graph(
-            project, target, metadata, "normal,build", "bpe-openai")
+            project, target, metadata, "normal,build", "retok" if count else "bpe-openai")
     return metadata
+
+
+def count_generator(metadata):
+    packages = {p["id"]: p for p in metadata["packages"]}
+    root = next(n for n in metadata["resolve"]["nodes"] if n["id"] == metadata["resolve"]["root"])
+    return any(packages[d["pkg"]]["name"] == "bpe-openai"
+               and any(k["kind"] == "build" for k in d["dep_kinds"]) for d in root["deps"])
+
+
+def tokenizer_mode(names, normal_names):
+    normal = normal_names & {"tiktoken-rs", "bpe-openai"}
+    if not normal and "bpe-openai" in names:
+        require("tiktoken-rs" not in names, "ambiguous count tokenizer dependency")
+        return "count"
+    require(len(normal) == 1 and not ("tiktoken-rs" in names and "bpe-openai" in names),
+            "missing/ambiguous normal tokenizer dependency")
+    return "packed" if "bpe-openai" in normal else "raw"
 
 
 def cargo_tree_graph(project, target, metadata, kinds, package):
@@ -454,7 +511,7 @@ def normal_graph(metadata):
 
 
 def release_graph(metadata):
-    """Normal runtime closure plus the vocabulary generator's build closure only."""
+    """Normal closure plus generator inputs; the count generator is Retok itself."""
     root, packages, graph = normal_graph(metadata)
     if "retok-normal-graph" in metadata:
         normal_edges = metadata["retok-normal-graph"]
@@ -464,8 +521,8 @@ def release_graph(metadata):
         all_packages = {p["id"]: p for p in metadata["packages"]}
         return (root, {key: all_packages[key] for key in graph},
                 {key: sorted(deps) for key, deps in graph.items()}, set(normal_edges) - {root})
-    require(not any(p["name"] == "bpe-openai" for p in packages.values()),
-            "packed tokenizer requires feature-resolved Cargo trees")
+    require(not count_generator(metadata) and not any(p["name"] == "bpe-openai" for p in packages.values()),
+            "generated tokenizer requires feature-resolved Cargo trees")
     return root, packages, graph, set(packages) - {root}
 
 
@@ -536,6 +593,64 @@ def embedded_location(binary, prefix, size=None, digest=None):
                     and hashlib.sha256(mapped[offset:offset + size]).hexdigest() == digest,
                     "embedded packed vocabulary SHA-256 mismatch (unreviewed representation)")
     return offset
+
+
+def count_properties():
+    props = {k: PACKED_PROPERTIES[k] for k in (
+        "source-path", "source-commit", "source-compressed-sha256", "generator-build-script-sha256")}
+    props.update(COUNT_PROPERTIES)
+    props.update(dict(COUNT_SOURCES.values()))
+    for name, blob in COUNT_BLOBS.items():
+        props.update({name + "-sha256": blob["sha256"], name + "-size": str(blob["size"])})
+    return props
+
+
+def count_sources(project):
+    for path, (_, digest) in COUNT_SOURCES.items():
+        require(sha256(project / path) == digest, "unreviewed count tokenizer source: " + path)
+    return license_text((project / "THIRD_PARTY_TOKENIZER.md").read_bytes(), "adapted tokenizer")
+
+
+def count_locations(binary):
+    require(binary.stat().st_size > 0, "missing embedded count tokenizer")
+    result = {}
+    with binary.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as mapped:
+        for name, blob in COUNT_BLOBS.items():
+            matches, start = [], 0
+            while (anchor := mapped.find(blob["anchor"], start)) >= 0:
+                offset = anchor - blob["anchor-offset"]
+                end = offset + blob["size"]
+                if (offset >= 0 and end <= len(mapped)
+                        and hashlib.sha256(mapped[offset:end]).hexdigest() == blob["sha256"]):
+                    matches.append(offset)
+                start = anchor + 1
+            require(len(matches) == 1, "missing, ambiguous or unreviewed embedded " + name)
+            result[name + "-offset"] = str(matches[0])
+    return result
+
+
+def validate_count(vp, notices, binary):
+    require(all(vp.get("retok:" + k) == v for k, v in count_properties().items()),
+            "unreviewed count tokenizer representation/provenance")
+    require(not any("retok:" + k in vp for k in ("embedded-sha256", "embedded-size", "embedded-offset")),
+            "count tokenizer must bind both embedded assets")
+    require(notices.count(COUNT_NOTICE_START) == notices.count(COUNT_NOTICE_END) == 1,
+            "missing/duplicate adapted tokenizer notice marker")
+    text = notices.split(COUNT_NOTICE_START, 1)[1].split(COUNT_NOTICE_END, 1)[0]
+    require(hashlib.sha256(text.encode("utf-8")).hexdigest() == COUNT_SOURCES["THIRD_PARTY_TOKENIZER.md"][1],
+            "adapted tokenizer notice SHA-256 mismatch")
+    ranges = []
+    require(binary.stat().st_size > 0, "missing embedded count tokenizer")
+    with binary.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as mapped:
+        for name, blob in COUNT_BLOBS.items():
+            offset = int(vp.get("retok:" + name + "-offset", "-1"))
+            end = offset + blob["size"]
+            require(offset >= 0 and end <= len(mapped), "invalid embedded " + name + " location")
+            require(hashlib.sha256(mapped[offset:end]).hexdigest() == blob["sha256"],
+                    "embedded " + name + " SHA-256 mismatch")
+            ranges.append((offset, end))
+    ranges.sort()
+    require(all(a[1] <= b[0] for a, b in zip(ranges, ranges[1:])), "overlapping count tokenizer assets")
 
 
 def checked_archive(package, lock):
@@ -735,6 +850,7 @@ def generate(project, binary, target, commit, tiktoken_license, openai_license, 
     require(re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit), "source commit must be a full Git hash")
     runtime_raw, runtimes, runtime_notices = load_runtimes(runtime_path, target)
     root, packages, graph, normal = release_graph(cargo_graph(project, target))
+    mode = tokenizer_mode({p["name"] for p in packages.values()}, {packages[k]["name"] for k in normal})
     lock = {(p["name"], p["version"], p.get("source")): p
             for p in tomllib.loads((project / "Cargo.lock").read_text())["package"]}
     root_ref = f"retok@{VERSION}:{target}"
@@ -742,6 +858,8 @@ def generate(project, binary, target, commit, tiktoken_license, openai_license, 
     refs[root] = root_ref
     require(len(set(refs.values())) == len(refs), "duplicate package identities across registries")
     notices = section(SPECIAL_MARKERS[0], license_text((project / "LICENSE").read_bytes(), "Retok"))
+    if mode == "count":
+        notices += COUNT_NOTICE_START + count_sources(project) + COUNT_NOTICE_END + "\n"
     components = []
     vocab = None
     for key in sorted(packages, key=lambda key: refs[key]):
@@ -779,9 +897,11 @@ def generate(project, binary, target, commit, tiktoken_license, openai_license, 
                                       "source": package["source"], "cargo-license-expression": expression}),
         })
         if package["name"] in ("tiktoken-rs", "bpe-openai"):
-            require(vocab is None, "multiple normal tokenizer dependencies")
-            packed = package["name"] == "bpe-openai"
-            if packed:
+            require(vocab is None, "multiple tokenizer dependencies")
+            if mode == "count":
+                raw = packed_source(files)
+                embedding = dict(count_properties(), **count_locations(binary))
+            elif mode == "packed":
                 raw = packed_source(files)
                 offset = embedded_location(binary, PACKED_PREFIX,
                                            int(PACKED_PROPERTIES["embedded-size"]),
@@ -804,12 +924,20 @@ def generate(project, binary, target, commit, tiktoken_license, openai_license, 
                 "externalReferences": [{"type": "distribution", "url": VOCAB_URL},
                                        {"type": "vcs", "url": OPENAI_URL}],
                 "properties": properties(dict(embedding, **{
-                    "embedded-in": root_ref, "source-crate": refs[key], "embedded-offset": str(offset)})),
+                    "embedded-in": root_ref, "source-crate": refs[key]},
+                    **({} if mode == "count" else {"embedded-offset": str(offset)}))),
             }
             provenance = (f"OpenAI/tiktoken: {OPENAI_URL}\nVocabulary: {VOCAB_URL}\n"
                           f"Bundled by {refs[key]} at {embedding['source-commit']}, {embedding['source-path']}\n"
                           f"Vocabulary text SHA-256: {vocab_hash}")
-            if packed:
+            if mode == "count":
+                provenance += ("\nRetok build.rs derives count.rkyv from the upstream vocabulary and "
+                               "pre.dense from its ordinary o200k pretokenizer patterns.\n"
+                               "The executable embeds both generated assets. The upstream MessagePack "
+                               "dictionary is an intermediate, not this embedding contract.\n"
+                               "Development profile; no universal cross-toolchain or native-target byte-identity claim.\n")
+                provenance += "\n".join(f"{k}: {v}" for k, v in sorted(embedding.items()))
+            elif mode == "packed":
                 provenance += ("\nThe gzip source vocabulary is compiled at build time by build.rs into "
                                "bpe_o200k_base.dict (MessagePack BytePairEncoding).\n"
                                "The binary embeds this prepared representation, not the raw .tiktoken text.\n"
@@ -818,7 +946,7 @@ def generate(project, binary, target, commit, tiktoken_license, openai_license, 
                                f"Build script SHA-256: {embedding['generator-build-script-sha256']}\n"
                                f"Compressed source SHA-256: {embedding['source-compressed-sha256']}")
             notices += section(SPECIAL_MARKERS[2], provenance)
-    require(vocab is not None, "normal dependency graph does not contain a supported tokenizer")
+    require(vocab is not None, "release dependency graph does not contain a supported tokenizer")
     notices += section(SPECIAL_MARKERS[1], mit_text(openai_license, "OpenAI/tiktoken"))
     notices += runtime_notices
     components.append(vocab)
@@ -894,7 +1022,7 @@ def validate(document, notices, binary):
             and sorted(inventory + build_inventory) == sorted(c["bom-ref"] for c in libraries),
             "normal dependency inventory mismatch")
     normal_names = {c["name"] for c in libraries if c["bom-ref"] in inventory}
-    require(len(normal_names & {"tiktoken-rs", "bpe-openai"}) == 1, "missing/ambiguous normal tokenizer dependency")
+    mode = tokenizer_mode({c["name"] for c in libraries}, normal_names)
     require({"regex-syntax", "unicode-ident"} <= normal_names,
             "missing required normal dependency")
     for component in components:
@@ -942,25 +1070,36 @@ def validate(document, notices, binary):
     require(reachable == refs, "unreachable dependency component")
     vocab = vocabularies[0]
     vp = property_map(vocab)
-    packed = "bpe-openai" in normal_names
-    tokenizer = "bpe-openai" if packed else "tiktoken-rs"
-    if packed:
+    tokenizer = "tiktoken-rs" if mode == "raw" else "bpe-openai"
+    if mode == "count":
+        require("retok:vocabulary-build-dependencies" in props
+                and component_hash(vocab) == PACKED_VOCAB_SHA256, "missing count generator inventory/provenance")
+        validate_count(vp, notices, binary)
+        for name, (version, digest) in COUNT_PACKAGES.items():
+            matches = [c for c in libraries if c["name"] == name]
+            expected_inventory = inventory if name in ("rkyv", "regex-automata") else build_inventory
+            require(len(matches) == 1 and matches[0]["version"] == version
+                    and component_hash(matches[0]) == digest and matches[0]["bom-ref"] in expected_inventory,
+                    "unreviewed count generator/runtime archive identity")
+    elif mode == "packed":
         require(all(vp.get("retok:" + k) == v for k, v in PACKED_PROPERTIES.items())
                 and component_hash(vocab) == PACKED_VOCAB_SHA256,
                 "unreviewed packed vocabulary representation/provenance")
-        for name in ("bpe-openai", "bpe"):
-            expected = [(version, values) for (crate, version), values in SUPPLEMENTS.items() if crate == name]
-            require(len(expected) == 1, "missing reviewed tokenizer identity")
-            version, values = expected[0]
-            matches = [c for c in libraries if c["name"] == name and c["bom-ref"] in inventory]
-            require(len(matches) == 1 and matches[0]["version"] == version
-                    and component_hash(matches[0]) == values[0], "unreviewed tokenizer archive identity")
     else:
         require(not build_inventory and not any("retok:" + k in vp for k in
                 ("representation", "embedded-sha256", "source-compressed-sha256", "generator-build-script-sha256")),
                 "legacy vocabulary representation mismatch")
+    if mode != "raw":
+        for name in ("bpe-openai", "bpe"):
+            expected = [(version, values) for (crate, version), values in SUPPLEMENTS.items() if crate == name]
+            require(len(expected) == 1, "missing reviewed tokenizer identity")
+            version, values = expected[0]
+            expected_inventory = build_inventory if mode == "count" else inventory
+            matches = [c for c in libraries if c["name"] == name and c["bom-ref"] in expected_inventory]
+            require(len(matches) == 1 and matches[0]["version"] == version
+                    and component_hash(matches[0]) == values[0], "unreviewed tokenizer archive identity")
     require(vp.get("retok:embedded-in") == root["bom-ref"]
-            and vp.get("retok:source-path") == (PACKED_PATH if packed else VOCAB_PATH)
+            and vp.get("retok:source-path") == (VOCAB_PATH if mode == "raw" else PACKED_PATH)
             and re.fullmatch(r"[0-9a-f]{40}", vp.get("retok:source-commit", ""))
             and vp.get("retok:source-crate") in {c["bom-ref"] for c in libraries if c["name"] == tokenizer}
             and vocab["bom-ref"] in graph[vp["retok:source-crate"]]
@@ -970,7 +1109,9 @@ def validate(document, notices, binary):
     digest = component_hash(vocab)
     require(vocab["version"] == digest and vocab["bom-ref"] == "o200k_base:sha256:" + digest,
             "vocabulary hash identity mismatch")
-    embedded_digest = vp["retok:embedded-sha256"] if packed else digest
+    if mode == "count":
+        return
+    embedded_digest = vp["retok:embedded-sha256"] if mode == "packed" else digest
     offset = int(vp.get("retok:embedded-offset", "-1"))
     size = int(vp.get("retok:embedded-size", "0"))
     require(offset >= 0 and size > 0 and offset + size <= binary.stat().st_size,
@@ -988,6 +1129,7 @@ def validate_project(document, project):
             and props["retok:cargo-manifest-sha256"] == sha256(project / "Cargo.toml"),
             "Cargo source/lockfile hashes differ from metadata")
     root, packages, graph, normal = release_graph(cargo_graph(project, props["retok:target"]))
+    mode = tokenizer_mode({p["name"] for p in packages.values()}, {packages[k]["name"] for k in normal})
     refs = {key: f"pkg:cargo/{p['name']}@{p['version']}" for key, p in packages.items()}
     refs[root] = component["bom-ref"]
     runtime_refs = validate_runtimes(document)
@@ -1001,6 +1143,11 @@ def validate_project(document, project):
     lock = {(p["name"], p["version"], p.get("source")): p
             for p in tomllib.loads((project / "Cargo.lock").read_text())["package"]}
     vocab = next(c for c in document["components"] if c["type"] == "data")
+    if mode == "count":
+        vp = property_map(vocab)
+        require(all(vp.get("retok:" + k) == v for k, v in count_properties().items()),
+                "unreviewed count tokenizer representation/provenance")
+        count_sources(project)
     for key, package in packages.items():
         if key == root:
             continue

@@ -10,13 +10,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-const HEADER: &str = "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n";
+pub(crate) const HEADER: &str = "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n";
 const MAX_RESTORED_BYTES: usize = 64 * 1024 * 1024;
 const PREFIX_BUDGET: usize = 32;
 
 #[derive(Serialize)]
 #[serde(untagged)]
-enum Entry {
+pub(crate) enum Entry {
     Literal(String),
     Reference(u64),
 }
@@ -51,26 +51,70 @@ impl<'de> Deserialize<'de> for Entry {
     }
 }
 
+/// Generated internally from this source; only this module constructs plans.
+pub(crate) struct Plan<'a> {
+    original: &'a str,
+    entries: Vec<Entry>,
+    references: String,
+}
+
+impl<'a> Plan<'a> {
+    pub(crate) fn original(&self) -> &'a str {
+        self.original
+    }
+    pub(crate) fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+    pub(crate) fn references(&self) -> &str {
+        &self.references
+    }
+    pub(crate) fn into_references(self) -> String {
+        self.references
+    }
+}
+
 fn flush_literal(entries: &mut Vec<Entry>, pending: &mut String) {
     if !pending.is_empty() {
         entries.push(Entry::Literal(std::mem::take(pending)));
     }
 }
 
-pub(crate) fn candidate(input: &str) -> Option<String> {
+pub(crate) fn candidate(input: &str) -> Option<Plan<'_>> {
     if input.len() > MAX_RESTORED_BYTES {
         return None;
     }
-    encode_fragments(input.split_inclusive('\n'))
+    encode_fragments(input, input.split_inclusive('\n'))
 }
 
-fn encode_fragments<'a>(fragments: impl Iterator<Item = &'a str> + Clone) -> Option<String> {
-    let mut counts: HashMap<&str, usize> = HashMap::new();
+/// Keep the first of each byte-identical plan. There are at most three plans,
+/// so exact comparisons avoid both hashing assumptions and duplicate framing.
+pub(crate) fn candidates(input: &str) -> Vec<Plan<'_>> {
+    let mut distinct = Vec::new();
+    for plan in candidate(input)
+        .into_iter()
+        .chain(fragment_candidates(input))
+    {
+        if !distinct
+            .iter()
+            .any(|earlier: &Plan<'_>| earlier.references == plan.references)
+        {
+            distinct.push(plan);
+        }
+    }
+    distinct
+}
+
+fn encode_fragments<'a>(
+    input: &'a str,
+    fragments: impl Iterator<Item = &'a str> + Clone,
+) -> Option<Plan<'a>> {
+    let capacity = fragments.clone().size_hint().1.unwrap_or_default();
+    let mut counts: HashMap<&str, usize> = HashMap::with_capacity(capacity);
     for line in fragments.clone() {
         *counts.entry(line).or_default() += 1;
     }
-    let mut anchors: HashMap<&str, u64> = HashMap::new();
-    let mut entries = Vec::new();
+    let mut anchors: HashMap<&str, u64> = HashMap::with_capacity(counts.len());
+    let mut entries = Vec::with_capacity(capacity);
     let mut pending = String::new();
     let mut used_reference = false;
     for line in fragments {
@@ -103,13 +147,18 @@ fn encode_fragments<'a>(fragments: impl Iterator<Item = &'a str> + Clone) -> Opt
         return None;
     }
     flush_literal(&mut entries, &mut pending);
-    Some(format!("{HEADER}{}", serde_json::to_string(&entries).ok()?))
+    let references = format!("{HEADER}{}", serde_json::to_string(&entries).ok()?);
+    Some(Plan {
+        original: input,
+        entries,
+        references,
+    })
 }
 
 // A conservative byte prefilter, never a token estimate. Isolating an anchor
 // costs at most six framing bytes; allow four plus index digits per reference.
 fn byte_saving(text: &str, count: usize, digits: usize) -> Option<usize> {
-    let escaped = serde_json::to_string(text).ok()?.len().checked_sub(2)?;
+    let escaped = crate::json_length::serialized(text)?.checked_sub(2)?;
     Some(
         escaped
             .saturating_sub(digits.saturating_add(4))
@@ -120,18 +169,26 @@ fn byte_saving(text: &str, count: usize, digits: usize) -> Option<usize> {
 
 /// Two competing segmentations, with every separator retained verbatim. The
 /// second recognizes literal backslash+n bytes; it never interprets JSON/code.
-pub(crate) fn fragment_candidates(input: &str) -> impl Iterator<Item = String> + '_ {
+pub(crate) fn fragment_candidates(input: &str) -> impl Iterator<Item = Plan<'_>> + '_ {
     ["\n", "\\n"]
         .into_iter()
         .filter_map(move |separator| fragment_candidate(input, separator))
 }
 
-fn fragment_candidate(input: &str, separator: &str) -> Option<String> {
+/// One bounded literal segmentation; quotes and JSON syntax are not interpreted.
+pub(crate) fn comma_candidate(input: &str) -> Option<Plan<'_>> {
+    if input.len() > 64 * 1024 || input.split_inclusive(',').take(4097).count() > 4096 {
+        return None;
+    }
+    fragment_candidate(input, ",")
+}
+
+fn fragment_candidate<'a>(input: &'a str, separator: &str) -> Option<Plan<'a>> {
     if input.len() > MAX_RESTORED_BYTES {
         return None;
     }
     let lines: Vec<&str> = input.split_inclusive(separator).collect();
-    let mut counts: HashMap<&str, usize> = HashMap::new();
+    let mut counts: HashMap<&str, usize> = HashMap::with_capacity(lines.len());
     for &line in &lines {
         *counts.entry(line).or_default() += 1;
     }
@@ -141,8 +198,8 @@ fn fragment_candidate(input: &str, separator: &str) -> Option<String> {
         .saturating_sub(1)
         .to_string()
         .len();
-    let mut whole = HashSet::new();
-    let mut ordered = Vec::new();
+    let mut whole = HashSet::with_capacity(counts.len());
+    let mut ordered = Vec::with_capacity(counts.len());
     for (&line, &count) in &counts {
         if count > 1 && byte_saving(line, count, digits)? > 0 {
             whole.insert(line);
@@ -155,14 +212,14 @@ fn fragment_candidate(input: &str, separator: &str) -> Option<String> {
     for &(_, count) in &ordered {
         cumulative.push(cumulative.last()?.checked_add(count)?);
     }
-    let mut prefixes = HashSet::new();
+    let mut prefixes = HashSet::with_capacity(ordered.len());
     for pair in ordered.windows(2) {
         let prefix = crate::text_codec::common_prefix(pair[0].0, pair[1].0);
         if !prefix.is_empty() {
             prefixes.insert(prefix);
         }
     }
-    let mut ranked = Vec::new();
+    let mut ranked = Vec::with_capacity(prefixes.len());
     for prefix in prefixes {
         let mut upper = prefix.as_bytes().to_vec();
         // Valid UTF-8 never ends in 0xff. This exclusive byte-order sentinel
@@ -189,7 +246,7 @@ fn fragment_candidate(input: &str, separator: &str) -> Option<String> {
             .cmp(&a.1.len())
             .then_with(|| a.1.as_bytes().cmp(b.1.as_bytes()))
     });
-    let mut fragments = Vec::new();
+    let mut fragments = Vec::with_capacity(lines.len().saturating_mul(2));
     for line in lines {
         let prefix = if whole.contains(line) {
             None
@@ -209,7 +266,7 @@ fn fragment_candidate(input: &str, separator: &str) -> Option<String> {
             fragments.push(line);
         }
     }
-    encode_fragments(fragments.iter().copied())
+    encode_fragments(input, fragments.iter().copied())
 }
 
 fn literal_at(entries: &[Entry], position: usize) -> Result<&str> {
@@ -259,6 +316,70 @@ mod tests {
     use super::*;
 
     #[test]
+    fn comma_discovery_accepts_limits_and_declines_overflow() {
+        let byte_limit = "0123456789abcdefghijklmnopqrstu,".repeat(2048);
+        assert_eq!(byte_limit.len(), 64 * 1024);
+        assert!(comma_candidate(&byte_limit).is_some());
+        assert!(comma_candidate(&(byte_limit + "x")).is_none());
+
+        let fragment_limit = "repeat,".repeat(4096);
+        assert!(comma_candidate(&fragment_limit).is_some());
+        assert!(comma_candidate(&(fragment_limit + ",")).is_none());
+    }
+
+    #[test]
+    fn comma_discovery_preserves_opaque_quotes_and_final_bytes() {
+        let input = format!(
+            "{}unterminated\0",
+            "diagnostic: \"https://example.invalid/items?q=a,b\",雪\\n🦀\r\n".repeat(40)
+        );
+        let plan = comma_candidate(&input).unwrap();
+        assert_eq!(
+            restore(plan.references()).unwrap().as_bytes(),
+            input.as_bytes()
+        );
+    }
+
+    #[test]
+    fn duplicate_plans_are_removed_without_dropping_distinct_segmentations() {
+        let repeated =
+            "worker completed operation; exact status retained with full details\n".repeat(1000);
+        let first = candidate(&repeated).unwrap().into_references();
+        let fragments: Vec<_> = fragment_candidates(&repeated)
+            .map(Plan::into_references)
+            .collect();
+        assert_eq!(fragments.as_slice(), std::slice::from_ref(&first));
+        assert_eq!(
+            candidates(&repeated)
+                .into_iter()
+                .map(Plan::into_references)
+                .collect::<Vec<_>>(),
+            [first]
+        );
+
+        let mut mixed = String::new();
+        for i in 0..40 {
+            mixed.push_str("a long repeated warning retaining complete details\n");
+            mixed.push_str(&format!("source/generated/components/Widget{i}.rs\n"));
+            mixed.push_str(&format!("assets/generated/navigation/Icon{i}.svg\\n\n"));
+        }
+        let plans = candidates(&mixed);
+        assert!(plans.len() >= 2);
+        assert_eq!(
+            plans[0].references(),
+            candidate(&mixed).unwrap().references()
+        );
+        for (i, plan) in plans.iter().enumerate() {
+            assert!(
+                !plans[..i]
+                    .iter()
+                    .any(|old| old.references() == plan.references())
+            );
+            assert_eq!(restore(plan.references()).unwrap(), mixed);
+        }
+    }
+
+    #[test]
     fn decodes_independently_written_sequences() {
         for (body, expected) in [
             (
@@ -295,8 +416,8 @@ mod tests {
         ])
         .to_string();
         let encoded = candidate(&input).unwrap();
-        assert_eq!(encoded, format!("{HEADER}{expected_body}"));
-        assert_eq!(restore(&encoded).unwrap(), input);
+        assert_eq!(encoded.references(), format!("{HEADER}{expected_body}"));
+        assert_eq!(restore(encoded.references()).unwrap(), input);
     }
 
     #[test]
@@ -324,7 +445,10 @@ mod tests {
                     format!("C.svg{ending}tail 🦀")
                 ])
             );
-            assert_eq!(fragment_candidate(&input, separator).unwrap(), expected);
+            assert_eq!(
+                fragment_candidate(&input, separator).unwrap().references(),
+                expected
+            );
             assert_eq!(restore(&expected).unwrap().as_bytes(), input.as_bytes());
         }
     }
@@ -339,7 +463,10 @@ mod tests {
             "{HEADER}{}",
             serde_json::json!([repeated, prefix, "A.rs\n", 0, 1, "B.rs\n", 0, 1, "C.rs\n"])
         );
-        assert_eq!(fragment_candidate(&input, "\n").unwrap(), expected);
+        assert_eq!(
+            fragment_candidate(&input, "\n").unwrap().references(),
+            expected
+        );
         assert_eq!(restore(&expected).unwrap(), input);
     }
 
@@ -365,7 +492,10 @@ mod tests {
         let prefix = r#"C:\\new\\names\\generated\\components\\"#;
         let input = format!("const text = \"{prefix}A.rs\\n{prefix}B.rs\\n{prefix}C.rs\";\r\n");
         for encoded in fragment_candidates(&input) {
-            assert_eq!(restore(&encoded).unwrap().as_bytes(), input.as_bytes());
+            assert_eq!(
+                restore(encoded.references()).unwrap().as_bytes(),
+                input.as_bytes()
+            );
         }
         assert!(fragment_candidate(&input, "\\n").is_some());
     }
@@ -381,7 +511,10 @@ mod tests {
         ] {
             for tail in ["", "unterminated", "\r", "\n"] {
                 let input = format!("{line}unique\n{line}{tail}");
-                assert_eq!(restore(&candidate(&input).unwrap()).unwrap(), input);
+                assert_eq!(
+                    restore(candidate(&input).unwrap().references()).unwrap(),
+                    input
+                );
             }
         }
     }
