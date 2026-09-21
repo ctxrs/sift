@@ -77,6 +77,97 @@ fn explicit_read_json_and_filter_workflows_keep_their_contracts() {
 
 #[cfg(unix)]
 #[test]
+fn automatic_status_keeps_every_path_and_measures_the_selected_view() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = Sandbox::new();
+    let mut original = String::from("On branch main\nChanges to be committed:\n");
+    let mut presentation = String::from("## main\n");
+    for i in 0..1000 {
+        let status = if i < 10 || i % 2 != 0 {
+            "modified:   "
+        } else {
+            "deleted:    "
+        };
+        original.push_str(&format!(
+            "\t{status}src/path/common/ordinary_case_{i:05}.rs\n"
+        ));
+        let code = if i < 10 || i % 2 != 0 { "M" } else { "D" };
+        presentation.push_str(&format!(
+            "{code}  src/path/common/ordinary_case_{i:05}.rs\n"
+        ));
+    }
+    fs::write(root.0.join("status-output"), &original).unwrap();
+    let program = root.0.join("git");
+    fs::write(
+        &program,
+        "#!/bin/sh\n[ \"$1\" = status ] || exit 2\nprintf invoked >> marker\ncat status-output\n",
+    )
+    .unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    let compactor = retok::Compactor::new().unwrap();
+    let expected = compactor.compact(&presentation);
+    assert!(expected.output_tokens < compactor.compact(&original).output_tokens);
+    let output = root.output(&["run", "--", program.to_str().unwrap(), "status"], b"");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, expected.text.as_bytes());
+    assert_eq!(
+        retok::restore(expected.encoding, &expected.text).unwrap(),
+        presentation
+    );
+    assert_eq!(fs::read(root.0.join("marker")).unwrap(), b"invoked");
+    let gain = root.output(&["gain", "--json", "--history"], b"");
+    let gain: serde_json::Value = serde_json::from_slice(&gain.stdout).unwrap();
+    let event = &gain["history"][0];
+    assert_eq!(event["input_tokens"], compactor.count_tokens(&original));
+    assert_eq!(event["output_tokens"], expected.output_tokens);
+    assert_eq!(event["source"], "run-view");
+}
+
+#[cfg(unix)]
+#[test]
+fn automatic_test_summary_records_actual_tokens_and_keeps_recovery_and_status() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = Sandbox::new();
+    root.settings(r#"{"keep_originals":true}"#);
+    let mut original = String::from("running 101 tests\n");
+    for i in 0..100 {
+        original.push_str(&format!("test successful_case_{i} ... ok\n"));
+    }
+    original.push_str("test rejected_input ... FAILED\n\nfailures:\n\n---- rejected_input stdout ----\nsrc/input.rs:17: expected 200, actual 503\n\nfailures:\n    rejected_input\n\ntest result: FAILED. 100 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n");
+    fs::write(root.0.join("test-output"), &original).unwrap();
+    let program = root.0.join("cargo");
+    fs::write(&program, "#!/bin/sh\n[ \"$1\" = test ] || exit 2\nprintf invoked >> marker\ncat test-output\nprintf 'warning preserved\\n' >&2\nexit 17\n").unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = root.output(&["run", "--", program.to_str().unwrap(), "test"], b"");
+    assert_eq!(output.status.code(), Some(17));
+    assert_eq!(fs::read(root.0.join("marker")).unwrap(), b"invoked");
+    assert_eq!(output.stderr, b"warning preserved\n");
+    let text = String::from_utf8(output.stdout.clone()).unwrap();
+    assert!(text.contains("src/input.rs:17: expected 200, actual 503"));
+    assert!(text.contains("test rejected_input ... FAILED"));
+    assert!(text.contains("100 passed; 1 failed"));
+    assert!(!text.contains("successful_case_99"));
+    let tokenizer = tiktoken_rs::o200k_base().unwrap();
+    let input_tokens = tokenizer.encode_ordinary(&original).len()
+        + tokenizer.encode_ordinary("warning preserved\n").len();
+    let output_tokens = tokenizer.encode_ordinary(&text).len()
+        + tokenizer.encode_ordinary("warning preserved\n").len();
+    assert!(output_tokens < input_tokens);
+    let gain = root.output(&["gain", "--json", "--history"], b"");
+    let gain: serde_json::Value = serde_json::from_slice(&gain.stdout).unwrap();
+    let event = &gain["history"][0];
+    assert_eq!(event["input_tokens"], input_tokens);
+    assert_eq!(event["output_tokens"], output_tokens);
+    assert_eq!(event["source"], "run-view");
+    let id = event["original_id"].as_str().unwrap();
+    let restored = root.output(&["recall", id], b"");
+    assert!(restored.status.success());
+    assert_eq!(restored.stdout, original.as_bytes());
+    assert_eq!(fs::read(root.0.join("marker")).unwrap(), b"invoked");
+}
+
+#[cfg(unix)]
+#[test]
 fn command_views_execute_once_and_keep_both_streams_and_exit_status() {
     let root = Sandbox::new();
     let result = root.output(&["test", "--context", "0", "--", "sh", "-c", "printf 'run\\n' >> marker; printf 'prefix\\nFAIL example\\nfooter\\n'; printf 'warning detail\\n' >&2; exit 17"], b"");

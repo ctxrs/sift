@@ -322,7 +322,7 @@ fn instructions_remove_only_unchanged_owned_block() {
 #[test]
 fn plugin_install_is_self_contained_idempotent_and_edit_safe() {
     for (host, path) in [
-        ("pi", ".pi/agent/extensions/retok.ts"),
+        ("pi", ".pi/agent/extensions/retok/index.js"),
         ("omp", ".omp/agent/extensions/retok.ts"),
         ("opencode", ".config/opencode/plugins/retok.ts"),
         ("kilocode", ".config/kilo/plugin/retok.ts"),
@@ -342,6 +342,281 @@ fn plugin_install_is_self_contained_idempotent_and_edit_safe() {
         assert!(f.plan(&["--agent", host, "--uninstall"]).changes.is_empty());
         assert!(path.exists());
     }
+}
+
+// Independent legacy wire fixture: preserve the original renderer's exact form.
+fn legacy_pi_plugin(executable: &Path) -> String {
+    format!(
+        "// retok managed plugin v1; edits prevent automatic replacement/removal\n{}\n{}",
+        include_str!("../integrations/runtime.js").replace("__RETOK_SOURCE__", "\"pi\""),
+        include_str!("../integrations/pi.js")
+    )
+    .replace(
+        "__RETOK_EXECUTABLE__",
+        &serde_json::to_string(executable.to_str().unwrap()).unwrap(),
+    )
+}
+
+fn assert_pi_kind(path: &Path, kind: &str) {
+    let text = fs::read_to_string(path).unwrap();
+    assert!(
+        text.starts_with(&if kind == "pi-session" {
+            "// retok managed plugin v3 pi-session-cjs;".into()
+        } else {
+            format!("// retok managed plugin v2 {kind};")
+        }),
+        "{path:?}"
+    );
+    assert_eq!(
+        text.contains("function createPiSession()"),
+        kind == "pi-session"
+    );
+    assert_eq!(text.contains("session_shutdown"), kind == "pi-session");
+}
+
+#[test]
+fn previous_pi_session_upgrades_exactly_and_rejects_edits() {
+    for adapter in [
+        include_str!("fixtures/pi_session_v2.js"),
+        include_str!("fixtures/pi_session_raw.js"),
+    ] {
+        for edited in [false, true] {
+            let f = Fixture::new();
+            let path = f.roots.pi.join("extensions/retok.ts");
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let old = format!(
+            "// retok managed plugin v2 pi-session; edits prevent automatic replacement/removal\n{}\n{}",
+            include_str!("../integrations/runtime.js").replace("__RETOK_SOURCE__", "\"pi\""),
+            adapter
+        ).replace("__RETOK_EXECUTABLE__", &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap());
+            let original = if edited {
+                format!("{old}\n// user edit\n")
+            } else {
+                old
+            };
+            fs::write(&path, &original).unwrap();
+            if edited {
+                assert!(plan(&["--agent".into(), "pi".into()], &f.roots).is_err());
+                assert_eq!(fs::read_to_string(&path).unwrap(), original);
+                assert!(f.plan(&["--agent", "pi", "--uninstall"]).changes.is_empty());
+            } else {
+                let upgrade = f.plan(&["--agent", "pi"]);
+                assert_eq!(upgrade.changes.len(), 3);
+                let backups = upgrade.apply().unwrap();
+                assert_eq!(fs::read_to_string(&backups[0]).unwrap(), original);
+                assert!(!path.exists());
+                let path = path.with_file_name("retok/index.js");
+                assert_pi_kind(&path, "pi-session");
+                assert!(
+                    fs::read_to_string(&path)
+                        .unwrap()
+                        .contains("delivered_view:true")
+                );
+                assert!(f.plan(&["--agent", "pi"]).changes.is_empty());
+                f.plan(&["--agent", "pi", "--uninstall"]).apply().unwrap();
+                assert!(!path.exists());
+            }
+        }
+        // Prior Pi ownership must also survive setup for an aliased OMP target.
+        let mut f = Fixture::new();
+        f.roots.omp = f.roots.pi.clone();
+        let path = f.roots.pi.join("extensions/retok.ts");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let old = format!("// retok managed plugin v2 pi-session; edits prevent automatic replacement/removal\n{}\n{}",
+        include_str!("../integrations/runtime.js").replace("__RETOK_SOURCE__", "\"pi\""), adapter)
+        .replace("__RETOK_EXECUTABLE__", &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap());
+        fs::write(&path, old).unwrap();
+        f.plan(&["--agent", "omp"]).apply().unwrap();
+        assert_pi_kind(&path, "pi-omp-one-shot");
+        assert!(!fs::read_to_string(path).unwrap().contains("delivered_view"));
+    }
+}
+
+#[test]
+fn pi_and_omp_default_install_select_distinct_templates() {
+    let f = Fixture::new();
+    fs::create_dir_all(&f.roots.pi).unwrap();
+    fs::create_dir_all(&f.roots.omp).unwrap();
+    f.plan(&[]).apply().unwrap();
+    assert_pi_kind(&f.roots.pi.join("extensions/retok/index.js"), "pi-session");
+    assert_pi_kind(&f.roots.omp.join("extensions/retok.ts"), "omp-one-shot");
+    assert!(f.plan(&[]).changes.is_empty());
+    let show = f.plan(&["--agent", "pi", "--show"]);
+    assert!(
+        show.messages
+            .iter()
+            .any(|m| m.contains("installed Pi session reuse"))
+    );
+    assert!(show.changes.is_empty());
+}
+
+#[test]
+fn sequential_shared_setup_both_orders_remembers_consumers_and_relocation() {
+    for order in [["pi", "omp"], ["omp", "pi"]] {
+        let mut f = Fixture::new();
+        f.roots.pi = f.root.join("relocated shared");
+        f.roots.omp = f.roots.pi.clone();
+        let path = f.roots.pi.join("extensions/retok.ts");
+        f.plan(&["--agent", order[0]]).apply().unwrap();
+        let first_path = if order[0] == "pi" {
+            path.with_file_name("retok/index.js")
+        } else {
+            path.clone()
+        };
+        assert_pi_kind(
+            &first_path,
+            if order[0] == "pi" {
+                "pi-session"
+            } else {
+                "omp-one-shot"
+            },
+        );
+        assert!(f.plan(&["--agent", order[0]]).changes.is_empty());
+        let old = fs::read(&first_path).unwrap();
+        let upgrade = f.plan(&["--agent", order[1]]);
+        assert_eq!(upgrade.changes.len(), if order[0] == "pi" { 3 } else { 1 });
+        let backups = upgrade.apply().unwrap();
+        assert!(backups.iter().any(|p| fs::read(p).unwrap() == old));
+        assert!(!path.with_file_name("retok/index.js").exists());
+        assert_pi_kind(&path, "pi-omp-one-shot");
+        for host in ["pi", "omp"] {
+            assert!(f.plan(&["--agent", host]).changes.is_empty());
+        }
+        f.roots.executable = f.root.join("new executable/retok");
+        f.plan(&["--agent", "pi"]).apply().unwrap();
+        assert_pi_kind(&path, "pi-omp-one-shot");
+        assert!(
+            fs::read_to_string(&path)
+                .unwrap()
+                .contains("new executable")
+        );
+        let uninstall = f.plan(&["--agent", "omp", "--uninstall"]);
+        assert!(
+            uninstall
+                .messages
+                .iter()
+                .any(|m| m.contains("affects both consumers"))
+        );
+        assert_eq!(uninstall.changes.len(), 1);
+        uninstall.apply().unwrap();
+        assert!(!path.exists());
+    }
+}
+
+#[test]
+fn legacy_plugins_upgrade_only_when_ownership_is_unambiguous() {
+    for host in ["pi", "omp"] {
+        let f = Fixture::new();
+        let root = if host == "pi" {
+            &f.roots.pi
+        } else {
+            &f.roots.omp
+        };
+        fs::create_dir_all(root.join("extensions")).unwrap();
+        let path = root.join("extensions/retok.ts");
+        let old = legacy_pi_plugin(&f.roots.executable);
+        fs::write(&path, &old).unwrap();
+        let backups = f.plan(&["--agent", host]).apply().unwrap();
+        assert_eq!(fs::read_to_string(&backups[0]).unwrap(), old);
+        let installed = if host == "pi" {
+            assert!(!path.exists());
+            path.with_file_name("retok/index.js")
+        } else {
+            path.clone()
+        };
+        assert_pi_kind(
+            &installed,
+            if host == "pi" {
+                "pi-session"
+            } else {
+                "omp-one-shot"
+            },
+        );
+    }
+    let mut f = Fixture::new();
+    f.roots.omp = f.roots.pi.clone();
+    fs::create_dir_all(f.roots.pi.join("extensions")).unwrap();
+    let path = f.roots.pi.join("extensions/retok.ts");
+    let old = legacy_pi_plugin(&f.roots.executable);
+    fs::write(&path, &old).unwrap();
+    f.roots.executable = f.root.join("moved/retok");
+    let ambiguous = f.plan(&["--agent", "pi"]);
+    assert!(ambiguous.changes.is_empty());
+    assert!(
+        ambiguous
+            .messages
+            .iter()
+            .any(|m| m.contains("ambiguous ownership"))
+    );
+    ambiguous.apply().unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), old);
+    f.plan(&[]).apply().unwrap();
+    assert_pi_kind(&path, "pi-omp-one-shot");
+}
+
+#[test]
+fn pi_template_edits_and_noncanonical_executable_are_not_owned() {
+    for edit in ["body", "header", "literal"] {
+        let f = Fixture::new();
+        f.plan(&["--agent", "pi"]).apply().unwrap();
+        let path = f.roots.pi.join("extensions/retok/index.js");
+        let text = fs::read_to_string(&path).unwrap();
+        let edited = match edit {
+            "body" => text.replace("30_000", "31_000"),
+            "header" => text.replacen("v3 pi-session-cjs", "v2 omp-one-shot", 1),
+            _ => text.replacen(
+                &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap(),
+                &serde_json::to_string(f.roots.executable.to_str().unwrap())
+                    .unwrap()
+                    .replacen('/', "\\u002f", 1),
+                1,
+            ),
+        };
+        assert_ne!(edited, text);
+        fs::write(&path, &edited).unwrap();
+        assert!(plan(&["--agent".into(), "pi".into()], &f.roots).is_err());
+        assert!(f.plan(&["--agent", "pi", "--uninstall"]).changes.is_empty());
+        assert_eq!(fs::read_to_string(&path).unwrap(), edited);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn pi_symlink_aliases_share_and_changed_plan_targets_are_rejected() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new();
+    fs::create_dir_all(&f.roots.pi).unwrap();
+    fs::create_dir_all(f.roots.omp.parent().unwrap()).unwrap();
+    symlink(&f.roots.pi, &f.roots.omp).unwrap();
+    let p = f.plan(&[]);
+    assert_eq!(p.changes.len(), 1);
+    p.apply().unwrap();
+    assert_pi_kind(&f.roots.pi.join("extensions/retok.ts"), "pi-omp-one-shot");
+    assert!(f.plan(&[]).changes.is_empty());
+    let removal = f.plan(&["--agent", "omp", "--uninstall"]);
+    fs::remove_file(&f.roots.omp).unwrap();
+    fs::create_dir(&f.roots.omp).unwrap();
+    assert!(removal.apply().is_err());
+    assert!(f.roots.pi.join("extensions/retok.ts").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn pi_file_alias_legacy_ambiguity_and_dangling_link_are_preserved() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new();
+    fs::create_dir_all(f.roots.pi.join("extensions")).unwrap();
+    fs::create_dir_all(f.roots.omp.join("extensions")).unwrap();
+    let path = f.roots.pi.join("extensions/retok.ts");
+    let alias = f.roots.omp.join("extensions/retok.ts");
+    fs::write(&path, legacy_pi_plugin(&f.roots.executable)).unwrap();
+    symlink(&path, &alias).unwrap();
+    assert!(f.plan(&["--agent", "pi"]).changes.is_empty());
+    f.plan(&[]).apply().unwrap();
+    assert_pi_kind(&path, "pi-omp-one-shot");
+    f.plan(&["--agent", "pi", "--uninstall"]).apply().unwrap();
+    assert!(fs::symlink_metadata(&alias).is_ok());
+    assert!(plan(&["--agent".into(), "omp".into()], &f.roots).is_err());
 }
 
 #[test]
@@ -470,12 +745,20 @@ fn stock_plugins_migrate_by_exact_digest_and_repeat_without_changes() {
         let f = Fixture::new();
         let path = f.write(path, source);
         let p = stock_plan(&f, &["--replace-rtk"]).unwrap();
-        assert_eq!(p.changes.len(), 2);
+        assert_eq!(
+            p.changes.len(),
+            if path.starts_with(&f.roots.pi) { 3 } else { 2 }
+        );
         let backups = p.apply().unwrap();
         assert_eq!(backups.len(), 1);
         assert_eq!(fs::read_to_string(&backups[0]).unwrap(), source);
         assert!(!path.exists());
-        let installed = fs::read_to_string(path.with_file_name("retok.ts")).unwrap();
+        let installed_path = if path.starts_with(&f.roots.pi) {
+            path.with_file_name("retok/index.js")
+        } else {
+            path.with_file_name("retok.ts")
+        };
+        let installed = fs::read_to_string(installed_path).unwrap();
         assert!(installed.contains("retok managed plugin"));
         assert!(installed.contains("tool_result") || installed.contains("tool.execute.after"));
         assert!(
@@ -506,13 +789,13 @@ fn symlink_plugin_removal_preserves_targets_and_repeats_uninstall_and_install() 
     for layout in ["regular", "file-link", "directory-link"] {
         let f = Fixture::new();
         f.plan(&["--agent", "pi"]).apply().unwrap();
-        let plugin = f.roots.pi.join("extensions/retok.ts");
+        let plugin = f.roots.pi.join("extensions/retok/index.js");
         let original = fs::read(&plugin).unwrap();
-        let target = f.roots.home.join("dotfiles/retok.ts");
+        let target = f.roots.home.join("dotfiles/index.js");
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         if layout == "file-link" {
             fs::rename(&plugin, &target).unwrap();
-            symlink("../../../dotfiles/retok.ts", &plugin).unwrap();
+            symlink("../../../../dotfiles/index.js", &plugin).unwrap();
         } else if layout == "directory-link" {
             let dir = plugin.parent().unwrap();
             fs::remove_dir(target.parent().unwrap()).unwrap();
@@ -568,11 +851,11 @@ fn symlink_removal_checks_link_identity_and_rolls_back_on_later_failure() {
     let f = Fixture::new();
     f.plan(&["--agent", "pi"]).apply().unwrap();
     f.plan(&["--agent", "omp"]).apply().unwrap();
-    let pi = f.roots.pi.join("extensions/retok.ts");
+    let pi = f.roots.pi.join("extensions/retok/index.js");
     let omp = f.roots.omp.join("extensions/retok.ts");
     let target = f.roots.home.join("plugin.ts");
     fs::rename(&pi, &target).unwrap();
-    let relative = Path::new("../../../plugin.ts");
+    let relative = Path::new("../../../../plugin.ts");
     symlink(relative, &pi).unwrap();
     let p = f.plan(&["--agent", "pi", "--uninstall"]);
     fs::remove_file(&pi).unwrap();
@@ -969,7 +1252,7 @@ fn legacy_kilo_rules_are_not_migrated_to_an_unproven_current_plugin() {
 #[test]
 fn unchanged_plugins_remain_owned_after_executable_moves_but_code_edits_do_not() {
     for (host, relative) in [
-        ("pi", ".pi/agent/extensions/retok.ts"),
+        ("pi", ".pi/agent/extensions/retok/index.js"),
         ("omp", ".omp/agent/extensions/retok.ts"),
         ("opencode", ".config/opencode/plugins/retok.ts"),
         ("kilo", ".config/kilo/plugin/retok.ts"),
@@ -1587,7 +1870,7 @@ fn relocated_environment_roots_reach_active_hosts_without_leaking_project_scope(
     let f = Fixture::new();
     for (agent, variable, suffix) in [
         ("claude", "CLAUDE_CONFIG_DIR", "settings.json"),
-        ("pi", "PI_CODING_AGENT_DIR", "extensions/retok.ts"),
+        ("pi", "PI_CODING_AGENT_DIR", "extensions/retok/index.js"),
         ("omp", "PI_CODING_AGENT_DIR", "extensions/retok.ts"),
         ("droid", "FACTORY_HOME_OVERRIDE", ".factory/AGENTS.md"),
     ] {
@@ -2611,5 +2894,263 @@ fn openclaw_json5_preserves_literal_number_marker_and_rejects_ambiguous_configs(
             "{bad}"
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), bad);
+    }
+}
+
+#[test]
+fn pi_cjs_is_only_a_module_syntax_conversion_and_migrates_exact_current_ts() {
+    let f = Fixture::new();
+    let template = format!("// retok managed plugin v2 pi-session; edits prevent automatic replacement/removal\n{}\n{}",
+        include_str!("../integrations/runtime.js").replace("__RETOK_SOURCE__", "\"pi\""),
+        include_str!("../integrations/pi_session.js"))
+        .replace("__RETOK_EXECUTABLE__", &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap());
+    let old = f.write(".pi/agent/extensions/retok.ts", &template);
+    let backups = f.plan(&["--agent", "pi"]).apply().unwrap();
+    assert!(!old.exists());
+    assert_eq!(backups.len(), 1);
+    assert_eq!(fs::read_to_string(&backups[0]).unwrap(), template);
+    let dir = old.with_file_name("retok");
+    assert_eq!(value(&dir.join("package.json"))["type"], "commonjs");
+    let native = fs::read_to_string(dir.join("index.js")).unwrap();
+    // Independently normalize the generated native syntax back to the old entry.
+    let esm = native
+        .replace("v3 pi-session-cjs", "v2 pi-session")
+        .replace(
+            "const { execFile } = require(\"node:child_process\");",
+            "import { execFile } from \"node:child_process\";",
+        )
+        .replace(
+            "const { spawn } = require(\"node:child_process\");",
+            "import { spawn } from \"node:child_process\";",
+        )
+        .replace(
+            "const { statSync } = require(\"node:fs\");",
+            "import { statSync } from \"node:fs\";",
+        )
+        .replace(
+            "const { StringDecoder } = require(\"node:string_decoder\");",
+            "import { StringDecoder } from \"node:string_decoder\";",
+        )
+        .replace(
+            "module.exports = function retok(pi) {",
+            "export default function retok(pi) {",
+        );
+    assert_eq!(esm, template);
+    assert!(f.plan(&["--agent", "pi"]).changes.is_empty());
+}
+
+#[test]
+fn pi_cjs_collisions_preserve_legacy_and_rtk_until_replacement_ready() {
+    for (file, contents) in [
+        ("index.js", "// user adapter\n"),
+        ("package.json", "{\"type\":\"module\"}\n"),
+        ("index.ts", "// higher priority user adapter\n"),
+        ("notes.txt", "user directory\n"),
+    ] {
+        let f = Fixture::new();
+        let old = f.write(
+            ".pi/agent/extensions/retok.ts",
+            &legacy_pi_plugin(&f.roots.executable),
+        );
+        let rtk = f.write(".pi/agent/extensions/rtk.ts", SYNTHETIC_PI);
+        let collision = f.write(&format!(".pi/agent/extensions/retok/{file}"), contents);
+        let original = fs::read(&old).unwrap();
+        assert!(stock_plan(&f, &["--agent", "pi", "--replace-rtk"]).is_err());
+        assert_eq!(fs::read(&old).unwrap(), original);
+        assert_eq!(fs::read_to_string(&rtk).unwrap(), SYNTHETIC_PI);
+        assert_eq!(fs::read_to_string(&collision).unwrap(), contents);
+    }
+    let mut f = Fixture::new();
+    f.roots.omp = f.roots.pi.clone();
+    let old = f.write(
+        ".pi/agent/extensions/retok.ts",
+        &legacy_pi_plugin(&f.roots.executable),
+    );
+    let rtk = f.write(".pi/agent/extensions/rtk.ts", SYNTHETIC_PI);
+    assert!(stock_plan(&f, &["--agent", "pi", "--replace-rtk"]).is_err());
+    assert!(old.exists() && rtk.exists());
+}
+
+#[test]
+fn pi_cjs_bundle_edits_and_missing_files_are_not_reported_as_configured() {
+    for file in ["package.json", "index.js"] {
+        for edit in [false, true] {
+            let mut f = Fixture::new();
+            f.roots.executable = PathBuf::from(env!("CARGO_BIN_EXE_retok"));
+            f.plan(&["--agent", "pi"]).apply().unwrap();
+            let path = f.roots.pi.join("extensions/retok").join(file);
+            if edit {
+                fs::write(&path, "user edit").unwrap();
+            } else {
+                fs::remove_file(&path).unwrap();
+            }
+            let show = f.plan(&["--agent", "pi", "--show"]);
+            assert!(show.changes.is_empty());
+            assert!(
+                show.messages
+                    .iter()
+                    .any(|m| m.contains("; not fully configured;"))
+            );
+            if edit {
+                assert!(plan(&["--agent".into(), "pi".into()], &f.roots).is_err());
+                assert!(f.plan(&["--agent", "pi", "--uninstall"]).changes.is_empty());
+                assert_eq!(fs::read_to_string(&path).unwrap(), "user edit");
+            } else {
+                f.plan(&["--agent", "pi"]).apply().unwrap();
+                assert!(f.plan(&["--agent", "pi"]).changes.is_empty());
+                assert!(
+                    f.plan(&["--agent", "pi", "--show"])
+                        .messages
+                        .iter()
+                        .any(|m| m.contains("; configured;"))
+                );
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn pi_cjs_migration_of_owned_ts_link_preserves_external_target_and_backup() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new();
+    let original = legacy_pi_plugin(&f.roots.executable);
+    let target = f.write("dotfiles/retok.ts", &original);
+    let path = f.roots.pi.join("extensions/retok.ts");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    symlink(&target, &path).unwrap();
+    let backups = f.plan(&["--agent", "pi"]).apply().unwrap();
+    assert_eq!(fs::read_to_string(&target).unwrap(), original);
+    assert!(
+        backups
+            .iter()
+            .any(|b| fs::read_to_string(b).unwrap() == original)
+    );
+    assert!(fs::symlink_metadata(&path).is_err());
+    assert!(path.with_file_name("retok/index.js").is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn pi_cjs_sequential_root_alias_setup_removes_native_entry_and_keeps_shared_semantics() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new();
+    f.plan(&["--agent", "pi"]).apply().unwrap();
+    fs::create_dir_all(f.roots.omp.parent().unwrap()).unwrap();
+    symlink(&f.roots.pi, &f.roots.omp).unwrap();
+    f.plan(&["--agent", "omp"]).apply().unwrap();
+    assert!(!f.roots.pi.join("extensions/retok/index.js").exists());
+    assert!(!f.roots.pi.join("extensions/retok/package.json").exists());
+    assert_pi_kind(&f.roots.pi.join("extensions/retok.ts"), "pi-omp-one-shot");
+    assert!(f.plan(&[]).changes.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn pi_cjs_migration_failure_rolls_back_new_bundle_and_retains_old_entry() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new();
+    let old = legacy_pi_plugin(&f.roots.executable);
+    // Force old-entry backup failure after the bundle writes, without chmod tricks.
+    let target = f.write(&"x".repeat(240), &old);
+    let path = f.roots.pi.join("extensions/retok.ts");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    symlink(&target, &path).unwrap();
+    assert!(f.plan(&["--agent", "pi"]).apply().is_err());
+    assert_eq!(fs::read_link(&path).unwrap(), target);
+    assert_eq!(fs::read_to_string(&path).unwrap(), old);
+    assert!(!path.with_file_name("retok/index.js").exists());
+    assert!(!path.with_file_name("retok/package.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn pi_cjs_bundle_alias_migration_keeps_both_distinct_roots_one_shot() {
+    use std::os::unix::fs::symlink;
+    for selected in ["pi", "omp", "both"] {
+        let f = Fixture::new();
+        f.plan(&["--agent", "pi"]).apply().unwrap();
+        fs::create_dir_all(f.roots.omp.join("extensions")).unwrap();
+        symlink(
+            f.roots.pi.join("extensions/retok"),
+            f.roots.omp.join("extensions/retok"),
+        )
+        .unwrap();
+        let args = if selected == "both" {
+            vec![]
+        } else {
+            vec!["--agent", selected]
+        };
+        f.plan(&args).apply().unwrap();
+        for root in [&f.roots.pi, &f.roots.omp] {
+            assert!(!root.join("extensions/retok/index.js").exists());
+            assert_pi_kind(&root.join("extensions/retok.ts"), "pi-omp-one-shot");
+        }
+        assert!(f.plan(&[]).changes.is_empty());
+    }
+}
+
+#[test]
+fn pi_cjs_missing_package_still_remembers_pi_when_omp_joins() {
+    let mut f = Fixture::new();
+    f.roots.omp = f.roots.pi.clone();
+    f.plan(&["--agent", "pi"]).apply().unwrap();
+    fs::remove_file(f.roots.pi.join("extensions/retok/package.json")).unwrap();
+    f.plan(&["--agent", "omp"]).apply().unwrap();
+    assert!(!f.roots.pi.join("extensions/retok/index.js").exists());
+    assert_pi_kind(&f.roots.pi.join("extensions/retok.ts"), "pi-omp-one-shot");
+}
+
+#[test]
+fn pi_cjs_plan_rejects_changed_unchanged_package_before_relocation_or_repair() {
+    for repair in [false, true] {
+        let mut f = Fixture::new();
+        f.plan(&["--agent", "pi"]).apply().unwrap();
+        let dir = f.roots.pi.join("extensions/retok");
+        let original = fs::read(dir.join("index.js")).unwrap();
+        if repair {
+            fs::remove_file(dir.join("index.js")).unwrap();
+        }
+        f.roots.executable = f.root.join("relocated/retok");
+        let p = f.plan(&["--agent", "pi"]);
+        assert_eq!(p.changes.len(), 1);
+        fs::write(dir.join("package.json"), "{\"type\":\"module\"}\n").unwrap();
+        assert!(p.apply().is_err());
+        if repair {
+            assert!(!dir.join("index.js").exists());
+        } else {
+            assert_eq!(fs::read(dir.join("index.js")).unwrap(), original);
+        }
+        assert_eq!(value(&dir.join("package.json"))["type"], "module");
+        assert_eq!(
+            fs::read_dir(&dir).unwrap().count(),
+            if repair { 1 } else { 2 }
+        );
+    }
+}
+
+#[test]
+fn pi_cjs_plan_rejects_new_discovery_entry_before_legacy_or_rtk_removal() {
+    for old_name in ["retok.ts", "rtk.ts"] {
+        let f = Fixture::new();
+        let old_text = if old_name == "rtk.ts" {
+            SYNTHETIC_PI.to_string()
+        } else {
+            legacy_pi_plugin(&f.roots.executable)
+        };
+        let old = f.write(&format!(".pi/agent/extensions/{old_name}"), &old_text);
+        let p = stock_plan(&f, &["--agent", "pi", "--replace-rtk"]).unwrap();
+        let collision = f.write(
+            ".pi/agent/extensions/retok/index.ts",
+            "// new user extension\n",
+        );
+        assert!(p.apply().is_err());
+        assert_eq!(fs::read_to_string(&old).unwrap(), old_text);
+        assert_eq!(
+            fs::read_to_string(&collision).unwrap(),
+            "// new user extension\n"
+        );
+        assert!(!collision.with_file_name("index.js").exists());
+        assert!(!collision.with_file_name("package.json").exists());
     }
 }

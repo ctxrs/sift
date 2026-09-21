@@ -1,10 +1,12 @@
 # Retok
 
-Retok reduces tool output before an agent reads it. Its default compaction keeps
-every text byte or supported JSON value, selecting a compact representation only
-when its full framing uses fewer ordinary `o200k_base` tokens. Explicit views can
-select lines, fields or diagnostics when you ask for them. Retok is an independent
-project inspired by RTK.
+Retok reduces tool output before an agent reads it. `compact` keeps every text
+byte or supported JSON value and selects a representation only when its full
+framing uses fewer ordinary `o200k_base` tokens. Command execution also recognizes
+ordinary Git status and Cargo test output: it shortens status formatting and can
+omit passing test lines while retaining failures and reported totals. Explicit
+views select lines, fields or diagnostics when you ask for them. Retok is an
+independent project inspired by RTK.
 
 Use an [agent adapter](INTEGRATIONS.md) for automatic compaction, or run an
 executable through `retok run`. Completion adapters replace eligible output;
@@ -27,10 +29,10 @@ and [RTK workflow coverage](COMPATIBILITY.md) for deliberate differences.
 The [release benchmark and charts](benchmarks/results/2026-09-17-release-v0.3.0/README.md)
 compare output tokens, retained information and elapsed time. On seven small
 synthetic command workloads, the final Linux x64 binary took 41–51 ms versus
-RTK's 2.5–13.4 ms. Retok preserves the requested execution and reversible output;
-it does not claim a speed win over RTK. The prepared tokenizer reduces earlier
-Retok startup work but increases executable size: the Linux x64 release is
-about 37.3 MB. A persistent JSONL process avoids repeated tokenizer initialization.
+RTK's 2.5–13.4 ms. That release's Linux x64 executable is about 37.3 MB.
+These measurements apply to v0.3.0, which predates the current count-table
+tokenizer and additional output formats; they do not measure the current source.
+A persistent JSONL process also avoids repeated process startup.
 
 ## Install
 
@@ -144,9 +146,11 @@ unless you explicitly remove them.
 ## Build and use
 
 Requires Rust 1.88 or newer. Cargo downloads dependencies at build time. The
-prepared tokenizer data is embedded in the binary; runtime needs no vocabulary
-download. This reduces initialization work at the cost of a larger executable.
-This README describes Retok 0.3.0.
+count tables and precompiled tokenizer pattern are embedded in the binary;
+the build validates the count tables and pretokenizer; the runtime borrows those
+immutable tables without repeating validation or downloading a vocabulary. The adapted
+public algorithms and licenses are recorded in [THIRD_PARTY_TOKENIZER.md](THIRD_PARTY_TOKENIZER.md).
+This README describes the current source, including changes after v0.3.0.
 Check your installed version's `retok --help` and subcommand help for available
 features.
 
@@ -186,6 +190,27 @@ that command. Short, complete output is compacted; very small results and invali
 UTF-8 stay raw. Tokenizer work after completion adds processing time. This keeps
 prompts and ongoing progress visible without truncating output.
 
+For ordinary `git status`, Retok can use short stage/type columns while retaining
+every displayed path, branch and advisory. Conflicts and unfamiliar sections keep
+their original formatting. For Cargo's ordinary test harness, Retok validates
+the reported test rows against the final counts before replacing passing rows
+with an explicit omission count. Failed and ignored test names, diagnostics and
+the final result remain. These presentations compete with reversible compaction
+of the original; the complete output must use fewer tokens to be selected.
+Precise output modes such as Git porcelain and custom Cargo harness formats do
+not receive these presentations. Use `proxy` or `--raw` for native bytes from
+the runner, or enable original retention to recall complete captures later.
+Completion hooks also honor literal `retok proxy` and `retok run --raw` commands
+in Claude Bash, Copilot Bash, and explicitly local POSIX Hermes sessions.
+Other shells, complex shell expressions, or missing command metadata can still
+receive generic completion compaction; disable that hook when raw output is
+required there. An agent's own output limits still apply.
+
+Claude's Bash completion hook can use these same presentations when it receives
+a literal command and explicit completion metadata. Pipelines and variable
+expansions keep generic compaction. Claude's `PostToolUse` event covers successful
+commands; this does not add compaction for failed commands.
+
 `--capture` waits for child exit and both output streams to close, without the
 250 ms deadline. It can capture a finite command even from a terminal, while
 stdin stays inherited. Progress and prompts are delayed; it does not allocate a
@@ -207,7 +232,8 @@ Neither command loads named RTK filters.
 
 ## Explicit views
 
-These commands can omit information. Automatic compaction never selects a view.
+These commands can omit information. Retok never selects these line/field/excerpt
+views automatically; the two command presentations above have separate rules.
 
 ```sh
 retok read build.log --from 20 --lines 40 --grep 'error'
@@ -257,8 +283,11 @@ an unavailable reported directory leaves the event unscoped. Without that field,
 they use the hook process's directory, which can differ from the command's.
 
 `gain` reports retained measured ordinary `o200k_base` tokens; unmeasured streams
-are excluded from token totals. Explicit command views are marked `view` and do
-not count as measured lossless compaction savings. Reports cover all projects by
+are excluded from token totals. CLI command presentations are marked `run-view`;
+Claude hook records keep their `hook-claude` source label. Both can include
+savings from omitted passing test lines.
+Explicit command views are marked `view` and have no measured token counts.
+Reports cover all projects by
 default; `--project [PATH]` selects one checkout (the current checkout if omitted).
 Old records without project identity appear only in all-project reports. Daily,
 weekly and monthly buckets use UTC, with Monday starting the week. `--since`
@@ -388,9 +417,13 @@ other encodings require UTF-8. The library exposes `Compactor::new()`,
 | `raw` | Original content, unchanged. |
 | `json-v1` | `JSON v1 (all values):\n` followed by a minified JSON value. Restore the value. |
 | `json-rows-v1` | `JSON rows v1 (each row maps to the columns in order):\n` followed by `{"columns":[...],"rows":[...]}`. Each row's values map to its corresponding unique column names. |
+| `json-min-v1` | One minified JSON value, without a header. Restore the value. |
+| `json-columns-v1` | `JSON columns v1: arrays are columns; scalars repeat for all rows\n` followed by `{"rows":N,"columns":{...}}`. Each column is an N-element array of scalar values, or one scalar repeated for every row. |
 | `text-runs-v1` | `retok:text-runs-v1 counts repeat exact JSON strings; concatenate\n` followed by a JSON array of `[count,string]` pairs. Concatenate each decoded string exactly `count` times. |
 | `text-prefixes-v1` | `retok:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n` followed by a JSON array of literal strings or `[prefix,[suffixes]]` pairs. Copy literals; for each suffix copy its prefix then the suffix. |
 | `text-refs-v1` | `retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n` followed by a JSON array of literal strings or backward references to earlier string entries. |
+| `text-lines-v1` | `retok:lines-v1 [N,prefix] then N lines; prepend prefix\n` followed by blocks of one `[N,prefix]` JSON line and N literal suffix lines. Prepend that block's prefix to each suffix. |
+| `text-symbols-v1` | `retok:symbols-v1 substitute each character using this JSON dictionary:\n` followed by one JSON dictionary line, then the literal body. Replace each original body character with its dictionary value when present. |
 
 Here `\n` in a header means a literal LF byte. For example, this text-run payload
 restores `ready` twice, each followed by CRLF, then `done` with no final newline:
@@ -457,12 +490,34 @@ inside serialized strings. It does not decode JSON or interpret source-code
 escapes: every separator and byte stays in the fragment stream. Both use the
 same `text-refs-v1` restoration rule and 64 MiB source/restoration bound.
 
+Literal-line frames avoid JSON escaping around every suffix. Counts are positive
+unsigned integers and prefixes contain no LF; suffixes retain their LF and any
+preceding CR. Only the final suffix may lack LF. The input and checked restored
+size are bounded to 64 MiB.
+
+Symbol frames use unique single-character dictionary keys and string values.
+Substitution is not recursive: a character inside an inserted value is never
+replaced again. For example, `{"§":"src/"}` followed by `§a.rs\n§b.rs` restores
+two paths. The encoder chooses up to 32 symbols absent from the original and
+shares existing reference plans; complete token counts decide whether this
+framing helps. The decoder accepts empty dictionaries/values and rejects
+duplicate keys, malformed values, or expansion beyond 64 MiB before allocating
+the restored body.
+
+Symbol frames also try literal comma-separated fragments for inputs of at most
+64 KiB and 4,096 fragments. Commas inside quotes are ordinary bytes; this does
+not parse CSV or JSON. The complete frame must beat every existing candidate's
+token count, and an equal count keeps the earlier representation.
+
 JSON table conversion applies to uniform arrays of objects. Duplicate keys,
 including escaped spellings of the same key, are unsupported and are not
 normalized. JSON compaction/restoration is bounded to 16 MiB and nesting depth
 64. Unsupported or malformed JSON remains eligible for reversible text encoding
 or raw output. All columns, rows, and values must be present; invalid framing
 fails restoration. Numeric values never pass through floating-point conversion.
+Scalar-column tables exclude nested object/array cells; positional JSON rows
+remain available for those values. Empty scalar-column tables use `rows:0` and
+an empty `columns` object. No row, field, or value is discarded by either codec.
 
 ## Limits and checks
 
@@ -472,6 +527,13 @@ substantial time and memory for large inputs, especially long unbroken strings;
 there is no approximate token-count shortcut or streaming chunk boundary that
 could change the count. Codec limits disable candidates; they never silently
 truncate input. Raw restoration streams bytes.
+
+Rust library builds use rkyv's little-endian, aligned, 32-bit-pointer archive
+format. A downstream crate cannot enable a conflicting rkyv format in the same
+dependency graph; Cargo rejects those incompatible feature combinations.
+The build host and target must have matching endianness so the generated
+pretokenizer can be validated before embedding. The supported release targets
+use little-endian hosts and targets.
 
 Token reduction is an offline metric for this tokenizer. It does not establish
 provider billing savings, fewer model turns, or unchanged agent success rates.
