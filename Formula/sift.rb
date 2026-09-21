@@ -1,8 +1,8 @@
 class Sift < Formula
   desc "Lossless, token-counted compaction of tool output"
   homepage "https://github.com/ctxrs/sift"
-  url "https://github.com/ctxrs/sift/archive/refs/tags/v0.3.0.tar.gz"
-  sha256 "dbe768258f2229597c674da0ff56b612640724d1b8194fce17b54f8ae0e97488"
+  url "https://github.com/ctxrs/sift/archive/refs/tags/v0.4.0.tar.gz"
+  sha256 "125d3e9e28dd18236f47e3565c1c15f3510f93b8f496b020005697f653968845"
   license "MIT"
 
   depends_on "rust" => :build
