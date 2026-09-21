@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "product": {"name": "Retok", "url": "https://github.com/ctxrs/retok", "binary_identifier": "retok"},
-  "signed_artifacts": ["retok-macos-x64", "retok-macos-arm64", "retok-windows-x64.exe"],
-  "unsigned_artifacts": ["retok-linux-x64", "retok-linux-aarch64"],
+  "product": {"name": "Sift", "url": "https://github.com/ctxrs/sift", "binary_identifier": "sift"},
+  "signed_artifacts": ["sift-macos-x64", "sift-macos-arm64", "sift-windows-x64.exe"],
+  "unsigned_artifacts": ["sift-linux-x64", "sift-linux-aarch64"],
   "credential": {"project_id": "590927ab-758e-41b0-9e15-4cf070e87cf4", "environment": "prod", "path": "/"},
   "apple": {
     "authority": "apple-developer-id-application",

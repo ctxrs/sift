@@ -9,7 +9,7 @@ impl Scratch {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "retok runner {} {}",
+            "sift runner {} {}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -24,7 +24,7 @@ impl Drop for Scratch {
 }
 
 fn record_observation(observation: runner::Observation<'_>) {
-    let Some(path) = std::env::var_os("RETOK_TEST_OBSERVATION") else {
+    let Some(path) = std::env::var_os("SIFT_TEST_OBSERVATION") else {
         return;
     };
     let stream = |stream: runner::StreamObservation<'_>| {
@@ -54,7 +54,7 @@ mod unix {
 
     #[test]
     fn runner_entry() {
-        let Ok(args) = std::env::var("RETOK_TEST_ARGV") else {
+        let Ok(args) = std::env::var("SIFT_TEST_ARGV") else {
             return;
         };
         let args: Vec<String> = serde_json::from_str(&args).unwrap();
@@ -63,8 +63,8 @@ mod unix {
         let result = runner::run_observed_with_options(
             &args.into_iter().map(Into::into).collect::<Vec<_>>(),
             runner::Options {
-                raw: std::env::var_os("RETOK_TEST_RAW").is_some(),
-                capture: std::env::var_os("RETOK_TEST_CAPTURE").is_some(),
+                raw: std::env::var_os("SIFT_TEST_RAW").is_some(),
+                capture: std::env::var_os("SIFT_TEST_CAPTURE").is_some(),
             },
             super::record_observation,
         );
@@ -86,14 +86,14 @@ mod unix {
         let mut command = Command::new(std::env::current_exe().unwrap());
         command
             .args(["--exact", "unix::runner_entry", "--nocapture"])
-            .env("RETOK_TEST_ARGV", serde_json::to_string(args).unwrap())
-            .env_remove("RETOK_TEST_RAW")
-            .env_remove("RETOK_TEST_CAPTURE")
+            .env("SIFT_TEST_ARGV", serde_json::to_string(args).unwrap())
+            .env_remove("SIFT_TEST_RAW")
+            .env_remove("SIFT_TEST_CAPTURE")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if raw {
-            command.env("RETOK_TEST_RAW", "1");
+            command.env("SIFT_TEST_RAW", "1");
         }
         command
     }
@@ -138,8 +138,8 @@ mod unix {
     #[test]
     fn argv_streams_environment_directory_input_and_exit() {
         let cwd = std::env::temp_dir();
-        let mut child = command(&["python3", "-c", "import os,sys; print(sys.argv[1]); print(os.environ['RETOK_SYNTHETIC']); print(os.getcwd()); sys.stdout.flush(); sys.stdout.buffer.write(sys.stdin.buffer.read()); sys.stderr.write('separate error\\n'); sys.exit(23)", "$(echo no); * ' spaced"], false)
-        .env("RETOK_SYNTHETIC", "inherited").current_dir(&cwd).spawn().unwrap();
+        let mut child = command(&["python3", "-c", "import os,sys; print(sys.argv[1]); print(os.environ['SIFT_SYNTHETIC']); print(os.getcwd()); sys.stdout.flush(); sys.stdout.buffer.write(sys.stdin.buffer.read()); sys.stderr.write('separate error\\n'); sys.exit(23)", "$(echo no); * ' spaced"], false)
+        .env("SIFT_SYNTHETIC", "inherited").current_dir(&cwd).spawn().unwrap();
         child
             .stdin
             .take()
@@ -164,7 +164,7 @@ mod unix {
         assert!(runner::run(&[], false).is_err());
         assert!(runner::run_observed(&[], false, |_| panic!("no invocation")).is_err());
         assert_eq!(
-            output(&["/retok-synthetic-no-such-program"], false)
+            output(&["/sift-synthetic-no-such-program"], false)
                 .status
                 .code(),
             Some(127)
@@ -190,8 +190,8 @@ mod unix {
         for stream in [&result.stdout, &result.stderr] {
             assert!(stream.len() < line.len() * 300);
             assert_eq!(
-                retok::restore(
-                    retok::Encoding::TextRunsV1,
+                sift::restore(
+                    sift::Encoding::TextRunsV1,
                     std::str::from_utf8(stream).unwrap()
                 )
                 .unwrap(),
@@ -281,7 +281,7 @@ mod unix {
                 raw,
             );
             if capture {
-                cmd.env("RETOK_TEST_CAPTURE", "1");
+                cmd.env("SIFT_TEST_CAPTURE", "1");
             }
             let result = clean(cmd.stdin(slave.try_clone().unwrap()).output().unwrap());
             assert!(result.status.success());
@@ -289,8 +289,8 @@ mod unix {
             if capture && !raw {
                 assert!(result.stdout.len() < expected.len());
                 assert_eq!(
-                    retok::restore(
-                        retok::Encoding::TextRunsV1,
+                    sift::restore(
+                        sift::Encoding::TextRunsV1,
                         std::str::from_utf8(&result.stdout).unwrap()
                     )
                     .unwrap(),
@@ -324,8 +324,8 @@ mod unix {
                 if capture || !early {
                     assert!(output.stdout.len() < expected.len());
                     assert_eq!(
-                        retok::restore(
-                            retok::Encoding::TextRunsV1,
+                        sift::restore(
+                            sift::Encoding::TextRunsV1,
                             std::str::from_utf8(&output.stdout).unwrap()
                         )
                         .unwrap(),
@@ -375,7 +375,7 @@ mod unix {
             let mut child = command(
                 &["python3", "-c", "import os,sys,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print('buffered diagnostic',flush=True); open(sys.argv[1],'w').write(str(os.getpid())); time.sleep(60)", ready.to_str().unwrap()],
                 false,
-            ).env("RETOK_TEST_CAPTURE", "1").spawn().unwrap();
+            ).env("SIFT_TEST_CAPTURE", "1").spawn().unwrap();
             let reader = start_lines(&mut child);
             let deadline = Instant::now() + Duration::from_secs(5);
             let pid: i32 = loop {
@@ -436,7 +436,7 @@ mod unix {
                 ],
                 false,
             )
-            .env("RETOK_TEST_CAPTURE", "1").stdout(slave).spawn().unwrap();
+            .env("SIFT_TEST_CAPTURE", "1").stdout(slave).spawn().unwrap();
         let handle = std::thread::spawn(move || {
             let mut bytes = Vec::new();
             let result = master.read_to_end(&mut bytes);
@@ -456,7 +456,7 @@ mod unix {
         let expected = "synthetic café 診断\n".repeat(300);
         assert!(captured.len() < expected.len());
         assert_eq!(
-            retok::restore(retok::Encoding::TextRunsV1, captured).unwrap(),
+            sift::restore(sift::Encoding::TextRunsV1, captured).unwrap(),
             expected
         );
     }
@@ -564,7 +564,7 @@ mod unix {
                 false,
             );
             if capture {
-                cmd.env("RETOK_TEST_CAPTURE", "1");
+                cmd.env("SIFT_TEST_CAPTURE", "1");
             }
             let mut child = cmd.spawn().unwrap();
             let mut reader = start_lines(&mut child);
@@ -590,15 +590,15 @@ mod unix {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "retok-runner-observation-{}-{}.json",
+            "sift-runner-observation-{}-{}.json",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         let mut cmd = command(args, raw);
         if capture {
-            cmd.env("RETOK_TEST_CAPTURE", "1");
+            cmd.env("SIFT_TEST_CAPTURE", "1");
         }
-        let output = clean(cmd.env("RETOK_TEST_OBSERVATION", &path).output().unwrap());
+        let output = clean(cmd.env("SIFT_TEST_OBSERVATION", &path).output().unwrap());
         let event = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         std::fs::remove_file(path).unwrap();
         (output, event)
@@ -665,7 +665,7 @@ mod unix {
                 assert_eq!(event["stdout"]["emitted_bytes"], size);
             }
         }
-        let (_, event) = observed(&["/retok-synthetic-missing-program"], false);
+        let (_, event) = observed(&["/sift-synthetic-missing-program"], false);
         assert_eq!(event["status"], 127);
         assert!(event["stdout"]["read_bytes"].is_null());
         assert!(event["stdout"]["compacted"].is_null());
@@ -694,7 +694,7 @@ mod windows {
 
     #[test]
     fn runner_entry() {
-        let Ok(args) = std::env::var("RETOK_TEST_ARGV") else {
+        let Ok(args) = std::env::var("SIFT_TEST_ARGV") else {
             return;
         };
         let args: Vec<String> = serde_json::from_str(&args).unwrap();
@@ -702,8 +702,8 @@ mod windows {
         let result = runner::run_observed_with_options(
             &args,
             runner::Options {
-                raw: std::env::var_os("RETOK_TEST_RAW").is_some(),
-                capture: std::env::var_os("RETOK_TEST_CAPTURE").is_some(),
+                raw: std::env::var_os("SIFT_TEST_RAW").is_some(),
+                capture: std::env::var_os("SIFT_TEST_CAPTURE").is_some(),
             },
             super::record_observation,
         );
@@ -723,7 +723,7 @@ mod windows {
     }
     #[test]
     fn child_entry() {
-        let Ok(mode) = std::env::var("RETOK_TEST_CHILD") else {
+        let Ok(mode) = std::env::var("SIFT_TEST_CHILD") else {
             return;
         };
         if mode == "argv" {
@@ -746,7 +746,7 @@ mod windows {
             }
             let mut leaf = Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "windows::child_entry", "--nocapture"])
-                .env("RETOK_TEST_CHILD", "leaf")
+                .env("SIFT_TEST_CHILD", "leaf")
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -762,7 +762,7 @@ mod windows {
         if mode.starts_with("tree") {
             let mut leaf = Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "windows::child_entry", "--nocapture"])
-                .env("RETOK_TEST_CHILD", "leaf")
+                .env("SIFT_TEST_CHILD", "leaf")
                 .spawn()
                 .unwrap();
             println!("LEAF {}", leaf.id());
@@ -792,10 +792,10 @@ mod windows {
         let mut command = Command::new(&exe);
         command
             .args(["--exact", "windows::runner_entry", "--nocapture"])
-            .env("RETOK_TEST_ARGV", serde_json::to_string(&args).unwrap())
-            .env("RETOK_TEST_CHILD", mode)
-            .env_remove("RETOK_TEST_RAW")
-            .env_remove("RETOK_TEST_CAPTURE")
+            .env("SIFT_TEST_ARGV", serde_json::to_string(&args).unwrap())
+            .env("SIFT_TEST_CHILD", mode)
+            .env_remove("SIFT_TEST_RAW")
+            .env_remove("SIFT_TEST_CAPTURE")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -804,10 +804,10 @@ mod windows {
 
     fn shim_command(scratch: &super::Scratch, args: &[&str], pathext: &str) -> Command {
         let mut cmd = command("argv");
-        cmd.env("RETOK_TEST_ARGV", serde_json::to_string(args).unwrap())
+        cmd.env("SIFT_TEST_ARGV", serde_json::to_string(args).unwrap())
             .env("PATH", scratch.0.join("tool bin"))
             .env("PATHEXT", pathext)
-            .env("RETOK_SYNTHETIC", "must not expand")
+            .env("SIFT_SYNTHETIC", "must not expand")
             .current_dir(&scratch.0);
         cmd
     }
@@ -848,7 +848,7 @@ mod windows {
             "trailing\\",
             "a&b|c<d>e^f",
             "!literal!",
-            "%RETOK_SYNTHETIC%",
+            "%SIFT_SYNTHETIC%",
             "$(Write-Output no); * ' café",
         ];
         for extension in ["cmd", "BAT"] {
@@ -857,7 +857,7 @@ mod windows {
                 let mut args = vec![name];
                 args.extend_from_slice(&expected);
                 let output = shim_command(&scratch, &args, ".EXE;.CMD;.BAT")
-                    .env("RETOK_TEST_CAPTURE", "1")
+                    .env("SIFT_TEST_CAPTURE", "1")
                     .output()
                     .unwrap();
                 assert_arguments(output, &expected);
@@ -880,7 +880,7 @@ mod windows {
             "two words",
             "embedded\"quote",
             "trailing\\",
-            "%RETOK_SYNTHETIC%",
+            "%SIFT_SYNTHETIC%",
             "$(no); & | café",
         ];
         let mut args = vec![
@@ -977,7 +977,7 @@ mod windows {
             Some(127)
         );
         assert_eq!(
-            shim_command(&scratch, &["retok-missing-program"], ".CMD;.BAT")
+            shim_command(&scratch, &["sift-missing-program"], ".CMD;.BAT")
                 .output()
                 .unwrap()
                 .status
@@ -1091,7 +1091,7 @@ mod windows {
         for raw in [true, false] {
             let mut command = command("detached");
             if raw {
-                command.env("RETOK_TEST_RAW", "1");
+                command.env("SIFT_TEST_RAW", "1");
             }
             let mut child = command.spawn().unwrap();
             let (_reader, mut processes) = handles(&mut child, 1);

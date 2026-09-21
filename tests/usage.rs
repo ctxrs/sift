@@ -12,7 +12,7 @@ struct Sandbox(PathBuf);
 impl Sandbox {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "retok-usage-{}-{}",
+            "sift-usage-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));

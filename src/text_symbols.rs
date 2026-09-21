@@ -8,7 +8,7 @@ use serde::de::{MapAccess, Visitor};
 use std::collections::HashMap;
 use std::fmt;
 
-const HEADER: &str = "retok:symbols-v1 substitute each character using this JSON dictionary:\n";
+const HEADER: &str = "sift:symbols-v1 substitute each character using this JSON dictionary:\n";
 const LIMIT: usize = 64 * 1024 * 1024;
 const SYMBOLS: &str = "§¶¤†‡°ªºµ½¼¾¿¡¢£¥©®™±÷×•–—αβγδελπΩΔΣθσφψω✓★☆♦●○■□→←↑↓∞";
 
@@ -120,8 +120,7 @@ pub(crate) fn restore(input: &str) -> Result<String> {
         input.len() <= LIMIT,
         "symbols exceed the 64 MiB input limit"
     );
-    let (dictionary, body) = input
-        .strip_prefix(HEADER)
+    let (dictionary, body) = crate::strip_product_header(input, HEADER)
         .context("invalid symbols-v1 header")?
         .split_once('\n')
         .context("missing symbol dictionary newline")?;

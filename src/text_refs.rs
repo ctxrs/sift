@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-pub(crate) const HEADER: &str = "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n";
+pub(crate) const HEADER: &str = "sift:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n";
 const MAX_RESTORED_BYTES: usize = 64 * 1024 * 1024;
 const PREFIX_BUDGET: usize = 32;
 
@@ -287,9 +287,7 @@ fn literal_at(entries: &[Entry], position: usize) -> Result<&str> {
 }
 
 pub(crate) fn restore(input: &str) -> Result<String> {
-    let body = input
-        .strip_prefix(HEADER)
-        .context("invalid text-refs-v1 header")?;
+    let body = crate::strip_product_header(input, HEADER).context("invalid text-refs-v1 header")?;
     let entries: Vec<Entry> = serde_json::from_str(body).context("invalid text references")?;
     let mut total = 0usize;
     for position in 0..entries.len() {

@@ -1,8 +1,8 @@
-// Retok's native OpenClaw pre-tool adapter. The CLI owns rewrite decisions.
+// Sift's native OpenClaw pre-tool adapter. The CLI owns rewrite decisions.
 import { execFile } from "node:child_process";
 import { basename } from "node:path";
 
-const retokExecutable = __RETOK_EXECUTABLE_JSON__;
+const siftExecutable = __SIFT_EXECUTABLE_JSON__;
 const maxOutputBytes = 128 * 1024;
 const maxCommandBytes = 32 * 1024;
 
@@ -41,7 +41,7 @@ export default function register(api) {
 function rewrite(command, signal) {
   return new Promise(resolve => {
     try {
-      const child = execFile(retokExecutable,
+      const child = execFile(siftExecutable,
         ["rewrite", "--json", "--shell", "posix", "--", command],
         { timeout: 2000, maxBuffer: maxOutputBytes, encoding: "buffer", windowsHide: true,
           killSignal: "SIGKILL", signal },

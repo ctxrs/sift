@@ -7,7 +7,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::time::{Duration, Instant};
 
-use retok::{CompactResult, Compactor};
+use sift::{CompactResult, Compactor};
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -169,7 +169,7 @@ pub fn run_presented(
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            eprintln!("retok: {}: {error}", program.to_string_lossy());
+            eprintln!("sift: {}: {error}", program.to_string_lossy());
             observer(Observation {
                 stdout: Default::default(),
                 stderr: Default::default(),
@@ -179,7 +179,7 @@ pub fn run_presented(
             return Ok(127);
         }
         Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
-            eprintln!("retok: {}: {error}", program.to_string_lossy());
+            eprintln!("sift: {}: {error}", program.to_string_lossy());
             observer(Observation {
                 stdout: Default::default(),
                 stderr: Default::default(),
@@ -1043,7 +1043,7 @@ mod windows {
         pub(super) fn check_cancelled(&self, cancelled: &mut Option<(i32, Instant)>) {
             if INTERRUPTED.load(Ordering::Relaxed) != 0 {
                 // Shared-console children already receive Ctrl+C/Break from the
-                // OS. Rebroadcasting it would also interrupt Retok's caller.
+                // OS. Rebroadcasting it would also interrupt Sift's caller.
                 cancelled.get_or_insert((2, Instant::now()));
             }
             if cancelled.is_some_and(|(_, time)| time.elapsed() >= Duration::from_secs(1)) {

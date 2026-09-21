@@ -34,7 +34,7 @@ fn native_envelopes_preserve_all_arguments() {
         let input = format!(
             r#"{{"hook_event_name":"{event}","tool_name":"{tool}","tool_input":{{"command":"git status","shell":"bash","timeout":123456789012345678901234567890,"description":"test","metadata":{{"$serde_json::private::Number":"001"}}}}}}"#
         );
-        let output = pre_hooks::transform(host, &input, Path::new("/opt/retok"), &[])
+        let output = pre_hooks::transform(host, &input, Path::new("/opt/sift"), &[])
             .unwrap()
             .unwrap();
         let mut args: hooks::Object = serde_json::from_str(&output).unwrap();
@@ -43,7 +43,7 @@ fn native_envelopes_preserve_all_arguments() {
         }
         assert_eq!(
             args.string("command").unwrap(),
-            "command true || git status; command '/opt/retok' run --capture -- git status"
+            "command true || git status; command '/opt/sift' run --capture -- git status"
         );
         assert_eq!(args.string("description").unwrap(), "test");
         assert!(output.contains("123456789012345678901234567890"));
@@ -58,7 +58,7 @@ fn shared_copilot_file_does_not_double_wrap_cli() {
             r#"{{"hook_event_name":"PreToolUse","tool_name":"{tool}","tool_input":{{"command":"git status"}}}}"#
         );
         assert!(
-            pre_hooks::transform("vscode", &input, Path::new("retok"), &[])
+            pre_hooks::transform("vscode", &input, Path::new("sift"), &[])
                 .unwrap()
                 .is_none()
         );
@@ -74,7 +74,7 @@ fn bad_or_wrong_events_never_create_a_replacement() {
         r#"{"tool_name":"Bash","tool_input":{"command":"git status","shell":"fish"}}"#,
     ] {
         assert!(
-            pre_hooks::transform("codex", input, Path::new("retok"), &[])
+            pre_hooks::transform("codex", input, Path::new("sift"), &[])
                 .ok()
                 .flatten()
                 .is_none()
@@ -82,7 +82,7 @@ fn bad_or_wrong_events_never_create_a_replacement() {
     }
     let input = "\u{feff}{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"}}";
     assert!(
-        pre_hooks::transform("codex", input, Path::new("retok"), &[])
+        pre_hooks::transform("codex", input, Path::new("sift"), &[])
             .unwrap()
             .is_some()
     );
@@ -99,7 +99,7 @@ fn unqualified_host_rewrites_leave_native_requests_untouched() {
         let input = serde_json::json!({"hook_event_name":event,"tool_name":tool,
             "tool_input":{"command":"git status && git diff", "description":"metadata rule"}});
         assert!(
-            pre_hooks::transform(host, &input.to_string(), Path::new("/opt/retok"), &[])
+            pre_hooks::transform(host, &input.to_string(), Path::new("/opt/sift"), &[])
                 .unwrap()
                 .is_none()
         );

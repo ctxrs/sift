@@ -1,8 +1,8 @@
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
-const HEADER: &str = "retok:text-runs-v1 counts repeat exact JSON strings; concatenate\n";
-const PREFIX_HEADER: &str = "retok:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n";
+const HEADER: &str = "sift:text-runs-v1 counts repeat exact JSON strings; concatenate\n";
+const PREFIX_HEADER: &str = "sift:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n";
 const MAX_RESTORED_BYTES: usize = 64 * 1024 * 1024;
 
 pub(crate) fn candidate(input: &str) -> Option<String> {
@@ -113,8 +113,7 @@ pub(crate) fn prefix_candidate(input: &str) -> Option<String> {
 }
 
 pub(crate) fn restore_prefixes(input: &str) -> Result<String> {
-    let body = input
-        .strip_prefix(PREFIX_HEADER)
+    let body = crate::strip_product_header(input, PREFIX_HEADER)
         .context("invalid text-prefixes-v1 header")?;
     let entries: Vec<PrefixEntry<String>> =
         serde_json::from_str(body).context("invalid text prefixes")?;
@@ -160,9 +159,7 @@ pub(crate) fn restore_prefixes(input: &str) -> Result<String> {
 }
 
 pub(crate) fn restore(input: &str) -> Result<String> {
-    let body = input
-        .strip_prefix(HEADER)
-        .context("invalid text-runs-v1 header")?;
+    let body = crate::strip_product_header(input, HEADER).context("invalid text-runs-v1 header")?;
     let runs: Vec<(u64, String)> = serde_json::from_str(body).context("invalid text runs")?;
     let mut total = 0usize;
     for (count, line) in &runs {
@@ -206,7 +203,7 @@ mod tests {
             "\r\n\r\n",
             "\"\\\0🦀\n\"\\\0🦀\nend",
             "x\nx\ny\ny",
-            "retok:text-runs-v1\nretok:text-runs-v1\n",
+            "sift:text-runs-v1\nsift:text-runs-v1\n",
         ] {
             assert_eq!(restore(&candidate(input).unwrap()).unwrap(), input);
         }

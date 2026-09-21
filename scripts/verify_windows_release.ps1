@@ -39,7 +39,7 @@ if ($null -eq $signature.TimeStamperCertificate) {
 
 if ($ExpectedVersion) {
     $versionOutput = & $resolved --version 2>&1
-    if ($LASTEXITCODE -ne 0 -or (($versionOutput -join "`n") -cne "Retok $ExpectedVersion")) {
+    if ($LASTEXITCODE -ne 0 -or (($versionOutput -join "`n") -cne "Sift $ExpectedVersion")) {
         throw 'Windows signing verification: unexpected version output'
     }
 }

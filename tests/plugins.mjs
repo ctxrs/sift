@@ -8,15 +8,15 @@ import { join } from "node:path";
 const root = new URL("../", import.meta.url);
 const runtime = await readFile(new URL("integrations/runtime.js", root), "utf8");
 async function plugin(host, executable) {
-  const source = runtime.replace("__RETOK_EXECUTABLE__", JSON.stringify(executable))
-    .replace("__RETOK_SOURCE__", JSON.stringify(host))
+  const source = runtime.replace("__SIFT_EXECUTABLE__", JSON.stringify(executable))
+    .replace("__SIFT_SOURCE__", JSON.stringify(host))
     + await readFile(new URL(`integrations/${host}.js`, root), "utf8");
   return (await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`)).default;
 }
 async function fixture(mode, body) {
-  const dir = await mkdtemp(join(tmpdir(), "retok-plugin-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "sift-plugin-test-"));
   try {
-    const executable = join(dir, "retok-test");
+    const executable = join(dir, "sift-test");
     await writeFile(executable, `#!${process.execPath}
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -96,7 +96,7 @@ for (const mode of ["exit", "malformed", "expansion", "unchanged"]) {
 }
 
 test("missing executable and oversized text fail open", async () => {
-  const hooks = await (await plugin("opencode", join(tmpdir(), "missing-retok-executable")))();
+  const hooks = await (await plugin("opencode", join(tmpdir(), "missing-sift-executable")))();
   for (const text of ["unchanged", "x".repeat(8 * 1024 * 1024 + 1)]) {
     const output = {output:text};
     await hooks["tool.execute.after"]({tool:"bash"}, output);

@@ -109,7 +109,7 @@ fn main() {
                 .determinize_size_limit(Some(64 * 1024 * 1024)),
         )
         .build_many(&patterns())
-        .expect("build o200k pretokenizer");
+        .expect("build o200k pre-tokenizer");
     let target_endian = std::env::var("CARGO_CFG_TARGET_ENDIAN").unwrap();
     let host_endian = if cfg!(target_endian = "little") {
         "little"
@@ -118,7 +118,7 @@ fn main() {
     };
     assert_eq!(
         target_endian, host_endian,
-        "pretokenizer validation requires matching build-host and target endianness"
+        "pre-tokenizer validation requires matching build-host and target endianness"
     );
     let (bytes, pad) = if target_endian == "little" {
         dfa.to_bytes_little_endian()
@@ -127,7 +127,7 @@ fn main() {
     };
     let serialized = &bytes[pad..];
     let (checked, consumed) =
-        dense::DFA::from_bytes(serialized).expect("valid generated pretokenizer");
+        dense::DFA::from_bytes(serialized).expect("valid generated pre-tokenizer");
     assert_eq!(consumed, serialized.len());
     assert_eq!(checked.start_kind(), StartKind::Anchored);
     assert_eq!(checked.pattern_len(), 3);

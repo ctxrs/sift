@@ -11,11 +11,11 @@ use std::fmt;
 use std::io::{self, Read, Write};
 
 pub const HELP: &str = "Explicit views (selection can omit information):
-  retok read [FILE|-] [--from N] [--lines N] [--grep LITERAL]
-  retok json [FILE|-] [--pointer POINTER] [--field KEY]... [--limit N]
-  retok summary [--lines N] -- COMMAND [ARG...]
-  retok err [--context N] -- COMMAND [ARG...]
-  retok test [--context N] -- COMMAND [ARG...]
+  sift read [FILE|-] [--from N] [--lines N] [--grep LITERAL]
+  sift json [FILE|-] [--pointer POINTER] [--field KEY]... [--limit N]
+  sift summary [--lines N] -- COMMAND [ARG...]
+  sift err [--context N] -- COMMAND [ARG...]
+  sift test [--context N] -- COMMAND [ARG...]
 
 Read selects literal, case-sensitive matching lines at/after source line N
 (1-based); --lines limits matches. Selected lines preserve their original bytes.
@@ -35,7 +35,7 @@ These are substring matches and can include lines such as '0 failures'.
 No keyword matches or non-text input passes through unchanged.
 Command views require the runner's bounded complete capture; progress is delayed.
 Capture overflow passes through raw. Child argv and exit status stay unchanged.
-Use retok run -- test ... to invoke the native test utility.
+Use sift run -- test ... to invoke the native test utility.
 Use '--' before a filename starting '-'. FILE defaults to stdin.
 ";
 
@@ -150,7 +150,7 @@ pub fn parse(name: &str, args: &[OsString]) -> Result<Action> {
                 (View::Errors { context } | View::Test { context }, "--context") => {
                     *context = number(value)?
                 }
-                _ => bail!("unsupported {name} option {key}; use 'retok {name} --help'"),
+                _ => bail!("unsupported {name} option {key}; use 'sift {name} --help'"),
             }
         } else if command {
             ensure!(!arg.is_empty(), "missing command");
@@ -166,7 +166,7 @@ pub fn parse(name: &str, args: &[OsString]) -> Result<Action> {
     }
     ensure!(
         !command,
-        "{name} requires COMMAND; use 'retok {name} --help'"
+        "{name} requires COMMAND; use 'sift {name} --help'"
     );
     Ok(Action::Input { path, view })
 }
@@ -449,7 +449,7 @@ fn text_view(view: &View, input: &[u8]) -> Vec<u8> {
     };
     let kept: usize = ranges.iter().map(|(start, end)| end - start).sum();
     let mut out = format!(
-        "Retok {label} view: {kept}/{} source lines; {} omitted.\n",
+        "Sift {label} view: {kept}/{} source lines; {} omitted.\n",
         lines.len(),
         lines.len() - kept
     )
@@ -458,7 +458,7 @@ fn text_view(view: &View, input: &[u8]) -> Vec<u8> {
     for (start, end) in ranges {
         if start > previous {
             out.extend_from_slice(
-                format!("[retok: {} lines omitted]\n", start - previous).as_bytes(),
+                format!("[sift: {} lines omitted]\n", start - previous).as_bytes(),
             );
         }
         for line in &lines[start..end] {
@@ -471,7 +471,7 @@ fn text_view(view: &View, input: &[u8]) -> Vec<u8> {
             out.push(b'\n');
         }
         out.extend_from_slice(
-            format!("[retok: {} lines omitted]\n", lines.len() - previous).as_bytes(),
+            format!("[sift: {} lines omitted]\n", lines.len() - previous).as_bytes(),
         );
     }
     out

@@ -1,7 +1,7 @@
 # Hermes completion plugin
 
 The native `transform_tool_result` callback compresses completed `terminal`
-output through the installed Retok executable. Hermes executes the original
+output through the installed Sift executable. Hermes executes the original
 command with its original arguments and approval policy. This plugin registers
 no pre-execution hook. The CLI edits only the native result's `output` text;
 exit status, error, approval, hints, and other metadata remain intact.
@@ -29,22 +29,22 @@ native modules with explicit host-service shims, not a full authenticated Hermes
 session, and does not certify every later release or signed distribution.
 
 This directory is an installation template. Replace
-`__RETOK_EXECUTABLE_UTF8_HEX__` in `__init__.py` with the hex encoding of the
-absolute Retok executable path's UTF-8 bytes. Copy `__init__.py` and `plugin.yaml`
-into `$HERMES_HOME/plugins/retok-rewrite/` (`~/.hermes/plugins/retok-rewrite/` by
+`__SIFT_EXECUTABLE_UTF8_HEX__` in `__init__.py` with the hex encoding of the
+absolute Sift executable path's UTF-8 bytes. Copy `__init__.py` and `plugin.yaml`
+into `$HERMES_HOME/plugins/sift-rewrite/` (`~/.hermes/plugins/sift-rewrite/` by
 default). The existing plugin ID is retained for setup compatibility. Add it to
 the existing `plugins.enabled` list in `$HERMES_HOME/config.yaml`:
 
 ```yaml
 plugins:
   enabled:
-    - retok-rewrite
+    - sift-rewrite
 ```
 
 Preserve existing entries and explicit disables. `plugins.disabled` takes
 precedence. Project plugins require Hermes's separate project-plugin opt-in;
 this adapter does not enable that setting. To disable this callback, set
-`plugins.entries.retok-rewrite.settings.enabled: false` or disable the plugin.
+`plugins.entries.sift-rewrite.settings.enabled: false` or disable the plugin.
 
 The subprocess receives literal argv `hook hermes` and a UTF-8 JSON request on
 stdin: `hook_event_name: "TransformToolResult"`, `tool_name: "terminal"`,
@@ -58,7 +58,7 @@ The adapter uses a two-second subprocess deadline, a 16 MiB request limit, and a
 32 MiB stdout limit. Non-string results, results shorter than 256 characters,
 invalid UTF-8, missing executables, timeouts, and invalid responses leave the
 original result intact. Errors produce no adapter diagnostics. All terminal
-backends and Windows use the same completed-text path: Retok runs locally and
+backends and Windows use the same completed-text path: Sift runs locally and
 never executes or rewrites the terminal command. Native Windows execution still
 requires platform qualification.
 

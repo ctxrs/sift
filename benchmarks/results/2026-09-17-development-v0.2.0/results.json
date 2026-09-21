@@ -2,20 +2,20 @@
   "schema": 1,
   "harness_sha256": "1f0f1d413bbeca6ac81dd825d244791b7408f5a77242a1f12ffe7652f4ac266c",
   "repeats": 5,
-  "tokenizer": "ordinary o200k_base, same warmed Retok protocol input_tokens for ALL arms",
+  "tokenizer": "ordinary o200k_base, same warmed Sift protocol input_tokens for ALL arms",
   "fixture_sha256": "875654f2b6fdbf69e5bc70cd69763b0a376ce28528b69c2c80eeea8d52ff7272",
   "timing": "one unmeasured warmup per arm; rotating order; subprocess wall time; no audit shims",
   "protocol_timing": "warmed compact request round trip, excludes startup, includes JSON/pipe overhead",
   "memory": "not measured",
   "binary_hashes_unchanged_after_run": true,
   "date_utc": "2026-09-17T06:15:46.007615+00:00",
-  "candidate_status": "Development release-mode Retok v0.2.0 binary, not a shipped artifact; final source/release qualification pending",
+  "candidate_status": "Development release-mode Sift v0.2.0 binary, not a shipped artifact; final source/release qualification pending",
   "source_evidence_sha256": "46ec6144269e9622621dc9c8f8264c723ca5a05ba664138d643ea67128637d32",
   "environment": "Linux shared host; governed run; warm filesystem caches; no host identity recorded here",
   "binaries": {
-    "retok": {
+    "sift": {
       "sha256": "fb9be54224069f898f8d88708af9930f389d782f89f6ba9783ce4dfbd8313eab",
-      "version": "Retok 0.2.0"
+      "version": "Sift 0.2.0"
     },
     "rtk": {
       "sha256": "dd97f3c0a08f91ed90d3e87e05520c448bfda112b3cb101847ccb4d5444c9b07",
@@ -51,8 +51,8 @@
   "limitations": [
     "Seven predeclared modest synthetic workloads and three controls; no aggregate winner or model-task/billing conclusion.",
     "One warmup per arm; five timed repeats; order rotates; startup, subprocess work and normal local tracking included.",
-    "Warm processing is separate Retok protocol round-trip time, including Python JSON/pipe overhead; not runner CPU time or RTK processing time.",
-    "Same warmed Retok ordinary o200k_base tokenizer counts actual stdout and stderr separately for every arm; no independent tiktoken verification.",
+    "Warm processing is separate Sift protocol round-trip time, including Python JSON/pipe overhead; not runner CPU time or RTK processing time.",
+    "Same warmed Sift ordinary o200k_base tokenizer counts actual stdout and stderr separately for every arm; no independent tiktoken verification.",
     "Untimed PATH audit observes native child argv/cwd/count; internal or absolute-path execution is not fully observable.",
     "Content hashes include Git metadata; no claim about access timestamps, identical rewrites, every subprocess or external side effect.",
     "Text restore is byte-exact; JSON uses independent Python Number lexemes and typed parsed values, permitting whitespace/key-order changes.",
@@ -113,7 +113,7 @@
       "max_elapsed_ms": 1.582886,
       "median_tokens": 144,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.582886,
@@ -249,9 +249,9 @@
     },
     {
       "workload": "git-status",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "git",
@@ -277,7 +277,7 @@
       "max_elapsed_ms": 109.7399,
       "median_tokens": 144,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 102.284522,
@@ -483,7 +483,7 @@
       "max_elapsed_ms": 5.744662,
       "median_tokens": 43,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 5.534406,
@@ -644,7 +644,7 @@
       "max_elapsed_ms": 1.700257,
       "median_tokens": 507,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.424439,
@@ -775,9 +775,9 @@
     },
     {
       "workload": "git-diff",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "git",
@@ -803,7 +803,7 @@
       "max_elapsed_ms": 106.928613,
       "median_tokens": 506,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 105.649769,
@@ -1003,7 +1003,7 @@
       "max_elapsed_ms": 47.463343,
       "median_tokens": 429,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 47.463343,
@@ -1161,7 +1161,7 @@
       "max_elapsed_ms": 1.568139,
       "median_tokens": 374,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.418197,
@@ -1292,9 +1292,9 @@
     },
     {
       "workload": "git-log",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "git",
@@ -1322,7 +1322,7 @@
       "max_elapsed_ms": 104.441648,
       "median_tokens": 280,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 99.97522,
@@ -1522,7 +1522,7 @@
       "max_elapsed_ms": 4.537602,
       "median_tokens": 139,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 4.358846,
@@ -1680,7 +1680,7 @@
       "max_elapsed_ms": 2.267193,
       "median_tokens": 429,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 2.118925,
@@ -1811,9 +1811,9 @@
     },
     {
       "workload": "listing",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "ls",
@@ -1841,7 +1841,7 @@
       "max_elapsed_ms": 112.274305,
       "median_tokens": 249,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 108.156522,
@@ -2040,7 +2040,7 @@
       "max_elapsed_ms": 4.48897,
       "median_tokens": 187,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 3.554092,
@@ -2200,7 +2200,7 @@
       "max_elapsed_ms": 2.134202,
       "median_tokens": 138,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.982097,
@@ -2331,9 +2331,9 @@
     },
     {
       "workload": "search",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "grep",
@@ -2363,7 +2363,7 @@
       "max_elapsed_ms": 115.789855,
       "median_tokens": 138,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 107.254537,
@@ -2565,7 +2565,7 @@
       "max_elapsed_ms": 4.230865,
       "median_tokens": 138,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 3.575873,
@@ -2721,7 +2721,7 @@
       "max_elapsed_ms": 1.826494,
       "median_tokens": 962,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.823138,
@@ -2857,9 +2857,9 @@
     },
     {
       "workload": "json",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "cat",
@@ -2885,7 +2885,7 @@
       "max_elapsed_ms": 113.22345,
       "median_tokens": 320,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 103.809339,
@@ -3074,7 +3074,7 @@
       "max_elapsed_ms": 3.2818,
       "median_tokens": 40,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 2.517254,
@@ -3240,7 +3240,7 @@
       "max_elapsed_ms": 11.29606,
       "median_tokens": 108,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 9.833339,
@@ -3376,9 +3376,9 @@
     },
     {
       "workload": "tests-diagnostics",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "fixture-check",
@@ -3404,7 +3404,7 @@
       "max_elapsed_ms": 121.352755,
       "median_tokens": 108,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 111.79796,
@@ -3602,7 +3602,7 @@
       "max_elapsed_ms": 14.749573,
       "median_tokens": 57,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 14.456572,
@@ -3760,7 +3760,7 @@
       "max_elapsed_ms": 0.545907,
       "median_tokens": 0,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 0.545907,
@@ -3876,9 +3876,9 @@
     },
     {
       "workload": "control-noop",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "true"
@@ -3901,7 +3901,7 @@
       "max_elapsed_ms": 1.421843,
       "median_tokens": 0,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 1.271211,
@@ -4076,7 +4076,7 @@
       "max_elapsed_ms": 2.983219,
       "median_tokens": 0,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 2.937092,
@@ -4217,7 +4217,7 @@
       "max_elapsed_ms": 1.729472,
       "median_tokens": 2,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 1.657006,
@@ -4343,9 +4343,9 @@
     },
     {
       "workload": "control-short",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "printf",
@@ -4371,7 +4371,7 @@
       "max_elapsed_ms": 11.707944,
       "median_tokens": 2,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 11.522245,
@@ -4559,7 +4559,7 @@
       "max_elapsed_ms": 3.490182,
       "median_tokens": 2,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 3.490182,
@@ -4710,7 +4710,7 @@
       "max_elapsed_ms": 492.435778,
       "median_tokens": 56,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 492.27709,
@@ -4836,9 +4836,9 @@
     },
     {
       "workload": "control-progress",
-      "arm": "retok",
+      "arm": "sift",
       "argv": [
-        "retok",
+        "sift",
         "run",
         "--",
         "fixture-check",
@@ -4864,7 +4864,7 @@
       "max_elapsed_ms": 493.24533,
       "median_tokens": 56,
       "tokens_stable": true,
-      "retok_output_verified": true,
+      "sift_output_verified": true,
       "samples": [
         {
           "elapsed_ms": 492.277631,
@@ -5052,7 +5052,7 @@
       "max_elapsed_ms": 495.111089,
       "median_tokens": 56,
       "tokens_stable": true,
-      "retok_output_verified": null,
+      "sift_output_verified": null,
       "samples": [
         {
           "elapsed_ms": 495.111089,
@@ -5186,7 +5186,7 @@
       ],
       "headings_absent": []
     },
-    "retok": {
+    "sift": {
       "headings_present": [
         "Changes to be committed:",
         "Changes not staged for commit:",

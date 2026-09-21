@@ -8,15 +8,15 @@ use rewrite::Shell;
 use std::path::Path;
 
 fn rewrite(text: &str) -> Option<String> {
-    rewrite::command(text, Path::new("/opt/Retok tools/retok"), Shell::Posix, &[])
+    rewrite::command(text, Path::new("/opt/Sift tools/sift"), Shell::Posix, &[])
 }
 
 #[test]
 fn preserves_literal_arguments_and_operator_order() {
     assert!(rewrite("LANG=C git status --short").is_none());
     assert!(rewrite("rg '$literal' $FILE").is_none());
-    assert_eq!(rewrite("rg 'a b' \"x*y\" file"), Some("command true || rg 'a b' \"x*y\" file; command '/opt/Retok tools/retok' run --capture -- rg 'a b' \"x*y\" file".into()));
-    assert_eq!(rewrite("cd project && git status; cargo test"), Some("command true || git status; command true || cargo test; cd project && command '/opt/Retok tools/retok' run --capture -- git status; command '/opt/Retok tools/retok' run --capture -- cargo test".into()));
+    assert_eq!(rewrite("rg 'a b' \"x*y\" file"), Some("command true || rg 'a b' \"x*y\" file; command '/opt/Sift tools/sift' run --capture -- rg 'a b' \"x*y\" file".into()));
+    assert_eq!(rewrite("cd project && git status; cargo test"), Some("command true || git status; command true || cargo test; cd project && command '/opt/Sift tools/sift' run --capture -- git status; command '/opt/Sift tools/sift' run --capture -- cargo test".into()));
 }
 
 #[test]
@@ -36,8 +36,8 @@ fn leaves_pipeline_data_and_file_output_untouched() {
 #[test]
 fn unknown_syntax_and_existing_wrappers_are_passthrough() {
     for text in [
-        "retok git status",
-        "'/opt/Retok tools/retok' run -- git status",
+        "sift git status",
+        "'/opt/Sift tools/sift' run -- git status",
         "git show $(touch marker)",
         "git show `date`",
         "git status &",
@@ -56,12 +56,11 @@ fn interactive_or_open_ended_commands_keep_streaming_mode() {
     assert_eq!(
         rewrite("npm run dev"),
         Some(
-            "command true || npm run dev; command '/opt/Retok tools/retok' run -- npm run dev"
-                .into()
+            "command true || npm run dev; command '/opt/Sift tools/sift' run -- npm run dev".into()
         )
     );
-    assert_eq!(rewrite("tail -f app.log"), Some("command true || tail -f app.log; command '/opt/Retok tools/retok' run -- tail -f app.log".into()));
-    assert_eq!(rewrite("git add --patch"), Some("command true || git add --patch; command '/opt/Retok tools/retok' run -- git add --patch".into()));
+    assert_eq!(rewrite("tail -f app.log"), Some("command true || tail -f app.log; command '/opt/Sift tools/sift' run -- tail -f app.log".into()));
+    assert_eq!(rewrite("git add --patch"), Some("command true || git add --patch; command '/opt/Sift tools/sift' run -- git add --patch".into()));
 }
 
 #[test]
@@ -69,28 +68,28 @@ fn powershell_quotes_wrapper_and_keeps_native_arguments() {
     assert!(
         rewrite::command(
             "git status --short",
-            Path::new("C:\\O'Brien tools\\retok.exe"),
+            Path::new("C:\\O'Brien tools\\sift.exe"),
             Shell::PowerShell,
             &[]
         )
         .is_none()
     );
     assert_eq!(
-        rewrite::quote("C:\\O'Brien tools\\retok.exe", Shell::PowerShell),
-        "'C:\\O''Brien tools\\retok.exe'"
+        rewrite::quote("C:\\O'Brien tools\\sift.exe", Shell::PowerShell),
+        "'C:\\O''Brien tools\\sift.exe'"
     );
     assert!(
         rewrite::command(
             "git status",
-            Path::new("retok"),
+            Path::new("sift"),
             Shell::Posix,
             &["git".into()]
         )
         .is_none()
     );
     assert_eq!(
-        rewrite::quote("/opt/O'Brien/retok", Shell::Posix),
-        "'/opt/O'\"'\"'Brien/retok'"
+        rewrite::quote("/opt/O'Brien/sift", Shell::Posix),
+        "'/opt/O'\"'\"'Brien/sift'"
     );
 }
 
@@ -99,7 +98,7 @@ fn powershell_quotes_wrapper_and_keeps_native_arguments() {
 fn escaped_final_whitespace_keeps_execution_arguments_streams_and_status() {
     use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
-    let root = std::env::temp_dir().join(format!("retok-rewrite-shell-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("sift-rewrite-shell-{}", std::process::id()));
     std::fs::create_dir(&root).unwrap();
     struct Cleanup(std::path::PathBuf);
     impl Drop for Cleanup {
@@ -126,7 +125,7 @@ fn escaped_final_whitespace_keeps_execution_arguments_streams_and_status() {
         ] {
             let changed = rewrite::command(
                 input,
-                Path::new(env!("CARGO_BIN_EXE_retok")),
+                Path::new(env!("CARGO_BIN_EXE_sift")),
                 Shell::Posix,
                 &[],
             )
@@ -136,8 +135,8 @@ fn escaped_final_whitespace_keeps_execution_arguments_streams_and_status() {
                     .args(["-c", text])
                     .current_dir(&root)
                     .env("PATH", &paths)
-                    .env("RETOK_CONFIG_DIR", root.join("config"))
-                    .env("RETOK_STATE_DIR", root.join("state"))
+                    .env("SIFT_CONFIG_DIR", root.join("config"))
+                    .env("SIFT_STATE_DIR", root.join("state"))
                     .output()
                     .unwrap()
             };

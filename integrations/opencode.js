@@ -1,5 +1,5 @@
 
-export default async function retok() {
+export default async function sift() {
   return {
     "tool.execute.after": async (input, output) => {
       if (!["bash", "shell"].includes(input.tool) || typeof output.output !== "string") return;
