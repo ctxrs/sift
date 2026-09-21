@@ -259,11 +259,18 @@ function createPiSession() {
 export default function sift(pi) {
   const session = createPiSession();
   let task = null;
+  const nativeGrep = () => {
+    try {
+      const tools = pi.getAllTools?.();
+      const matches = Array.isArray(tools) ? tools.filter(tool => tool?.name === "grep") : [];
+      return matches.length === 1 && matches[0]?.sourceInfo?.source === "builtin";
+    } catch { return false; }
+  };
   pi.on("before_agent_start", event => { task = typeof event?.prompt === "string" ? event.prompt : null; });
   pi.on("agent_settled", () => { task = null; });
   pi.on("session_shutdown", async () => { task = null; await session.shutdown(); });
   pi.on("tool_result", async (event, ctx) => {
-    if (event.toolName === "grep" && event.isError === false && Array.isArray(event.content)
+    if (event.toolName === "grep" && nativeGrep() && event.isError === false && Array.isArray(event.content)
       && event.content.length === 1 && event.content[0]?.type === "text"
       && typeof event.content[0].text === "string") {
       const original = event.content[0].text;
