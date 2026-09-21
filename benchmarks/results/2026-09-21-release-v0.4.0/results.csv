@@ -1,0 +1,31 @@
+workload,arm,execution,median_elapsed_ms,min_elapsed_ms,max_elapsed_ms,median_tokens,tokens_stable,sift_output_verified,median_warm_processing_ms
+git-status,native,same native argv/cwd once; exit and fixture contents preserved,1.709695,1.519878,1.819973,144,True,,
+git-status,sift,same native argv/cwd once; exit and fixture contents preserved,2.981156,2.784076,3.944889,43,True,True,0.178145
+git-status,rtk,different implementation/argv or unverified child execution,6.07792,5.729605,6.360742,43,True,,
+git-diff,native,same native argv/cwd once; exit and fixture contents preserved,1.636778,1.545736,1.706088,507,True,,
+git-diff,sift,same native argv/cwd once; exit and fixture contents preserved,2.982298,2.768105,3.118254,456,True,True,0.345991
+git-diff,rtk,different implementation/argv or unverified child execution,5.75896,5.667719,6.335234,429,True,,
+git-log,native,same native argv/cwd once; exit and fixture contents preserved,1.600159,1.378853,1.823098,374,True,,
+git-log,sift,same native argv/cwd once; exit and fixture contents preserved,2.767565,2.505121,3.051448,248,True,True,0.138731
+git-log,rtk,different implementation/argv or unverified child execution,4.808233,4.375168,5.237109,139,True,,
+listing,native,same native argv/cwd once; exit and fixture contents preserved,2.460367,2.26534,3.29659,429,True,,
+listing,sift,same native argv/cwd once; exit and fixture contents preserved,2.46197,2.326926,2.924981,224,True,True,0.143809
+listing,rtk,same native argv/cwd once; exit and fixture contents preserved,4.888022,4.544105,5.953526,187,True,,
+search,native,same native argv/cwd once; exit and fixture contents preserved,2.596112,2.128804,2.929629,138,True,,
+search,sift,same native argv/cwd once; exit and fixture contents preserved,2.34478,1.964103,2.95643,138,True,True,0.053902
+search,rtk,different implementation/argv or unverified child execution,6.292193,4.373745,6.856765,138,True,,
+json,native,same native argv/cwd once; exit and fixture contents preserved,2.053812,1.963423,3.087176,962,True,,
+json,sift,same native argv/cwd once; exit and fixture contents preserved,2.978722,2.533634,3.25986,301,True,True,0.707491
+json,rtk,different implementation/argv or unverified child execution,3.463273,3.051008,8.6146,40,True,,
+tests-diagnostics,native,same native argv/cwd once; exit and fixture contents preserved,12.074376,11.568596,12.602129,108,True,,
+tests-diagnostics,sift,same native argv/cwd once; exit and fixture contents preserved,12.795914,12.468678,14.10202,108,True,True,0.178986
+tests-diagnostics,rtk,same native argv/cwd once; exit and fixture contents preserved,16.23958,14.424366,18.457942,57,True,,
+control-noop,native,same native argv/cwd once; exit and fixture contents preserved,0.738609,0.615497,0.799243,0,True,,
+control-noop,sift,same native argv/cwd once; exit and fixture contents preserved,1.207571,1.100679,1.537522,0,True,True,0.028162
+control-noop,rtk,same native argv/cwd once; exit and fixture contents preserved,4.086906,3.482038,4.227961,0,True,,
+control-short,native,same native argv/cwd once; exit and fixture contents preserved,2.02068,1.01058,2.232268,2,True,,
+control-short,sift,same native argv/cwd once; exit and fixture contents preserved,1.651175,1.342745,1.739902,2,True,True,0.03185
+control-short,rtk,same native argv/cwd once; exit and fixture contents preserved,4.407949,4.066127,4.933198,2,True,,
+control-progress,native,same native argv/cwd once; exit and fixture contents preserved,493.904747,491.885209,495.85215,56,True,,
+control-progress,sift,same native argv/cwd once; exit and fixture contents preserved,493.583132,492.276414,495.67707,56,True,True,0.058911
+control-progress,rtk,same native argv/cwd once; exit and fixture contents preserved,496.993355,494.878087,497.653186,56,True,,
