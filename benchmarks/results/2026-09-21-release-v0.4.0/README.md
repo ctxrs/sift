@@ -5,8 +5,10 @@ Across all ten rows, Sift's median elapsed time was within 1.35 ms of native
 and lower than RTK's. On the seven non-control workloads, Sift took 2.3–12.8 ms,
 versus native's 1.6–12.1 ms and RTK's 3.5–16.2 ms. RTK still emitted fewer
 tokens on five workloads and tied Sift on two. Sift preserved the requested
-command, exit status and reversible output; RTK's command-specific
-transformations differ, as detailed below. No aggregate winner or
+command and exit status. Its encoded outputs restored exactly; the Git status
+view instead retained its displayed paths and branch/advisory information under
+separate view checks. RTK's command-specific transformations differ, as detailed
+below. No aggregate winner or
 model-task-success claim follows from these small fixtures.
 
 ## Identity and measurements
@@ -49,10 +51,11 @@ commands or user repositories.
 
 All ten Sift workloads executed the requested command once with unchanged argv,
 cwd and fixture contents. Timed exits matched native behavior, including the
-intentional test failure. Every Sift stream matched the original or its explicit
-encoding. Restoration uses Sift's product decoder. Restored text is compared
-byte-for-byte; JSON is compared independently for values, types and numeric
-lexemes while permitting whitespace and object-key order changes.
+intentional test failure. Encoded streams were restored with Sift's product
+decoder and compared byte-for-byte; JSON was compared independently for values,
+types and numeric lexemes while permitting whitespace and object-key order
+changes. The Git status stdout uses a command-aware view, checked separately
+for displayed paths, branch and advisory; it is not a reversible encoding.
 
 RTK listing, tests and proxy controls passed the same native invocation audit.
 Status and diff made additional or altered Git calls; log changed its format;
