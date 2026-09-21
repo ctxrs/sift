@@ -55,7 +55,7 @@ import subprocess, sys
 result = subprocess.run([sys.argv[1], "--version"], stdin=subprocess.DEVNULL,
                         capture_output=True, timeout=10, check=False)
 sys.exit(0 if result.returncode == 0
-         and result.stdout == f"Retok {sys.argv[2]}\n".encode()
+         and result.stdout == f"Sift {sys.argv[2]}\n".encode()
          and not result.stderr else 1)
 PYVERSION
 fi
@@ -70,7 +70,7 @@ print(json.dumps({
     "artifact_sha256": sys.argv[2],
     "platform": "macos",
     "status": "passed",
-    "identifier": "retok",
+    "identifier": "sift",
     "team_id_sha256": sys.argv[3],
     "hardened_runtime": True,
     "secure_timestamp": True,

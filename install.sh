@@ -3,7 +3,7 @@
 main() (
     set -eu
 
-    fail() { printf 'retok: %s\n' "$*" >&2; exit 1; }
+    fail() { printf 'sift: %s\n' "$*" >&2; exit 1; }
     setup=
     [ "$#" -le 1 ] || fail 'Use only one of --init, --replace-rtk, or --help.'
     case "${1:-}" in
@@ -24,10 +24,10 @@ main() (
     esac
 
     case "$(uname -s):$(uname -m)" in
-        Linux:x86_64|Linux:amd64) asset=retok-linux-x64 ;;
-        Linux:aarch64|Linux:arm64) asset=retok-linux-aarch64 ;;
-        Darwin:x86_64|Darwin:amd64) asset=retok-macos-x64 ;;
-        Darwin:arm64|Darwin:aarch64) asset=retok-macos-arm64 ;;
+        Linux:x86_64|Linux:amd64) asset=sift-linux-x64 ;;
+        Linux:aarch64|Linux:arm64) asset=sift-linux-aarch64 ;;
+        Darwin:x86_64|Darwin:amd64) asset=sift-macos-x64 ;;
+        Darwin:arm64|Darwin:aarch64) asset=sift-macos-arm64 ;;
         *) fail 'Unsupported platform. Expected Linux or macOS on x64 or ARM64.' ;;
     esac
 
@@ -40,23 +40,23 @@ main() (
         fail 'sha256sum or shasum is required.'
     fi
 
-    base=https://github.com/ctxrs/retok/releases
-    version=${RETOK_VERSION:-}
-    case "$version" in *[!A-Za-z0-9._-]*) fail 'Invalid RETOK_VERSION release tag.' ;; esac
+    base=https://github.com/ctxrs/sift/releases
+    version=${SIFT_VERSION:-}
+    case "$version" in *[!A-Za-z0-9._-]*) fail 'Invalid SIFT_VERSION release tag.' ;; esac
     if [ -n "$version" ]; then
         base=$base/download/$version
     else
         base=$base/latest/download
     fi
-    install_dir=${RETOK_INSTALL_DIR:-"$HOME/.local/bin"}
+    install_dir=${SIFT_INSTALL_DIR:-"$HOME/.local/bin"}
     # Absolute paths also keep leading dashes from becoming utility options.
     case "$install_dir" in /*) ;; *) install_dir=$PWD/$install_dir ;; esac
     notices=$asset.third-party-notices.txt
     mkdir -p "$install_dir"
-    for target in retok retok.third-party-notices.txt; do
+    for target in sift sift.third-party-notices.txt; do
         [ ! -d "$install_dir/$target" ] || fail "$install_dir/$target is a directory."
     done
-    temp_dir=$(mktemp -d "$install_dir/.retok.XXXXXX")
+    temp_dir=$(mktemp -d "$install_dir/.sift.XXXXXX")
     trap 'rm -rf "$temp_dir"' 0
     trap 'exit 1' HUP INT TERM
 
@@ -80,13 +80,13 @@ main() (
     chmod 644 "$temp_dir/$notices"
     # Same-filesystem renames avoid truncating an existing executable. Install
     # notices first so a new binary is never installed without its license text.
-    notice_destination=$install_dir/retok.third-party-notices.txt
+    notice_destination=$install_dir/sift.third-party-notices.txt
     notice_backup=$temp_dir/previous-notices
     if [ -e "$notice_destination" ]; then
         cp -p "$notice_destination" "$notice_backup"
     fi
     mv -f "$temp_dir/$notices" "$notice_destination"
-    if ! mv -f "$temp_dir/$asset" "$install_dir/retok"; then
+    if ! mv -f "$temp_dir/$asset" "$install_dir/sift"; then
         if [ -e "$notice_backup" ]; then
             mv -f "$notice_backup" "$notice_destination" || {
                 trap - 0
@@ -97,15 +97,15 @@ main() (
         fi
         fail 'Executable replacement failed; previous notices state restored.'
     fi
-    printf 'Installed retok to %s/retok\n' "$install_dir"
+    printf 'Installed sift to %s/sift\n' "$install_dir"
     if [ -n "$setup" ]; then
         set -- init
         if [ "$setup" = replace-rtk ]; then set -- "$@" --replace-rtk; fi
-        if ! "$install_dir/retok" "$@"; then
-            fail "Binary installed at $install_dir/retok, but integration failed. Retry setup with that binary."
+        if ! "$install_dir/sift" "$@"; then
+            fail "Binary installed at $install_dir/sift, but integration failed. Retry setup with that binary."
         fi
     fi
-    printf 'Add %s to your PATH if needed, then run retok --help.\n' "$install_dir"
+    printf 'Add %s to your PATH if needed, then run sift --help.\n' "$install_dir"
 )
 
 main "$@"

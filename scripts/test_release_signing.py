@@ -237,7 +237,7 @@ class EvidenceTests(unittest.TestCase):
     def test_verify_binds_present_sbom_source_commit(self):
         self.write_evidence()
         sidecar = {"metadata": {"component": {"properties": [
-            {"name": "retok:source-commit", "value": COMMIT}
+            {"name": "sift:source-commit", "value": COMMIT}
         ]}}}
         write_json(self.assets / (LINUX[0] + ".cdx.json"), sidecar)
         signing.verify_release_evidence(self.assets, self.evidence)
@@ -441,7 +441,7 @@ class ToolAndCredentialTests(unittest.TestCase):
             "22222222-2222-2222-2222-222222222222",
             "azure-secret",
         )):
-            variable = key.replace("AZURE_ARTIFACT_SIGNING_", "RETOK_WINDOWS_SIGNING_") + "_FILE"
+            variable = key.replace("AZURE_ARTIFACT_SIGNING_", "SIFT_WINDOWS_SIGNING_") + "_FILE"
             path = self.root / variable
             path.write_text(value + "\n", encoding="utf-8")
             path.chmod(0o600)
@@ -462,7 +462,7 @@ class ToolAndCredentialTests(unittest.TestCase):
             signing.credentials(self.root, self.policy, {}, "network")
 
         controls = self.valid_controls()
-        path = Path(controls["RETOK_WINDOWS_SIGNING_CLIENT_SECRET_FILE"])
+        path = Path(controls["SIFT_WINDOWS_SIGNING_CLIENT_SECRET_FILE"])
         path.chmod(0o644)
         with self.assertRaisesRegex(ValueError, "private"):
             signing.credentials(self.root, self.policy, controls, "injected")

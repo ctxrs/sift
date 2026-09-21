@@ -11,8 +11,8 @@ mod rewrite;
 #[path = "../src/state.rs"]
 mod state;
 
-use retok::{Encoding, restore};
 use serde_json::value::RawValue;
+use sift::{Encoding, restore};
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::PathBuf;
@@ -87,7 +87,7 @@ fn completion_command(host: &str, command: Option<&str>) -> String {
 }
 
 #[test]
-fn literal_retok_raw_and_proxy_skip_entire_completion() {
+fn literal_sift_raw_and_proxy_skip_entire_completion() {
     for host in ["claude", "copilot"] {
         assert!(
             hooks::transform(host, &completion_command(host, None))
@@ -95,16 +95,16 @@ fn literal_retok_raw_and_proxy_skip_entire_completion() {
                 .is_some()
         );
         for command in [
-            "retok proxy cat file",
-            "retok proxy --capture -- cat file",
-            "retok run --raw cat file",
-            "retok run --capture --raw --capture -- cat file",
-            "retok run --raw --raw -- cat file",
-            "retok run --raw -- --help",
-            "command retok proxy -- cat file",
-            "'retok' 'run' '--raw' -- cat 'a|b;$(literal)'",
-            "\"/opt/a folder/retok.exe\" run --raw -- cat \"a;|b\"",
-            "'/opt/$(literal);path/retok' proxy cat 'file*?'",
+            "sift proxy cat file",
+            "sift proxy --capture -- cat file",
+            "sift run --raw cat file",
+            "sift run --capture --raw --capture -- cat file",
+            "sift run --raw --raw -- cat file",
+            "sift run --raw -- --help",
+            "command sift proxy -- cat file",
+            "'sift' 'run' '--raw' -- cat 'a|b;$(literal)'",
+            "\"/opt/a folder/sift.exe\" run --raw -- cat \"a;|b\"",
+            "'/opt/$(literal);path/sift' proxy cat 'file*?'",
         ] {
             let input = completion_command(host, Some(command));
             assert!(
@@ -121,44 +121,44 @@ fn child_flags_lookalikes_and_unknown_commands_keep_existing_compaction() {
         let expected = hooks::transform(host, &completion_command(host, None)).unwrap();
         assert!(expected.is_some());
         for command in [
-            "retok run cat file",
-            "retok run --capture -- cat file",
-            "retok run -- cat --raw",
-            "retok run cat --raw",
-            "retok run -- --raw cat",
-            "retok run --future --raw cat",
-            "retok run --rawish cat",
-            "retok run --raw --help",
-            "retok proxy -h",
-            "retok proxy",
-            "retok run --raw --",
-            "retok --raw run cat",
-            "retok raw cat",
-            "my-retok run --raw cat",
-            "retok-wrapper proxy cat",
-            "retok.exe.bak proxy cat",
-            "echo retok proxy cat",
-            "printf 'retok run --raw'",
-            "command -v retok",
-            "command -p retok proxy cat",
-            "env retok proxy cat",
-            "MODE=raw retok proxy cat",
-            "retok proxy cat; echo done",
-            "retok run --raw cat && echo done",
-            "retok proxy cat | cat",
-            "retok proxy cat\ncat file",
-            "retok proxy cat > file",
-            "retok proxy $FILE",
-            "retok proxy \"$FILE\"",
-            "retok proxy $(echo cat)",
-            "retok proxy `echo cat`",
-            "retok proxy cat *.rs",
-            "retok proxy cat ~",
-            "retok proxy 'unfinished",
+            "sift run cat file",
+            "sift run --capture -- cat file",
+            "sift run -- cat --raw",
+            "sift run cat --raw",
+            "sift run -- --raw cat",
+            "sift run --future --raw cat",
+            "sift run --rawish cat",
+            "sift run --raw --help",
+            "sift proxy -h",
+            "sift proxy",
+            "sift run --raw --",
+            "sift --raw run cat",
+            "sift raw cat",
+            "my-sift run --raw cat",
+            "sift-wrapper proxy cat",
+            "sift.exe.bak proxy cat",
+            "echo sift proxy cat",
+            "printf 'sift run --raw'",
+            "command -v sift",
+            "command -p sift proxy cat",
+            "env sift proxy cat",
+            "MODE=raw sift proxy cat",
+            "sift proxy cat; echo done",
+            "sift run --raw cat && echo done",
+            "sift proxy cat | cat",
+            "sift proxy cat\ncat file",
+            "sift proxy cat > file",
+            "sift proxy $FILE",
+            "sift proxy \"$FILE\"",
+            "sift proxy $(echo cat)",
+            "sift proxy `echo cat`",
+            "sift proxy cat *.rs",
+            "sift proxy cat ~",
+            "sift proxy 'unfinished",
             r#""re\tok" proxy cat"#,
-            "retok\rproxy cat",
-            "retok proxy cat 'bad\0arg'",
-            "retok proxy cat # comment",
+            "sift\rproxy cat",
+            "sift proxy cat 'bad\0arg'",
+            "sift proxy cat # comment",
             "",
         ] {
             let actual = hooks::transform(host, &completion_command(host, Some(command))).unwrap();
@@ -170,7 +170,7 @@ fn child_flags_lookalikes_and_unknown_commands_keep_existing_compaction() {
 #[test]
 fn raw_detection_does_not_guess_missing_malformed_or_powershell_arguments() {
     for host in ["claude", "copilot"] {
-        let input = completion_command(host, Some("retok proxy cat file"));
+        let input = completion_command(host, Some("sift proxy cat file"));
         let expected = hooks::transform(host, &completion_command(host, None)).unwrap();
         let field = if host == "copilot" {
             "toolArgs"
@@ -184,7 +184,7 @@ fn raw_detection_does_not_guess_missing_malformed_or_powershell_arguments() {
             "17",
             r#"{"command":null}"#,
             r#"{"command":17}"#,
-            r#"{"command":"retok proxy cat","command":"cat"}"#,
+            r#"{"command":"sift proxy cat","command":"cat"}"#,
         ] {
             let mut root = object(&input);
             let args = if host == "copilot" {
@@ -208,7 +208,7 @@ fn raw_detection_does_not_guess_missing_malformed_or_powershell_arguments() {
         if host == "copilot" {
             root.insert(
                 field.into(),
-                RawValue::from_string(r#"{"command":"retok proxy cat"}"#.into()).unwrap(),
+                RawValue::from_string(r#"{"command":"sift proxy cat"}"#.into()).unwrap(),
             );
             assert_eq!(
                 hooks::transform(host, &serde_json::to_string(&root).unwrap()).unwrap(),
@@ -277,7 +277,7 @@ fn cargo_output(failed: bool) -> (String, String) {
 #[test]
 fn claude_complete_bash_uses_existing_git_and_cargo_views() {
     let (cargo, cargo_view) = cargo_output(false);
-    let compactor = retok::Compactor::new().unwrap();
+    let compactor = sift::Compactor::new().unwrap();
     for (command, stdout, view, exit) in [
         ("git status", STATUS, STATUS_VIEW, 0),
         (
@@ -321,7 +321,7 @@ fn claude_complete_bash_uses_existing_git_and_cargo_views() {
 #[test]
 fn claude_semantic_gate_preserves_lossless_fallback_for_unsupported_commands() {
     let (cargo, _) = cargo_output(false);
-    let compactor = retok::Compactor::new().unwrap();
+    let compactor = sift::Compactor::new().unwrap();
     for (stdout, commands) in [
         (
             STATUS,
@@ -401,7 +401,7 @@ fn claude_equal_token_semantic_proposal_keeps_original_core_winner() {
         command_view::candidate(&["cargo".into(), "test".into()], stdout, false),
         Some(view.clone())
     );
-    let compactor = retok::Compactor::new().unwrap();
+    let compactor = sift::Compactor::new().unwrap();
     let original = compactor.compact(stdout);
     let semantic = compactor.compact(&view);
     let reference = tiktoken_rs::o200k_base().unwrap();
@@ -478,7 +478,7 @@ fn claude_semantic_gate_requires_explicit_complete_bash_metadata() {
                 assert_eq!(changed["noOutputExpected"].get(), "false");
                 assert_eq!(
                     string(&changed["stdout"]),
-                    retok::Compactor::new().unwrap().compact(stdout).text
+                    sift::Compactor::new().unwrap().compact(stdout).text
                 );
             }
         }
@@ -762,7 +762,7 @@ fn oversized_input_and_combined_streams_are_noops() {
 
 #[test]
 fn tool_input_and_transcript_are_never_executed_or_read() {
-    let path = std::env::temp_dir().join(format!("retok-hook-no-execution-{}", std::process::id()));
+    let path = std::env::temp_dir().join(format!("sift-hook-no-execution-{}", std::process::id()));
     assert!(!path.exists());
     let input = format!(
         r#"{{"hook_event_name":"PostToolUse","tool_name":"Bash","transcript_path":{},"tool_input":{{"command":{}}},"tool_response":{{"stdout":{}}}}}"#,
@@ -778,7 +778,7 @@ const MARKER: &[u8] = b"HOOK-ENTRY\n";
 
 #[test]
 fn hook_entry() {
-    let Ok(host) = std::env::var("RETOK_HOOK_TEST_HOST") else {
+    let Ok(host) = std::env::var("SIFT_HOOK_TEST_HOST") else {
         return;
     };
     std::io::stdout().write_all(MARKER).unwrap();
@@ -797,7 +797,7 @@ impl Sandbox {
     fn new() -> Self {
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
-            "retok-hook-state-{}-{}-{}",
+            "sift-hook-state-{}-{}-{}",
             std::process::id(),
             state::unix_millis(),
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
@@ -823,9 +823,9 @@ impl Sandbox {
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "hook_entry", "--nocapture"])
             .current_dir(&self.0)
-            .env("RETOK_HOOK_TEST_HOST", host)
-            .env("RETOK_CONFIG_DIR", self.0.join("config"))
-            .env("RETOK_STATE_DIR", self.0.join("state"))
+            .env("SIFT_HOOK_TEST_HOST", host)
+            .env("SIFT_CONFIG_DIR", self.0.join("config"))
+            .env("SIFT_STATE_DIR", self.0.join("state"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -854,13 +854,13 @@ impl Sandbox {
     }
 
     fn cli(&self, host: &str, input: &str, backend: Option<&str>) -> Vec<u8> {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_retok"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_sift"));
         command
             .args(["hook", host])
             .current_dir(&self.0)
             .env("HOME", &self.0)
-            .env("RETOK_CONFIG_DIR", self.0.join("config"))
-            .env("RETOK_STATE_DIR", self.0.join("state"))
+            .env("SIFT_CONFIG_DIR", self.0.join("config"))
+            .env("SIFT_STATE_DIR", self.0.join("state"))
             .env_remove("TERMINAL_ENV")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -890,8 +890,8 @@ fn cli_explicit_raw_skips_replacement_usage_and_original_storage() {
             continue;
         }
         for command in [
-            "retok proxy -- cat file",
-            "retok run --capture --raw -- cat file",
+            "sift proxy -- cat file",
+            "sift run --capture --raw -- cat file",
         ] {
             let sandbox = Sandbox::new();
             sandbox.settings(r#"{"keep_originals":true}"#);
@@ -905,9 +905,9 @@ fn cli_explicit_raw_skips_replacement_usage_and_original_storage() {
             );
         }
         for command in [
-            "retok run -- cat file",
-            "retok run -- cat --raw",
-            "retok proxy cat; echo done",
+            "sift run -- cat file",
+            "sift run -- cat --raw",
+            "sift proxy cat; echo done",
         ] {
             let sandbox = Sandbox::new();
             let input = completion_command(host, Some(command));
@@ -920,7 +920,7 @@ fn cli_explicit_raw_skips_replacement_usage_and_original_storage() {
             );
             let events = sandbox.events();
             assert_eq!(events.len(), if host == "claude" { 2 } else { 1 });
-            let compactor = retok::Compactor::new().unwrap();
+            let compactor = sift::Compactor::new().unwrap();
             let compact = compactor.compact(&log());
             for event in events {
                 assert_eq!(event.input_tokens, Some(compact.input_tokens as u64));
@@ -934,7 +934,7 @@ fn cli_explicit_raw_skips_replacement_usage_and_original_storage() {
 
 #[test]
 fn hermes_raw_detection_requires_known_local_posix_backend() {
-    let input = completion_command("hermes", Some("retok proxy cat file"));
+    let input = completion_command("hermes", Some("sift proxy cat file"));
     let expected = hooks::transform("hermes", &completion_command("hermes", None))
         .unwrap()
         .unwrap();
@@ -1053,7 +1053,7 @@ fn usage_records_actual_field_counts_without_raw_text() {
     assert_ne!(sandbox.run("claude", input.as_bytes()), b"{}\n");
     let events = sandbox.events();
     assert_eq!(events.len(), 2);
-    let compactor = retok::Compactor::new().unwrap();
+    let compactor = sift::Compactor::new().unwrap();
     for (event, (label, text)) in events
         .iter()
         .zip([("Bash.stdout", stdout), ("Bash.stderr", stderr)])
@@ -1115,12 +1115,12 @@ fn cli_claude_native_shaped_git_and_cargo_omit_exit_metadata_and_count_actual_em
                 json_string(stderr)
             );
             let input = claude_command(&response, command);
-            let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+            let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
                 .args(["hook", "claude"])
                 .current_dir(&sandbox.0)
                 .env("HOME", &sandbox.0)
-                .env("RETOK_CONFIG_DIR", sandbox.0.join("config"))
-                .env("RETOK_STATE_DIR", sandbox.0.join("state"))
+                .env("SIFT_CONFIG_DIR", sandbox.0.join("config"))
+                .env("SIFT_STATE_DIR", sandbox.0.join("state"))
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -1137,7 +1137,7 @@ fn cli_claude_native_shaped_git_and_cargo_omit_exit_metadata_and_count_actual_em
             assert!(output.stderr.is_empty());
             assert_eq!(output.stdout.iter().filter(|&&b| b == b'\n').count(), 1);
             let changed = claude_output(std::str::from_utf8(&output.stdout).unwrap());
-            let compactor = retok::Compactor::new().unwrap();
+            let compactor = sift::Compactor::new().unwrap();
             assert_eq!(
                 string(&changed["stdout"]),
                 compactor.compact(expected_view).text
@@ -1193,7 +1193,7 @@ fn claude_unterminated_utf8_views_preserve_last_character_and_opaque_metadata() 
     ] {
         let stdout = format!("{raw}retained diagnostic: café 字 🦀");
         let expected = format!("{view}retained diagnostic: café 字 🦀");
-        let compactor = retok::Compactor::new().unwrap();
+        let compactor = sift::Compactor::new().unwrap();
         assert!(
             compactor.compact(&expected).output_tokens < compactor.compact(&stdout).output_tokens
         );
@@ -1227,7 +1227,7 @@ fn claude_unterminated_incomplete_and_custom_output_keeps_lossless_path() {
     let incomplete_cargo = cargo.split_once("test result:").unwrap().0;
     let inconsistent_cargo = cargo.replace("8 passed", "7 passed");
     let controlled = format!("\x1b[31m{STATUS}");
-    let compactor = retok::Compactor::new().unwrap();
+    let compactor = sift::Compactor::new().unwrap();
     for (command, text) in [
         ("git status", incomplete_git),
         ("cargo test", incomplete_cargo),

@@ -14,10 +14,7 @@ fn complete_filter_is_reversible_and_reports_delivered_counts() {
     let measurement =
         filter::filter(Cursor::new(input.clone().into_bytes()), &mut output, true).unwrap();
     let result = measurement.compacted.unwrap();
-    assert_eq!(
-        retok::restore(result.encoding, &result.text).unwrap(),
-        input
-    );
+    assert_eq!(sift::restore(result.encoding, &result.text).unwrap(), input);
     assert_eq!(output, result.text.as_bytes());
     assert_eq!(measurement.input_bytes, input.len() as u64);
     assert_eq!(measurement.output_bytes, output.len() as u64);

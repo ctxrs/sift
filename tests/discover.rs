@@ -10,7 +10,7 @@ struct Sandbox(PathBuf);
 impl Sandbox {
     fn new() -> Self {
         let dir = std::env::temp_dir().join(format!(
-            "retok-discover-{}-{}",
+            "sift-discover-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -29,12 +29,12 @@ impl Sandbox {
         self.cli("discover", args, stdin)
     }
     fn cli(&self, subcommand: &str, args: &[&str], stdin: &[u8]) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
             .arg(subcommand)
             .args(args)
             .current_dir(&self.0)
-            .env("RETOK_CONFIG_DIR", self.0.join("config"))
-            .env("RETOK_STATE_DIR", self.0.join("state"))
+            .env("SIFT_CONFIG_DIR", self.0.join("config"))
+            .env("SIFT_STATE_DIR", self.0.join("state"))
             .env("HOME", &self.0)
             .env("USERPROFILE", &self.0)
             .stdin(Stdio::piped())
@@ -100,11 +100,11 @@ fn claude_pairs_by_id_counts_only_captured_outputs_and_omits_secrets() {
         claude_call("private-session-id", "cargo build --token=SYNTHETIC_SECRET"),
         claude_call("missing", "git status"),
         claude_result("private-session-id", json!(repeat()), false),
-        claude_call("retok", "'/synthetic/bin/retok' run cargo build"),
-        claude_result("retok", json!(repeat()), false),
-        claude_call("not-retok", "echo retok --token=SYNTHETIC_SECRET"),
-        claude_result("not-retok", json!("ok"), false),
-        claude_call("shell", "echo retok; touch should-not-exist"),
+        claude_call("sift", "'/synthetic/bin/sift' run cargo build"),
+        claude_result("sift", json!(repeat()), false),
+        claude_call("not-sift", "echo sift --token=SYNTHETIC_SECRET"),
+        claude_result("not-sift", json!("ok"), false),
+        claude_call("shell", "echo sift; touch should-not-exist"),
         claude_result("shell", json!("ok"), false),
         claude_result("orphan", json!(repeat()), false),
     ];
@@ -113,14 +113,14 @@ fn claude_pairs_by_id_counts_only_captured_outputs_and_omits_secrets() {
     let report = s.report(&["--history", "session.jsonl", "--json"]);
     assert_eq!(report["schema_version"], 1);
     assert_eq!(report["rows"].as_array().unwrap().len(), 5);
-    assert_eq!(report["retok_calls"], 1);
+    assert_eq!(report["sift_calls"], 1);
     assert_eq!(report["missed_opportunities"], 1);
     let rows = &report["rows"];
     assert_eq!(rows[0]["command"], "cargo build");
     assert!(rows[0]["potential_saved_tokens"].as_u64().unwrap() > 0);
     assert_eq!(rows[1]["output_status"], "missing");
     assert!(rows[1]["potential_saved_tokens"].is_null());
-    assert_eq!(rows[2]["classification"], "retok_usage");
+    assert_eq!(rows[2]["classification"], "sift_usage");
     assert!(rows[2]["potential_saved_tokens"].is_null());
     assert_eq!(rows[3]["command"], "echo");
     assert_eq!(rows[4]["command"], "unknown");
@@ -148,7 +148,7 @@ fn codex_canonical_results_ignore_mirrored_events_and_handle_envelopes() {
         json!({"type":"event_msg","payload":{"type":"exec_command_end","call_id":"one","aggregated_output":text,"exit_code":0}}),
         codex_result("one", json!(format!("Chunk ID: synthetic\nWall time: 1 seconds\nProcess exited with code 0\nFinal output:\n{text}"))),
         codex_result("one", json!("duplicate ignored")),
-        codex_call("two", json!(["bash", "-lc", "retok run git status"])),
+        codex_call("two", json!(["bash", "-lc", "sift run git status"])),
         codex_result("two", json!({"output":"ok","metadata":{"exit_code":0}}).to_string().into()),
         codex_call("three", json!("git diff")),
         codex_result("three", json!([{"type":"input_text","text":text}])),
@@ -163,7 +163,7 @@ fn codex_canonical_results_ignore_mirrored_events_and_handle_envelopes() {
         "/synthetic/project",
     ]);
     assert_eq!(report["rows"].as_array().unwrap().len(), 3);
-    assert_eq!(report["retok_calls"], 1);
+    assert_eq!(report["sift_calls"], 1);
     assert_eq!(report["missed_opportunities"], 2);
     assert_eq!(report["rows"][0]["captured_bytes"], text.len());
     assert_eq!(
@@ -635,7 +635,7 @@ fn non_utf8_filenames_keep_lossless_native_bytes_for_source_lookup() {
 }
 
 #[test]
-fn actual_rewrite_output_and_command_prefixes_count_as_retok_without_execution() {
+fn actual_rewrite_output_and_command_prefixes_count_as_sift_without_execution() {
     let s = Sandbox::new();
     let originals = [
         "cargo build",
@@ -643,7 +643,7 @@ fn actual_rewrite_output_and_command_prefixes_count_as_retok_without_execution()
         "  cd 'synthetic directory' && git status; cargo test",
         "git status && cargo build || git diff",
         "git status;\ncargo test",
-        "rg 'retok; command true || cargo build' 'literal file'",
+        "rg 'sift; command true || cargo build' 'literal file'",
         r#"rg '$literal' 'quote'\''argument' file"#,
         "git status path\\ ",
         "git status \\\n",
@@ -678,9 +678,9 @@ fn actual_rewrite_output_and_command_prefixes_count_as_retok_without_execution()
         codex_result("shell-argv", json!(repeat())),
     ]);
     for (n, direct) in [
-        "retok run --capture -- cargo build",
-        "command retok run --capture -- cargo build",
-        "command '/synthetic/O'\"'\"'Brien tools/retok' run -- cargo build",
+        "sift run --capture -- cargo build",
+        "command sift run --capture -- cargo build",
+        "command '/synthetic/O'\"'\"'Brien tools/sift' run -- cargo build",
     ]
     .iter()
     .enumerate()
@@ -692,12 +692,12 @@ fn actual_rewrite_output_and_command_prefixes_count_as_retok_without_execution()
     s.write("session.jsonl", &records);
     let before = fs::read(s.0.join("session.jsonl")).unwrap();
     let report = s.report(&["--history", "session.jsonl", "--json"]);
-    assert_eq!(report["retok_calls"], originals.len() + 6);
+    assert_eq!(report["sift_calls"], originals.len() + 6);
     assert_eq!(report["missed_opportunities"], 0);
     assert_eq!(report["potential_saved_tokens"], 0);
     for row in report["rows"].as_array().unwrap() {
-        assert_eq!(row["command"], "retok run");
-        assert_eq!(row["classification"], "retok_usage");
+        assert_eq!(row["command"], "sift run");
+        assert_eq!(row["classification"], "sift_usage");
         assert!(row["potential_saved_tokens"].is_null());
     }
     assert_eq!(fs::read(s.0.join("session.jsonl")).unwrap(), before);
@@ -706,7 +706,7 @@ fn actual_rewrite_output_and_command_prefixes_count_as_retok_without_execution()
 }
 
 #[test]
-fn wrapper_mentions_changed_guards_and_unsupported_syntax_are_not_retok_usage() {
+fn wrapper_mentions_changed_guards_and_unsupported_syntax_are_not_sift_usage() {
     let s = Sandbox::new();
     let generated = s.rewritten("cargo build");
     let mismatched = generated.replacen("|| cargo build;", "|| git status;", 1);
@@ -718,18 +718,18 @@ fn wrapper_mentions_changed_guards_and_unsupported_syntax_are_not_retok_usage() 
         mismatched.as_str(),
         changed_guard.as_str(),
         no_space.as_str(),
-        "echo retok",
-        "command echo retok",
-        "command -v retok",
-        "command -V retok",
-        "false && command retok run -- cargo build",
-        "echo retok; touch should-not-exist",
-        "command true || cargo build; echo 'command retok run --capture -- cargo build'",
-        "command true || cargo build; command '/synthetic/retok' run --capture -- cargo build | cat",
-        "command true || cargo build; command '/synthetic/retok' run --capture -- cargo build > output",
-        "command true || cargo build; command '/synthetic/retok' run --capture -- $(touch should-not-exist)",
+        "echo sift",
+        "command echo sift",
+        "command -v sift",
+        "command -V sift",
+        "false && command sift run -- cargo build",
+        "echo sift; touch should-not-exist",
+        "command true || cargo build; echo 'command sift run --capture -- cargo build'",
+        "command true || cargo build; command '/synthetic/sift' run --capture -- cargo build | cat",
+        "command true || cargo build; command '/synthetic/sift' run --capture -- cargo build > output",
+        "command true || cargo build; command '/synthetic/sift' run --capture -- $(touch should-not-exist)",
         "command true || cargo build;é", // No generated delimiter; must not index mid-codepoint.
-        "command '/synthetic/retok-other' run -- cargo build",
+        "command '/synthetic/sift-other' run -- cargo build",
     ];
     let mut records = Vec::new();
     for (n, command) in cases.iter().enumerate() {
@@ -739,7 +739,7 @@ fn wrapper_mentions_changed_guards_and_unsupported_syntax_are_not_retok_usage() 
     }
     s.write("session.jsonl", &records);
     let report = s.report(&["--history", "session.jsonl", "--json"]);
-    assert_eq!(report["retok_calls"], 0);
+    assert_eq!(report["sift_calls"], 0);
     assert_eq!(report["missed_opportunities"], cases.len());
     assert!(!s.0.join("should-not-exist").exists());
     assert!(!s.0.join("output").exists());

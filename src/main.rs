@@ -3,8 +3,8 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 
 use anyhow::{Context, Result, bail, ensure};
-use retok::{CompactResult, Compactor, Encoding};
 use serde::{Deserialize, Serialize};
+use sift::{CompactResult, Compactor, Encoding};
 
 mod command_view;
 mod discover;
@@ -18,30 +18,30 @@ mod state;
 mod usage;
 mod views;
 
-const HELP: &str = "Retok — token-counted tool output compaction
+const HELP: &str = "Sift — token-counted tool output compaction
 
 Usage:
-  retok init [--agent HOST] [--replace-rtk] [--project] [--dry-run]
-  retok init --uninstall [--agent HOST]
-  retok doctor [--agent HOST]
-  retok hook HOST
-  retok rewrite [--json] [--shell posix|powershell] -- 'COMMAND'
-  retok run [--raw|--capture] -- COMMAND [ARG...]
-  retok COMMAND [ARG...]
-  retok proxy COMMAND [ARG...]
-  retok gain [--json] [--history] [--daily] [--graph]
-  retok ccusage --import FILE [--json|--csv]
-  retok config [--create]
-  retok recall --list | ID [--stderr]
-  retok discover [--json] [FILE ...]
-  retok discover --history PATH [--suggest] [--json]
-  retok read [FILE|-] [--from N] [--lines N] [--grep TEXT]
-  retok json [FILE|-] [--pointer POINTER] [--field KEY] [--limit N]
-  retok summary|err|test [OPTIONS] -- COMMAND [ARG...]
-  retok filter [--capture]
-  retok compact [FILE|-]
-  retok compact --protocol=json-v1
-  retok restore --encoding ENCODING [FILE|-]
+  sift init [--agent HOST] [--replace-rtk] [--project] [--dry-run]
+  sift init --uninstall [--agent HOST]
+  sift doctor [--agent HOST]
+  sift hook HOST
+  sift rewrite [--json] [--shell posix|powershell] -- 'COMMAND'
+  sift run [--raw|--capture] -- COMMAND [ARG...]
+  sift COMMAND [ARG...]
+  sift proxy COMMAND [ARG...]
+  sift gain [--json] [--history] [--daily] [--graph]
+  sift ccusage --import FILE [--json|--csv]
+  sift config [--create]
+  sift recall --list | ID [--stderr]
+  sift discover [--json] [FILE ...]
+  sift discover --history PATH [--suggest] [--json]
+  sift read [FILE|-] [--from N] [--lines N] [--grep TEXT]
+  sift json [FILE|-] [--pointer POINTER] [--field KEY] [--limit N]
+  sift summary|err|test [OPTIONS] -- COMMAND [ARG...]
+  sift filter [--capture]
+  sift compact [FILE|-]
+  sift compact --protocol=json-v1
+  sift restore --encoding ENCODING [FILE|-]
 
 Encodings: raw, json-v1, json-rows-v1, json-min-v1, json-columns-v1,
            text-runs-v1, text-prefixes-v1, text-refs-v1, text-lines-v1,
@@ -299,7 +299,7 @@ fn parse_encoding(value: &str) -> Result<Encoding> {
         "text-refs-v1" => Ok(Encoding::TextRefsV1),
         "text-lines-v1" => Ok(Encoding::TextLinesV1),
         "text-symbols-v1" => Ok(Encoding::TextSymbolsV1),
-        _ => bail!("unsupported encoding; use 'retok --help' for supported encodings"),
+        _ => bail!("unsupported encoding; use 'sift --help' for supported encodings"),
     }
 }
 
@@ -309,7 +309,7 @@ fn execute(args: &[OsString], raw: bool, capture: bool, view: Option<&views::Vie
         Err(error) => {
             let _ = writeln!(
                 io::stderr(),
-                "retok: {error:#}; passing command output through"
+                "sift: {error:#}; passing command output through"
             );
             state::Settings {
                 enabled: false,
@@ -442,14 +442,14 @@ fn execute(args: &[OsString], raw: bool, capture: bool, view: Option<&views::Vie
 fn run() -> Result<i32> {
     let mut args = std::env::args_os().skip(1).collect::<Vec<_>>().into_iter();
     let Some(command) = args.next() else {
-        bail!("missing command; use 'retok --help'");
+        bail!("missing command; use 'sift --help'");
     };
     if command == "--help" || command == "-h" {
         io::stdout().write_all(HELP.as_bytes())?;
         return Ok(0);
     }
     if command == "--version" {
-        writeln!(io::stdout(), "Retok {}", env!("CARGO_PKG_VERSION"))?;
+        writeln!(io::stdout(), "Sift {}", env!("CARGO_PKG_VERSION"))?;
         return Ok(0);
     }
     if command == "init" || command == "doctor" {
@@ -568,7 +568,7 @@ fn run() -> Result<i32> {
         }
         ensure!(
             !command.to_string_lossy().starts_with('-'),
-            "unknown option; use 'retok --help'"
+            "unknown option; use 'sift --help'"
         );
         return execute(
             &std::iter::once(command).chain(args).collect::<Vec<_>>(),
@@ -642,7 +642,7 @@ fn run() -> Result<i32> {
         } else {
             ensure!(
                 positional || !value.is_some_and(|v| v.starts_with('-') && v != "-"),
-                "unknown option; use 'retok --help'"
+                "unknown option; use 'sift --help'"
             );
             ensure!(file.is_none(), "expected at most one input file");
             file = Some(arg);
@@ -695,7 +695,7 @@ fn run() -> Result<i32> {
                 output.write_all(Compactor::new()?.compact(text).text.as_bytes())?
             }
             (Some(encoding), Ok(text)) => {
-                output.write_all(retok::restore(encoding, text)?.as_bytes())?
+                output.write_all(sift::restore(encoding, text)?.as_bytes())?
             }
             (Some(_), Err(_)) => {
                 bail!("encoded input must be UTF-8; raw mode accepts arbitrary bytes")
@@ -721,7 +721,7 @@ fn main() {
         Ok(status) => status,
         Err(error) if is_broken_pipe(&error) => 0,
         Err(error) => {
-            let _ = writeln!(io::stderr().lock(), "retok: {error:#}");
+            let _ = writeln!(io::stderr().lock(), "sift: {error:#}");
             1
         }
     };

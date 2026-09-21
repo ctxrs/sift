@@ -9,8 +9,8 @@ if (process.platform === "win32") {
   console.log("OpenClaw POSIX executable fixtures skipped on Windows (rewrites disabled).");
   process.exit(0);
 }
-const root = await mkdtemp(join(tmpdir(), "retok openclaw "));
-const executable = join(root, "retok ' 🦄");
+const root = await mkdtemp(join(tmpdir(), "sift openclaw "));
+const executable = join(root, "sift ' 🦄");
 const receipt = join(root, "argv.json");
 const savedShell = process.env.SHELL;
 const adapter = await readFile(new URL("../integrations/openclaw/index.mjs", import.meta.url), "utf8");
@@ -23,7 +23,7 @@ async function binary(body = "console.log(JSON.stringify({changed:true,command:'
 }
 async function handler(options = {}) {
   const file = join(root, `adapter-${sequence++}.mjs`);
-  await writeFile(file, adapter.replaceAll("__RETOK_EXECUTABLE_JSON__", JSON.stringify(executable)));
+  await writeFile(file, adapter.replaceAll("__SIFT_EXECUTABLE_JSON__", JSON.stringify(executable)));
   const { default: register } = await import(pathToFileURL(file));
   const hooks = [];
   register({ ...options, on: (...args) => hooks.push(args) });

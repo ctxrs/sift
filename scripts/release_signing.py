@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retok release signing (Python 3.11+, official signer: Linux x86_64).
+"""Sift release signing (Python 3.11+, official signer: Linux x86_64).
 
   release_signing.py sign UNSIGNED NEW_SIGNED NEW_EVIDENCE --source-commit FULL_SHA \
       --rcodesign RCODESIGN_TAR_GZ --jsign-jar JSIGN_JAR
@@ -10,8 +10,8 @@
 executable. Both tools are hash/version checked. No automatic tool downloads.
 OpenSSL 3, Java, and (by default) an authenticated Infisical CLI are prerequisites.
 --secret-source injected reads Apple credentials from the exact contract env
-names, and Azure credentials from RETOK_WINDOWS_SIGNING_TENANT_ID_FILE,
-RETOK_WINDOWS_SIGNING_CLIENT_ID_FILE, RETOK_WINDOWS_SIGNING_CLIENT_SECRET_FILE.
+names, and Azure credentials from SIFT_WINDOWS_SIGNING_TENANT_ID_FILE,
+SIFT_WINDOWS_SIGNING_CLIENT_ID_FILE, SIFT_WINDOWS_SIGNING_CLIENT_SECRET_FILE.
 These must reference private regular files. Never put secrets on the CLI.
 
 Sign accepts exactly the five binaries, before metadata generation. It publishes
@@ -55,8 +55,8 @@ import zipfile
 
 
 CONTRACT_PATH = Path(__file__).resolve().parent.parent / "contracts/release-signing-v1.json"
-SIGNED = ("retok-macos-x64", "retok-macos-arm64", "retok-windows-x64.exe")
-LINUX = ("retok-linux-x64", "retok-linux-aarch64")
+SIGNED = ("sift-macos-x64", "sift-macos-arm64", "sift-windows-x64.exe")
+LINUX = ("sift-linux-x64", "sift-linux-aarch64")
 COMMIT = r"(?:[0-9a-f]{40}|[0-9a-f]{64})"
 
 
@@ -181,7 +181,7 @@ def verify_release_evidence(asset_dir: Path, evidence_dir: Path) -> None:
             metadata = read_json(sidecar)
             try:
                 properties = metadata["metadata"]["component"]["properties"]
-                values = [p["value"] for p in properties if p["name"] == "retok:source-commit"]
+                values = [p["value"] for p in properties if p["name"] == "sift:source-commit"]
             except (TypeError, KeyError):
                 raise ValueError("invalid SBOM source commit") from None
             require(values == [next(iter(commits))], "SBOM and signing source commit disagree")
@@ -303,7 +303,7 @@ def credentials(root, policy, controls, source):
             if key in policy["apple"]["credential_keys"]:
                 value = controls.get(key, "")
             else:
-                variable = key.replace("AZURE_ARTIFACT_SIGNING_", "RETOK_WINDOWS_SIGNING_") + "_FILE"
+                variable = key.replace("AZURE_ARTIFACT_SIGNING_", "SIFT_WINDOWS_SIGNING_") + "_FILE"
                 require(controls.get(variable), "missing credential file: " + variable)
                 path = safe_path(controls[variable])
                 regular(path)
@@ -469,10 +469,10 @@ def sign_apple(asset, root, rcodesign, prepared):
          issuer, key_id, private], root)
     regular(api)
     api.chmod(0o600)
-    run([rcodesign, "sign", "--for-notarization", "--binary-identifier", "retok",
+    run([rcodesign, "sign", "--for-notarization", "--binary-identifier", "sift",
          "--pem-file", cert, "--pem-file", key, asset], root, timeout=1200)
     details = b"\n".join(run([rcodesign, "print-signature-info", asset], root)).decode("utf-8")
-    require(team in details and "retok" in details, "rcodesign signature identity missing")
+    require(team in details and "sift" in details, "rcodesign signature identity missing")
     digest = sha256(asset)
     archive = root / (asset.name + ".zip")
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zipped:
@@ -554,8 +554,8 @@ def sign_directory(source: Path, destination: Path, evidence_dir: Path, source_c
     policy = contract()
     old_umask = os.umask(0o077)
     try:
-        with tempfile.TemporaryDirectory(prefix=".retok-sign-", dir=destination.parent) as temp, \
-                tempfile.TemporaryDirectory(prefix=".retok-evidence-", dir=evidence_dir.parent) as evtemp:
+        with tempfile.TemporaryDirectory(prefix=".sift-sign-", dir=destination.parent) as temp, \
+                tempfile.TemporaryDirectory(prefix=".sift-evidence-", dir=evidence_dir.parent) as evtemp:
             root = Path(temp)
             assets, evidence = root / "assets", Path(evtemp) / "evidence"
             assets.mkdir(mode=0o700)
@@ -610,7 +610,7 @@ def record_native(evidence_dir: Path, artifact: Path, result_json: Path) -> None
     require(sha256(artifact) == document["sha256"], "artifact changed during native import")
     require(canonical(read_json(evidence_path)) == canonical(document), "evidence changed during native import")
     document["native_verification"] = result
-    with tempfile.TemporaryDirectory(prefix=".retok-native-", dir=evidence_dir.parent) as update:
+    with tempfile.TemporaryDirectory(prefix=".sift-native-", dir=evidence_dir.parent) as update:
         write_json(Path(update) / "evidence.json", document).replace(evidence_path)
 
 

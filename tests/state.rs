@@ -12,7 +12,7 @@ struct Temp(PathBuf);
 impl Temp {
     fn new() -> Self {
         let dir = std::env::temp_dir().join(format!(
-            "retok-state-test-{}-{}-{}",
+            "sift-state-test-{}-{}-{}",
             std::process::id(),
             state::unix_millis(),
             NEXT.fetch_add(1, Ordering::Relaxed)
@@ -364,7 +364,7 @@ fn text_history_is_readable_and_help_does_not_create_state() {
     assert!(
         String::from_utf8(output)
             .unwrap()
-            .contains("Usage: retok gain")
+            .contains("Usage: sift gain")
     );
     assert!(!dir.exists());
     state::record_at(&dir, &Settings::default(), event(), None).unwrap();
@@ -485,10 +485,10 @@ fn paused_recall_releases_lock_and_command_can_complete() {
         .unwrap();
     let available = fs2::FileExt::try_lock_exclusive(&file).is_ok();
     drop(file);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
         .args(["run", "--", "/bin/sh", "-c", "exit 0"])
-        .env("RETOK_STATE_DIR", temp.path())
-        .env("RETOK_CONFIG_DIR", temp.path().join("config"))
+        .env("SIFT_STATE_DIR", temp.path())
+        .env("SIFT_CONFIG_DIR", temp.path().join("config"))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -909,11 +909,11 @@ fn runner_records_project_and_cli_queries_are_isolated_and_private() {
     fs::write(project.join(".git"), "gitdir: synthetic\n").unwrap();
     let state = temp.path().join("state");
     let config = temp.path().join("config");
-    let mut run = Command::new(env!("CARGO_BIN_EXE_retok"));
+    let mut run = Command::new(env!("CARGO_BIN_EXE_sift"));
     let result = run
         .current_dir(project.join("nested"))
-        .env("RETOK_STATE_DIR", &state)
-        .env("RETOK_CONFIG_DIR", &config)
+        .env("SIFT_STATE_DIR", &state)
+        .env("SIFT_CONFIG_DIR", &config)
         .args(["run", "--", "/bin/sh", "-c", "printf 'synthetic\\n'"])
         .output()
         .unwrap();
@@ -922,10 +922,10 @@ fn runner_records_project_and_cli_queries_are_isolated_and_private() {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    let result = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let result = Command::new(env!("CARGO_BIN_EXE_sift"))
         .current_dir(&project)
-        .env("RETOK_STATE_DIR", &state)
-        .env("RETOK_CONFIG_DIR", &config)
+        .env("SIFT_STATE_DIR", &state)
+        .env("SIFT_CONFIG_DIR", &config)
         .args(["gain", "--project", "--json", "--history"])
         .output()
         .unwrap();

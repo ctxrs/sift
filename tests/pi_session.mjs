@@ -19,7 +19,7 @@ function commonJs(source) {
     ['import { spawn } from "node:child_process";', 'const { spawn } = require("node:child_process");'],
     ['import { statSync } from "node:fs";', 'const { statSync } = require("node:fs");'],
     ['import { StringDecoder } from "node:string_decoder";', 'const { StringDecoder } = require("node:string_decoder");'],
-    ['export default function retok(pi) {', 'module.exports = function retok(pi) {'],
+    ['export default function sift(pi) {', 'module.exports = function sift(pi) {'],
   ]) {
     assert.equal(source.split(from).length - 1, 1);
     source = source.replace(from, to);
@@ -28,7 +28,7 @@ function commonJs(source) {
 }
 
 async function fixture(mode, body, moduleType = "module") {
-  const dir = await mkdtemp(join(tmpdir(), "retok-pi-adapter-"));
+  const dir = await mkdtemp(join(tmpdir(), "sift-pi-adapter-"));
   const previousCwd = process.cwd();
   const executable = process.execPath, program = join(dir, "compact"), log = join(dir, "calls.jsonl");
   const handlers = {};
@@ -58,8 +58,8 @@ lines.on("line", line => {
 });
 `);
     process.chdir(dir);
-    const source = runtime.replace("__RETOK_EXECUTABLE__", JSON.stringify(executable))
-      .replace("__RETOK_SOURCE__", '"pi"') + adapter;
+    const source = runtime.replace("__SIFT_EXECUTABLE__", JSON.stringify(executable))
+      .replace("__SIFT_SOURCE__", '"pi"') + adapter;
     let plugin;
     if (moduleType === "commonjs") {
       const installed = join(dir, "index.cjs");
@@ -119,11 +119,11 @@ test("command metadata travels in each envelope while event metadata stays opaqu
 test("contextual busy fallback is original; legacy busy and PowerShell remain one-shot", isolated, async () => {
   await fixture("delay", async (handlers, calls) => {
     const first = handlers.tool_result(event("cat fixture"));
-    assert.equal(await handlers.tool_result(event("retok proxy -- cat fixture")), undefined);
+    assert.equal(await handlers.tool_result(event("sift proxy -- cat fixture")), undefined);
     const legacy = await handlers.tool_result(event(undefined));
     assert.equal(legacy.content[0].text, "compact 🦀");
     await first;
-    const powershell = event("retok proxy -- type fixture"); powershell.toolName = "powershell";
+    const powershell = event("sift proxy -- type fixture"); powershell.toolName = "powershell";
     assert.equal((await handlers.tool_result(powershell)).content[0].text, "compact 🦀");
     const rows = await calls();
     assert.equal(rows.filter(row => row.kind === "spawn").length, 3);
@@ -136,9 +136,9 @@ test("contextual busy fallback is original; legacy busy and PowerShell remain on
 for (const mode of ["old", "wrong-id", "hang", "bad-semantic"]) {
   test(`contextual ${mode} failure never retries through command-blind compaction`, isolated, async () => {
     await fixture(mode, async (handlers, calls) => {
-      assert.equal(await handlers.tool_result(event("retok run --raw -- cat fixture")), undefined);
+      assert.equal(await handlers.tool_result(event("sift run --raw -- cat fixture")), undefined);
       if (mode === "old") {
-        assert.equal(await handlers.tool_result(event("retok proxy -- cat fixture")), undefined);
+        assert.equal(await handlers.tool_result(event("sift proxy -- cat fixture")), undefined);
       }
       assert((await calls()).filter(row => row.kind === "spawn").every(row => row.session));
       assert.equal((await calls()).filter(row => row.kind === "spawn").length, 1);

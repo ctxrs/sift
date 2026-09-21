@@ -1,7 +1,7 @@
 //! Replay saved output or inspect explicitly selected history. Never execute its contents.
 use anyhow::{Context, Result, bail, ensure};
-use retok::Compactor;
 use serde::Serialize;
+use sift::Compactor;
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
 
@@ -12,7 +12,7 @@ struct Opportunity {
     input_tokens: Option<usize>,
     output_tokens: Option<usize>,
     saved_tokens: Option<usize>,
-    encoding: Option<retok::Encoding>,
+    encoding: Option<sift::Encoding>,
 }
 
 fn replay(args: &[OsString]) -> Result<()> {
@@ -26,7 +26,7 @@ fn replay(args: &[OsString]) -> Result<()> {
             json = true;
         } else if !positional && (arg == "--help" || arg == "-h") {
             println!(
-                "Usage: retok discover [--json] [--] [FILE ...]\nReplay saved output files (stdin when omitted). Never executes their contents.\nReports potential ordinary o200k_base savings, not actual agent usage.\nHistory: retok discover --history PATH [--json] [--since YYYY-MM-DD] [--project PATH] [--suggest]\nOnly the selected file/directory is inspected; bounded, read-only, no symlink traversal.\nHistory reports include relative file/record locators, but omit arguments and transcripts. --suggest only reports observed patterns."
+                "Usage: sift discover [--json] [--] [FILE ...]\nReplay saved output files (stdin when omitted). Never executes their contents.\nReports potential ordinary o200k_base savings, not actual agent usage.\nHistory: sift discover --history PATH [--json] [--since YYYY-MM-DD] [--project PATH] [--suggest]\nOnly the selected file/directory is inspected; bounded, read-only, no symlink traversal.\nHistory reports include relative file/record locators, but omit arguments and transcripts. --suggest only reports observed patterns."
             );
             return Ok(());
         } else if !positional && arg.to_string_lossy().starts_with('-') && arg != "-" {
@@ -213,11 +213,11 @@ pub fn run(args: &[OsString]) -> Result<()> {
         }
         writeln!(
             out,
-            "{} files; {} records; {} missed opportunities; {} recognized Retok calls; {} malformed records; {} skipped files; {} excluded rows; scan limited: {}",
+            "{} files; {} records; {} missed opportunities; {} recognized Sift calls; {} malformed records; {} skipped files; {} excluded rows; scan limited: {}",
             report.files_scanned,
             report.records_scanned,
             report.missed_opportunities,
-            report.retok_calls,
+            report.sift_calls,
             report.malformed_records,
             report.skipped_files,
             report.excluded_rows,
@@ -238,7 +238,7 @@ struct HistoryReport {
     skipped_files: usize,
     excluded_rows: usize,
     scan_limited: bool,
-    retok_calls: usize,
+    sift_calls: usize,
     missed_opportunities: usize,
     potential_saved_tokens: usize,
     limits: BTreeMap<&'static str, usize>,
@@ -525,14 +525,14 @@ fn inspect(
                     });
             }
             previous = Some(call);
-            let (label, retok) = command_label(&call.command);
+            let (label, sift) = command_label(&call.command);
             let mut row = HistoryRow {
                 id: format!("{source}:{}", n + 1),
                 source_id: source.clone(),
                 location: call.location.clone(),
                 provider: call.provider,
                 command: label,
-                classification: if retok { "retok_usage" } else { "unmeasured" },
+                classification: if sift { "sift_usage" } else { "unmeasured" },
                 output_status: if call.has_result {
                     "unsupported"
                 } else {
@@ -543,12 +543,12 @@ fn inspect(
                 output_tokens: None,
                 potential_saved_tokens: None,
             };
-            if retok {
-                report.retok_calls += 1;
+            if sift {
+                report.sift_calls += 1;
             }
             if let Some(text) = &call.output {
                 row.output_status = "captured";
-                if retok {
+                if sift {
                     // Observed wrapper invocation is not proof of original bytes or savings.
                 } else if text.len() > MAX_OUTPUT_BYTES
                     || measured_bytes + text.len() > MAX_MEASURE_BYTES
@@ -892,7 +892,7 @@ fn command_words(value: &Value) -> Vec<String> {
 }
 
 // Reuse the rewriter's bounded literal grammar. A compound command counts as
-// Retok use only if removing its wrappers and regenerating it gives exactly the
+// Sift use only if removing its wrappers and regenerating it gives exactly the
 // original text. This rejects quoted mentions, altered guards and extra syntax.
 fn shell_words(input: &str) -> Vec<String> {
     use crate::rewrite::{self, Shell};
@@ -945,8 +945,7 @@ fn shell_words(input: &str) -> Vec<String> {
             continue;
         }
         if start < end {
-            let candidate =
-                word(start + 1).filter(|w| matches!(basename(w), "retok" | "retok.exe"));
+            let candidate = word(start + 1).filter(|w| matches!(basename(w), "sift" | "sift.exe"));
             if word(start) == Some("command")
                 && candidate.is_some()
                 && word(start + 2) == Some("run")
@@ -997,7 +996,7 @@ fn basename(word: &str) -> &str {
 }
 
 fn command_label(words: &[String]) -> (String, bool) {
-    // `command -v/-V` queries a name; it does not invoke Retok.
+    // `command -v/-V` queries a name; it does not invoke Sift.
     let words = if words.first().is_some_and(|word| word == "command")
         && words.get(1).is_some_and(|word| !word.starts_with('-'))
     {
@@ -1009,18 +1008,18 @@ fn command_label(words: &[String]) -> (String, bool) {
         return ("unknown".into(), false);
     };
     let first = basename(first);
-    let retok = matches!(first, "retok" | "retok.exe");
+    let sift = matches!(first, "sift" | "sift.exe");
     let safe = match first {
         "git" | "cargo" | "npm" | "pnpm" | "yarn" | "python" | "python3" | "node" | "go"
         | "rustc" | "rg" | "grep" | "ls" | "cat" | "find" | "make" | "pytest" | "docker"
         | "kubectl" | "echo" | "printf" | "sh" | "bash" | "zsh" => first,
-        _ if retok => "retok",
+        _ if sift => "sift",
         _ => "other",
     };
     let mut label = safe.to_owned();
     if matches!(
         safe,
-        "git" | "cargo" | "npm" | "pnpm" | "yarn" | "go" | "retok"
+        "git" | "cargo" | "npm" | "pnpm" | "yarn" | "go" | "sift"
     ) && let Some(sub) = words.get(1)
         && matches!(
             sub.as_str(),
@@ -1045,7 +1044,7 @@ fn command_label(words: &[String]) -> (String, bool) {
         label.push(' ');
         label.push_str(sub);
     }
-    (label, retok)
+    (label, sift)
 }
 
 fn correction(before: &Call, after: &Call) -> Option<String> {
@@ -1091,8 +1090,8 @@ fn correction(before: &Call, after: &Call) -> Option<String> {
                 (a.as_str(), b.as_str()),
                 ("--quite", "--quiet") | ("--verbsoe", "--verbose") | ("--hlep", "--help")
             ) {
-                let (label, retok) = command_label(&after.command);
-                if !retok && label != "other" {
+                let (label, sift) = command_label(&after.command);
+                if !sift && label != "other" {
                     return Some(format!("{label}: {a} -> {b}"));
                 }
             }

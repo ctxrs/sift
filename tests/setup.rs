@@ -17,7 +17,7 @@ impl Fixture {
     fn new() -> Self {
         static ID: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "retok-setup-test-{}-{}",
+            "sift-setup-test-{}-{}",
             std::process::id(),
             ID.fetch_add(1, Ordering::Relaxed)
         ));
@@ -162,7 +162,7 @@ fn fresh_shared_copilot_installs_only_the_qualified_cli_completion_route() {
         let p = f.plan(&["--agent", agent]);
         assert!(p.messages.join(" ").contains("native rewrite unavailable"));
         p.apply().unwrap();
-        let v = value(&f.roots.copilot.join("hooks/retok.json"));
+        let v = value(&f.roots.copilot.join("hooks/sift.json"));
         assert_eq!(v["version"], 1);
         assert_eq!(
             v["hooks"]["postToolUse"][0]["exec"],
@@ -233,7 +233,7 @@ fn dry_run_and_status_do_not_create_directories() {
 fn concurrent_modification_after_planning_is_preserved() {
     let f = Fixture::new();
     let a = f.write(".claude/settings.json", "{}");
-    let b = f.write(".copilot/hooks/retok.json", "{}");
+    let b = f.write(".copilot/hooks/sift.json", "{}");
     let p = f.plan(&[]);
     fs::write(&b, "{\"user\":true}").unwrap();
     assert!(p.apply().is_err());
@@ -322,17 +322,17 @@ fn instructions_remove_only_unchanged_owned_block() {
 #[test]
 fn plugin_install_is_self_contained_idempotent_and_edit_safe() {
     for (host, path) in [
-        ("pi", ".pi/agent/extensions/retok/index.js"),
-        ("omp", ".omp/agent/extensions/retok.ts"),
-        ("opencode", ".config/opencode/plugins/retok.ts"),
-        ("kilocode", ".config/kilo/plugin/retok.ts"),
+        ("pi", ".pi/agent/extensions/sift/index.js"),
+        ("omp", ".omp/agent/extensions/sift.ts"),
+        ("opencode", ".config/opencode/plugins/sift.ts"),
+        ("kilocode", ".config/kilo/plugin/sift.ts"),
     ] {
         let f = Fixture::new();
         f.plan(&["--agent", host]).apply().unwrap();
         let path = f.roots.home.join(path);
         let text = fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with("// retok managed plugin"));
-        assert!(!text.contains("__RETOK_"));
+        assert!(text.starts_with("// sift managed plugin"));
+        assert!(!text.contains("__SIFT_"));
         assert!(text.contains("execFile"));
         assert!(f.plan(&["--agent", host]).changes.is_empty());
         f.plan(&["--agent", host, "--uninstall"]).apply().unwrap();
@@ -347,12 +347,12 @@ fn plugin_install_is_self_contained_idempotent_and_edit_safe() {
 // Independent legacy wire fixture: preserve the original renderer's exact form.
 fn legacy_pi_plugin(executable: &Path) -> String {
     format!(
-        "// retok managed plugin v1; edits prevent automatic replacement/removal\n{}\n{}",
-        include_str!("../integrations/runtime.js").replace("__RETOK_SOURCE__", "\"pi\""),
+        "// sift managed plugin v1; edits prevent automatic replacement/removal\n{}\n{}",
+        include_str!("../integrations/runtime.js").replace("__SIFT_SOURCE__", "\"pi\""),
         include_str!("../integrations/pi.js")
     )
     .replace(
-        "__RETOK_EXECUTABLE__",
+        "__SIFT_EXECUTABLE__",
         &serde_json::to_string(executable.to_str().unwrap()).unwrap(),
     )
 }
@@ -361,9 +361,9 @@ fn assert_pi_kind(path: &Path, kind: &str) {
     let text = fs::read_to_string(path).unwrap();
     assert!(
         text.starts_with(&if kind == "pi-session" {
-            "// retok managed plugin v3 pi-session-cjs;".into()
+            "// sift managed plugin v3 pi-session-cjs;".into()
         } else {
-            format!("// retok managed plugin v2 {kind};")
+            format!("// sift managed plugin v2 {kind};")
         }),
         "{path:?}"
     );
@@ -382,13 +382,13 @@ fn previous_pi_session_upgrades_exactly_and_rejects_edits() {
     ] {
         for edited in [false, true] {
             let f = Fixture::new();
-            let path = f.roots.pi.join("extensions/retok.ts");
+            let path = f.roots.pi.join("extensions/sift.ts");
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             let old = format!(
-            "// retok managed plugin v2 pi-session; edits prevent automatic replacement/removal\n{}\n{}",
-            include_str!("../integrations/runtime.js").replace("__RETOK_SOURCE__", "\"pi\""),
+            "// sift managed plugin v2 pi-session; edits prevent automatic replacement/removal\n{}\n{}",
+            include_str!("../integrations/runtime.js").replace("__SIFT_SOURCE__", "\"pi\""),
             adapter
-        ).replace("__RETOK_EXECUTABLE__", &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap());
+        ).replace("__SIFT_EXECUTABLE__", &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap());
             let original = if edited {
                 format!("{old}\n// user edit\n")
             } else {
@@ -405,7 +405,7 @@ fn previous_pi_session_upgrades_exactly_and_rejects_edits() {
                 let backups = upgrade.apply().unwrap();
                 assert_eq!(fs::read_to_string(&backups[0]).unwrap(), original);
                 assert!(!path.exists());
-                let path = path.with_file_name("retok/index.js");
+                let path = path.with_file_name("sift/index.js");
                 assert_pi_kind(&path, "pi-session");
                 assert!(
                     fs::read_to_string(&path)
@@ -420,11 +420,11 @@ fn previous_pi_session_upgrades_exactly_and_rejects_edits() {
         // Prior Pi ownership must also survive setup for an aliased OMP target.
         let mut f = Fixture::new();
         f.roots.omp = f.roots.pi.clone();
-        let path = f.roots.pi.join("extensions/retok.ts");
+        let path = f.roots.pi.join("extensions/sift.ts");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let old = format!("// retok managed plugin v2 pi-session; edits prevent automatic replacement/removal\n{}\n{}",
-        include_str!("../integrations/runtime.js").replace("__RETOK_SOURCE__", "\"pi\""), adapter)
-        .replace("__RETOK_EXECUTABLE__", &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap());
+        let old = format!("// sift managed plugin v2 pi-session; edits prevent automatic replacement/removal\n{}\n{}",
+        include_str!("../integrations/runtime.js").replace("__SIFT_SOURCE__", "\"pi\""), adapter)
+        .replace("__SIFT_EXECUTABLE__", &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap());
         fs::write(&path, old).unwrap();
         f.plan(&["--agent", "omp"]).apply().unwrap();
         assert_pi_kind(&path, "pi-omp-one-shot");
@@ -438,8 +438,8 @@ fn pi_and_omp_default_install_select_distinct_templates() {
     fs::create_dir_all(&f.roots.pi).unwrap();
     fs::create_dir_all(&f.roots.omp).unwrap();
     f.plan(&[]).apply().unwrap();
-    assert_pi_kind(&f.roots.pi.join("extensions/retok/index.js"), "pi-session");
-    assert_pi_kind(&f.roots.omp.join("extensions/retok.ts"), "omp-one-shot");
+    assert_pi_kind(&f.roots.pi.join("extensions/sift/index.js"), "pi-session");
+    assert_pi_kind(&f.roots.omp.join("extensions/sift.ts"), "omp-one-shot");
     assert!(f.plan(&[]).changes.is_empty());
     let show = f.plan(&["--agent", "pi", "--show"]);
     assert!(
@@ -456,10 +456,10 @@ fn sequential_shared_setup_both_orders_remembers_consumers_and_relocation() {
         let mut f = Fixture::new();
         f.roots.pi = f.root.join("relocated shared");
         f.roots.omp = f.roots.pi.clone();
-        let path = f.roots.pi.join("extensions/retok.ts");
+        let path = f.roots.pi.join("extensions/sift.ts");
         f.plan(&["--agent", order[0]]).apply().unwrap();
         let first_path = if order[0] == "pi" {
-            path.with_file_name("retok/index.js")
+            path.with_file_name("sift/index.js")
         } else {
             path.clone()
         };
@@ -477,12 +477,12 @@ fn sequential_shared_setup_both_orders_remembers_consumers_and_relocation() {
         assert_eq!(upgrade.changes.len(), if order[0] == "pi" { 3 } else { 1 });
         let backups = upgrade.apply().unwrap();
         assert!(backups.iter().any(|p| fs::read(p).unwrap() == old));
-        assert!(!path.with_file_name("retok/index.js").exists());
+        assert!(!path.with_file_name("sift/index.js").exists());
         assert_pi_kind(&path, "pi-omp-one-shot");
         for host in ["pi", "omp"] {
             assert!(f.plan(&["--agent", host]).changes.is_empty());
         }
-        f.roots.executable = f.root.join("new executable/retok");
+        f.roots.executable = f.root.join("new executable/sift");
         f.plan(&["--agent", "pi"]).apply().unwrap();
         assert_pi_kind(&path, "pi-omp-one-shot");
         assert!(
@@ -513,14 +513,14 @@ fn legacy_plugins_upgrade_only_when_ownership_is_unambiguous() {
             &f.roots.omp
         };
         fs::create_dir_all(root.join("extensions")).unwrap();
-        let path = root.join("extensions/retok.ts");
+        let path = root.join("extensions/sift.ts");
         let old = legacy_pi_plugin(&f.roots.executable);
         fs::write(&path, &old).unwrap();
         let backups = f.plan(&["--agent", host]).apply().unwrap();
         assert_eq!(fs::read_to_string(&backups[0]).unwrap(), old);
         let installed = if host == "pi" {
             assert!(!path.exists());
-            path.with_file_name("retok/index.js")
+            path.with_file_name("sift/index.js")
         } else {
             path.clone()
         };
@@ -536,10 +536,10 @@ fn legacy_plugins_upgrade_only_when_ownership_is_unambiguous() {
     let mut f = Fixture::new();
     f.roots.omp = f.roots.pi.clone();
     fs::create_dir_all(f.roots.pi.join("extensions")).unwrap();
-    let path = f.roots.pi.join("extensions/retok.ts");
+    let path = f.roots.pi.join("extensions/sift.ts");
     let old = legacy_pi_plugin(&f.roots.executable);
     fs::write(&path, &old).unwrap();
-    f.roots.executable = f.root.join("moved/retok");
+    f.roots.executable = f.root.join("moved/sift");
     let ambiguous = f.plan(&["--agent", "pi"]);
     assert!(ambiguous.changes.is_empty());
     assert!(
@@ -559,7 +559,7 @@ fn pi_template_edits_and_noncanonical_executable_are_not_owned() {
     for edit in ["body", "header", "literal"] {
         let f = Fixture::new();
         f.plan(&["--agent", "pi"]).apply().unwrap();
-        let path = f.roots.pi.join("extensions/retok/index.js");
+        let path = f.roots.pi.join("extensions/sift/index.js");
         let text = fs::read_to_string(&path).unwrap();
         let edited = match edit {
             "body" => text.replace("30_000", "31_000"),
@@ -591,13 +591,13 @@ fn pi_symlink_aliases_share_and_changed_plan_targets_are_rejected() {
     let p = f.plan(&[]);
     assert_eq!(p.changes.len(), 1);
     p.apply().unwrap();
-    assert_pi_kind(&f.roots.pi.join("extensions/retok.ts"), "pi-omp-one-shot");
+    assert_pi_kind(&f.roots.pi.join("extensions/sift.ts"), "pi-omp-one-shot");
     assert!(f.plan(&[]).changes.is_empty());
     let removal = f.plan(&["--agent", "omp", "--uninstall"]);
     fs::remove_file(&f.roots.omp).unwrap();
     fs::create_dir(&f.roots.omp).unwrap();
     assert!(removal.apply().is_err());
-    assert!(f.roots.pi.join("extensions/retok.ts").exists());
+    assert!(f.roots.pi.join("extensions/sift.ts").exists());
 }
 
 #[cfg(unix)]
@@ -607,8 +607,8 @@ fn pi_file_alias_legacy_ambiguity_and_dangling_link_are_preserved() {
     let f = Fixture::new();
     fs::create_dir_all(f.roots.pi.join("extensions")).unwrap();
     fs::create_dir_all(f.roots.omp.join("extensions")).unwrap();
-    let path = f.roots.pi.join("extensions/retok.ts");
-    let alias = f.roots.omp.join("extensions/retok.ts");
+    let path = f.roots.pi.join("extensions/sift.ts");
+    let alias = f.roots.omp.join("extensions/sift.ts");
     fs::write(&path, legacy_pi_plugin(&f.roots.executable)).unwrap();
     symlink(&path, &alias).unwrap();
     assert!(f.plan(&["--agent", "pi"]).changes.is_empty());
@@ -626,7 +626,7 @@ fn unverified_rtk_plugin_is_not_overwritten_or_claimed_migrated() {
     let error = plan(&["--replace-rtk".into()], &f.roots).unwrap_err();
     assert!(error.to_string().contains("manual migration"));
     assert!(path.exists());
-    assert!(!path.with_file_name("retok.ts").exists());
+    assert!(!path.with_file_name("sift.ts").exists());
 }
 
 #[test]
@@ -754,12 +754,12 @@ fn stock_plugins_migrate_by_exact_digest_and_repeat_without_changes() {
         assert_eq!(fs::read_to_string(&backups[0]).unwrap(), source);
         assert!(!path.exists());
         let installed_path = if path.starts_with(&f.roots.pi) {
-            path.with_file_name("retok/index.js")
+            path.with_file_name("sift/index.js")
         } else {
-            path.with_file_name("retok.ts")
+            path.with_file_name("sift.ts")
         };
         let installed = fs::read_to_string(installed_path).unwrap();
-        assert!(installed.contains("retok managed plugin"));
+        assert!(installed.contains("sift managed plugin"));
         assert!(installed.contains("tool_result") || installed.contains("tool.execute.after"));
         assert!(
             stock_plan(&f, &["--replace-rtk"])
@@ -789,7 +789,7 @@ fn symlink_plugin_removal_preserves_targets_and_repeats_uninstall_and_install() 
     for layout in ["regular", "file-link", "directory-link"] {
         let f = Fixture::new();
         f.plan(&["--agent", "pi"]).apply().unwrap();
-        let plugin = f.roots.pi.join("extensions/retok/index.js");
+        let plugin = f.roots.pi.join("extensions/sift/index.js");
         let original = fs::read(&plugin).unwrap();
         let target = f.roots.home.join("dotfiles/index.js");
         fs::create_dir_all(target.parent().unwrap()).unwrap();
@@ -851,8 +851,8 @@ fn symlink_removal_checks_link_identity_and_rolls_back_on_later_failure() {
     let f = Fixture::new();
     f.plan(&["--agent", "pi"]).apply().unwrap();
     f.plan(&["--agent", "omp"]).apply().unwrap();
-    let pi = f.roots.pi.join("extensions/retok/index.js");
-    let omp = f.roots.omp.join("extensions/retok.ts");
+    let pi = f.roots.pi.join("extensions/sift/index.js");
+    let omp = f.roots.omp.join("extensions/sift.ts");
     let target = f.roots.home.join("plugin.ts");
     fs::rename(&pi, &target).unwrap();
     let relative = Path::new("../../../../plugin.ts");
@@ -923,7 +923,7 @@ fn codex_absolute_stock_import_is_replaced_in_one_backed_up_write() {
             .any(|p| fs::read(p).unwrap() == text.as_bytes())
     );
     let now = fs::read_to_string(shared).unwrap();
-    assert!(now.starts_with("User instructions.\n<!-- retok managed"));
+    assert!(now.starts_with("User instructions.\n<!-- sift managed"));
     assert!(!now.contains("@"));
     assert!(f.roots.codex.join("hooks.json").exists());
     assert!(
@@ -986,14 +986,14 @@ fn rules_frontmatter_is_active_and_plain_stock_suffix_preserves_user_rules() {
         (
             "windsurf",
             ".windsurfrules",
-            ".windsurf/rules/retok.md",
+            ".windsurf/rules/sift.md",
             "---\ntrigger: always_on\n---\n",
         ),
         (
             "cline",
             ".clinerules",
             ".clinerules",
-            "User rules.\n\n<!-- retok managed",
+            "User rules.\n\n<!-- sift managed",
         ),
     ] {
         let f = Fixture::new();
@@ -1030,7 +1030,7 @@ fn rules_frontmatter_is_active_and_plain_stock_suffix_preserves_user_rules() {
     f.plan(&["--instructions-only", "--agent", "cursor", "--project"])
         .apply()
         .unwrap();
-    let rule = f.roots.project.join(".cursor/rules/retok.mdc");
+    let rule = f.roots.project.join(".cursor/rules/sift.mdc");
     let bytes = fs::read_to_string(&rule).unwrap();
     assert!(bytes.starts_with("---\ndescription:"));
     assert!(bytes.contains("\nalwaysApply: true\n---\n"));
@@ -1066,11 +1066,11 @@ fn help_never_reads_config_or_installs_hosts() {
 fn powershell_literal_path_quotes_are_escaped_without_expansion() {
     assert_eq!(
         setup::native_shell_command(
-            "C:\\Program Files\\O'Brien $HOME; `echo`\\retok.exe",
+            "C:\\Program Files\\O'Brien $HOME; `echo`\\sift.exe",
             "claude",
             true
         ),
-        "& 'C:\\Program Files\\O''Brien $HOME; `echo`\\retok.exe' hook claude"
+        "& 'C:\\Program Files\\O''Brien $HOME; `echo`\\sift.exe' hook claude"
     );
 }
 
@@ -1082,11 +1082,11 @@ fn native_hooks_invoke_absolute_executable_with_empty_path_and_literal_metachara
     let mut f = Fixture::new();
     f.roots.executable = f
         .root
-        .join("bin space ' $HOME; `echo` (literal)/retok ' $PATH");
+        .join("bin space ' $HOME; `echo` (literal)/sift ' $PATH");
     fs::create_dir_all(f.roots.executable.parent().unwrap()).unwrap();
     fs::write(&f.roots.executable, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
     fs::set_permissions(&f.roots.executable, fs::Permissions::from_mode(0o700)).unwrap();
-    let claude = f.write(".claude/settings.json",r#"{"permissions":{"deny":["Bash(rm *)"]},"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"retok hook claude"},{"command":"echo retok hook claude"}]}]}}"#);
+    let claude = f.write(".claude/settings.json",r#"{"permissions":{"deny":["Bash(rm *)"]},"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"sift hook claude"},{"command":"echo sift hook claude"}]}]}}"#);
     let original = fs::read(&claude).unwrap();
     let backups = f.plan(&["--agent", "claude"]).apply().unwrap();
     assert_eq!(fs::read(&backups[0]).unwrap(), original);
@@ -1094,7 +1094,7 @@ fn native_hooks_invoke_absolute_executable_with_empty_path_and_literal_metachara
     assert_eq!(v["permissions"]["deny"], json!(["Bash(rm *)"]));
     assert_eq!(
         v["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
-        "echo retok hook claude"
+        "echo sift hook claude"
     );
     let command = v["hooks"]["PostToolUse"][1]["hooks"][0]["command"]
         .as_str()
@@ -1122,7 +1122,7 @@ fn native_hooks_invoke_absolute_executable_with_empty_path_and_literal_metachara
         1
     );
 
-    let copilot = f.write(".copilot/hooks/retok.json",r#"{"version":1,"hooks":{"postToolUse":[{"type":"command","exec":"retok","args":["hook","copilot"]},{"exec":"retok","args":["other"]}]}}"#);
+    let copilot = f.write(".copilot/hooks/sift.json",r#"{"version":1,"hooks":{"postToolUse":[{"type":"command","exec":"sift","args":["hook","copilot"]},{"exec":"sift","args":["other"]}]}}"#);
     f.plan(&["--agent", "copilot"]).apply().unwrap();
     let v = value(&copilot);
     let hooks = v["hooks"]["postToolUse"].as_array().unwrap();
@@ -1182,7 +1182,7 @@ fn gemini_stock_script_and_awareness_downgrade_only_when_explicitly_selected() {
     assert!(value(&path)["hooks"].get("AfterTool").is_none());
     let text = fs::read_to_string(instructions).unwrap();
     assert!(!text.contains("synthetic RTK"));
-    assert!(text.contains("retok run"));
+    assert!(text.contains("sift run"));
     assert!(
         stock_plan(
             &f,
@@ -1215,7 +1215,7 @@ fn mixed_rtk_and_custom_invocations_require_manual_migration_without_writes() {
         assert!(error.to_string().contains("mixed RTK and custom"));
         assert_eq!(fs::read_to_string(path).unwrap(), original);
         assert_eq!(fs::read(earlier).unwrap(), earlier_bytes);
-        assert!(!f.roots.copilot.join("hooks/retok.json").exists());
+        assert!(!f.roots.copilot.join("hooks/sift.json").exists());
     }
     let f = Fixture::new();
     let path = f.write(".copilot/hooks/rtk-rewrite.json", r#"{"version":1,"hooks":{"PreToolUse":[{"type":"command","bash":"rtk hook copilot","powershell":"rtk hook copilot"}]}}"#);
@@ -1252,17 +1252,17 @@ fn legacy_kilo_rules_are_not_migrated_to_an_unproven_current_plugin() {
 #[test]
 fn unchanged_plugins_remain_owned_after_executable_moves_but_code_edits_do_not() {
     for (host, relative) in [
-        ("pi", ".pi/agent/extensions/retok/index.js"),
-        ("omp", ".omp/agent/extensions/retok.ts"),
-        ("opencode", ".config/opencode/plugins/retok.ts"),
-        ("kilo", ".config/kilo/plugin/retok.ts"),
+        ("pi", ".pi/agent/extensions/sift/index.js"),
+        ("omp", ".omp/agent/extensions/sift.ts"),
+        ("opencode", ".config/opencode/plugins/sift.ts"),
+        ("kilo", ".config/kilo/plugin/sift.ts"),
     ] {
         let mut f = Fixture::new();
-        f.roots.executable = f.root.join("install A ' __RETOK_EXECUTABLE__/retok");
+        f.roots.executable = f.root.join("install A ' __SIFT_EXECUTABLE__/sift");
         f.plan(&["--agent", host]).apply().unwrap();
         let path = f.roots.home.join(relative);
         let old = fs::read(&path).unwrap();
-        f.roots.executable = f.root.join("install B ' __RETOK_SOURCE__/retok");
+        f.roots.executable = f.root.join("install B ' __SIFT_SOURCE__/sift");
         let status = f.plan(&["--agent", host, "--show"]);
         assert!(
             status
@@ -1276,13 +1276,13 @@ fn unchanged_plugins_remain_owned_after_executable_moves_but_code_edits_do_not()
         assert_eq!(fs::read(&backups[0]).unwrap(), old);
         assert!(fs::read_to_string(&path).unwrap().contains("install B"));
         assert!(f.plan(&["--agent", host]).changes.is_empty());
-        f.roots.executable = f.root.join("install C/retok");
+        f.roots.executable = f.root.join("install C/sift");
         f.plan(&["--agent", host, "--uninstall"]).apply().unwrap();
         assert!(!path.exists());
         f.plan(&["--agent", host]).apply().unwrap();
         let edited = fs::read_to_string(&path).unwrap().replace("3000", "4000");
         fs::write(&path, &edited).unwrap();
-        f.roots.executable = f.root.join("install D/retok");
+        f.roots.executable = f.root.join("install D/sift");
         assert!(plan(&["--agent".into(), host.into()], &f.roots).is_err());
         assert!(f.plan(&["--agent", host, "--uninstall"]).changes.is_empty());
         assert_eq!(fs::read_to_string(&path).unwrap(), edited);
@@ -1375,7 +1375,7 @@ fn kimi_and_hermes_global_guidance_honor_explicit_roots_and_preserve_user_text()
         assert!(
             fs::read_to_string(&path)
                 .unwrap()
-                .starts_with("Existing user guidance.\n<!-- retok managed")
+                .starts_with("Existing user guidance.\n<!-- sift managed")
         );
         assert!(f.plan(&["--agent", host]).changes.is_empty());
         f.plan(&["--agent", host, "--uninstall"]).apply().unwrap();
@@ -1405,7 +1405,7 @@ fn project_guidance_uses_hermes_precedence_and_does_not_invent_detected_hosts() 
         assert!(
             fs::read_to_string(f.roots.project.join(chosen))
                 .unwrap()
-                .contains("retok run")
+                .contains("sift run")
         );
         for name in existing.iter().skip(1) {
             assert_eq!(
@@ -1422,7 +1422,7 @@ fn project_guidance_uses_hermes_precedence_and_does_not_invent_detected_hosts() 
     assert!(
         fs::read_to_string(f.roots.project.join("AGENTS.md"))
             .unwrap()
-            .contains("retok run")
+            .contains("sift run")
     );
     assert!(!f.roots.kimi.exists());
 }
@@ -1453,7 +1453,7 @@ fn hermes_rtk_plugin_and_config_stay_unchanged_with_manual_migration_notice() {
 }
 
 #[test]
-fn custom_rtk_script_does_not_block_removing_only_retok_entries() {
+fn custom_rtk_script_does_not_block_removing_only_sift_entries() {
     let f = Fixture::new();
     f.plan(&["--agent", "claude"]).apply().unwrap();
     let path = f.roots.home.join(".claude/settings.json");
@@ -1497,7 +1497,7 @@ fn vibe_project_native_setup_stays_local_and_custom_migration_is_manual() {
     assert!(f.plan(&["--project"]).changes.is_empty());
     f.plan(&["--agent", "vibe", "--project"]).apply().unwrap();
     let path = f.roots.project.join("AGENTS.md");
-    assert!(fs::read_to_string(&path).unwrap().contains("retok run"));
+    assert!(fs::read_to_string(&path).unwrap().contains("sift run"));
     assert!(!f.roots.vibe.join("AGENTS.md").exists());
     assert!(f.plan(&["--agent", "vibe", "--project"]).changes.is_empty());
     f.plan(&["--agent", "vibe", "--project", "--uninstall"])
@@ -1507,12 +1507,12 @@ fn vibe_project_native_setup_stays_local_and_custom_migration_is_manual() {
 }
 
 #[test]
-fn mixed_custom_rtk_entry_does_not_block_doctor_init_or_retok_uninstall() {
+fn mixed_custom_rtk_entry_does_not_block_doctor_init_or_sift_uninstall() {
     use std::process::Command;
     let f = Fixture::new();
     let original = r#"{ "version":1, "hooks":{"PreToolUse":[{"type":"command","bash":"rtk hook copilot","powershell":"custom-policy-check"}]}}"#;
     let path = f.write(".copilot/hooks/rtk-rewrite.json", original);
-    let result = Command::new(env!("CARGO_BIN_EXE_retok"))
+    let result = Command::new(env!("CARGO_BIN_EXE_sift"))
         .args(["doctor", "--agent", "copilot"])
         .env("HOME", &f.roots.home)
         .env("USERPROFILE", &f.roots.home)
@@ -1530,7 +1530,7 @@ fn mixed_custom_rtk_entry_does_not_block_doctor_init_or_retok_uninstall() {
     assert!(status.contains("manual migration required"));
     assert!(status.contains("left unchanged"));
     assert_eq!(fs::read_to_string(&path).unwrap(), original);
-    assert!(!f.roots.copilot.join("hooks/retok.json").exists());
+    assert!(!f.roots.copilot.join("hooks/sift.json").exists());
 
     let install = f.plan(&["--agent", "copilot"]);
     assert!(
@@ -1541,7 +1541,7 @@ fn mixed_custom_rtk_entry_does_not_block_doctor_init_or_retok_uninstall() {
     );
     install.apply().unwrap();
     assert_eq!(fs::read_to_string(&path).unwrap(), original);
-    let owned = f.roots.copilot.join("hooks/retok.json");
+    let owned = f.roots.copilot.join("hooks/sift.json");
     assert_eq!(
         value(&owned)["hooks"]["postToolUse"]
             .as_array()
@@ -1579,15 +1579,15 @@ fn native_hooks_upgrade_and_uninstall_after_executable_relocation() {
     for host in ["claude", "copilot"] {
         for update_first in [false, true] {
             let mut f = Fixture::new();
-            f.roots.executable = f.root.join("install A ' $HOME;/retok");
+            f.roots.executable = f.root.join("install A ' $HOME;/sift");
             f.plan(&["--agent", host]).apply().unwrap();
             let path = if host == "claude" {
                 f.roots.home.join(".claude/settings.json")
             } else {
-                f.roots.copilot.join("hooks/retok.json")
+                f.roots.copilot.join("hooks/sift.json")
             };
             let original = fs::read(&path).unwrap();
-            f.roots.executable = f.root.join("install B ' $HOME;/retok");
+            f.roots.executable = f.root.join("install B ' $HOME;/sift");
             let status = f.plan(&["--agent", host, "--show"]);
             assert!(
                 status
@@ -1614,7 +1614,7 @@ fn native_hooks_upgrade_and_uninstall_after_executable_relocation() {
                 assert!(!fs::read_to_string(&path).unwrap().contains("install A"));
                 assert!(fs::read_to_string(&path).unwrap().contains("install B"));
                 assert!(f.plan(&["--agent", host]).changes.is_empty());
-                f.roots.executable = f.root.join("install C/retok");
+                f.roots.executable = f.root.join("install C/sift");
             }
             f.plan(&["--agent", host, "--uninstall"]).apply().unwrap();
             let event = if host == "claude" {
@@ -1632,12 +1632,12 @@ fn native_relocation_keeps_custom_invocations_and_changed_generated_entries() {
     for host in ["claude", "copilot"] {
         for mixed in [false, true] {
             let mut f = Fixture::new();
-            f.roots.executable = f.root.join("install A/retok");
+            f.roots.executable = f.root.join("install A/sift");
             f.plan(&["--agent", host]).apply().unwrap();
             let path = if host == "claude" {
                 f.roots.home.join(".claude/settings.json")
             } else {
-                f.roots.copilot.join("hooks/retok.json")
+                f.roots.copilot.join("hooks/sift.json")
             };
             let event = if host == "claude" {
                 "PostToolUse"
@@ -1657,7 +1657,7 @@ fn native_relocation_keeps_custom_invocations_and_changed_generated_entries() {
             }
             let custom = entry.clone();
             fs::write(&path, serde_json::to_vec(&v).unwrap()).unwrap();
-            f.roots.executable = f.root.join("install B/retok");
+            f.roots.executable = f.root.join("install B/sift");
             f.plan(&["--agent", host]).apply().unwrap();
             f.plan(&["--agent", host, "--uninstall"]).apply().unwrap();
             let v = value(&path);
@@ -1686,7 +1686,7 @@ fn openclaw_is_explicit_workspace_guidance_only_and_preserves_rtk_plugin() {
     assert!(
         fs::read_to_string(&path)
             .unwrap()
-            .starts_with("Workspace rules.\n<!-- retok managed")
+            .starts_with("Workspace rules.\n<!-- sift managed")
     );
     assert!(
         f.plan(&["--agent", "openclaw", "--project"])
@@ -1736,13 +1736,13 @@ fn openclaw_is_explicit_workspace_guidance_only_and_preserves_rtk_plugin() {
 fn instruction_guidance_names_absolute_executable_and_survives_relocation() {
     for (host, project, relative, dedicated) in [
         ("codex", false, ".codex/AGENTS.md", false),
-        ("cursor", true, ".cursor/rules/retok.mdc", true),
-        ("windsurf", true, ".windsurf/rules/retok.md", true),
+        ("cursor", true, ".cursor/rules/sift.mdc", true),
+        ("windsurf", true, ".windsurf/rules/sift.md", true),
         ("openclaw", true, "AGENTS.md", false),
     ] {
         for update_first in [false, true] {
             let mut f = Fixture::new();
-            f.roots.executable = f.root.join("install A ' 日本 $HOME/retok");
+            f.roots.executable = f.root.join("install A ' 日本 $HOME/sift");
             let path = if project {
                 f.roots.project.join(relative)
             } else {
@@ -1764,13 +1764,13 @@ fn instruction_guidance_names_absolute_executable_and_survives_relocation() {
                 .unwrap();
             let executable: String = serde_json::from_str(literal).unwrap();
             assert_eq!(executable, f.roots.executable.to_str().unwrap());
-            assert!(text.contains("If retok is not on PATH"));
-            assert!(text.contains("`retok run -- COMMAND ARG...`"));
+            assert!(text.contains("If sift is not on PATH"));
+            assert!(text.contains("`sift run -- COMMAND ARG...`"));
             if !dedicated {
                 fs::write(&path, format!("{text}Later user guidance.\n")).unwrap();
             }
             let original = fs::read(&path).unwrap();
-            f.roots.executable = f.root.join("install B ' 日本 $HOME/retok");
+            f.roots.executable = f.root.join("install B ' 日本 $HOME/sift");
             let mut status = args.clone();
             status.push("--show");
             assert!(
@@ -1788,7 +1788,7 @@ fn instruction_guidance_names_absolute_executable_and_survives_relocation() {
                 assert!(!text.contains("install A"));
                 assert!(text.contains("install B"));
                 assert!(f.plan(&args).changes.is_empty());
-                f.roots.executable = f.root.join("install C/retok");
+                f.roots.executable = f.root.join("install C/sift");
             }
             let mut uninstall = args.clone();
             uninstall.push("--uninstall");
@@ -1814,7 +1814,7 @@ fn relocated_instruction_ownership_does_not_accept_custom_block_or_frontmatter_e
         let path = if host == "codex" {
             f.roots.project.join("AGENTS.md")
         } else {
-            f.roots.project.join(".cursor/rules/retok.mdc")
+            f.roots.project.join(".cursor/rules/sift.mdc")
         };
         let original = fs::read_to_string(&path).unwrap();
         let changed = if host == "codex" {
@@ -1824,7 +1824,7 @@ fn relocated_instruction_ownership_does_not_accept_custom_block_or_frontmatter_e
         };
         assert_ne!(original, changed);
         fs::write(&path, &changed).unwrap();
-        f.roots.executable = f.root.join("relocated/retok");
+        f.roots.executable = f.root.join("relocated/sift");
         assert!(
             plan(
                 &args.iter().map(OsString::from).collect::<Vec<_>>(),
@@ -1840,14 +1840,14 @@ fn relocated_instruction_ownership_does_not_accept_custom_block_or_frontmatter_e
 }
 
 fn isolated_cli(f: &Fixture) -> std::process::Command {
-    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_retok"));
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_sift"));
     command
         .current_dir(&f.roots.project)
         .env("HOME", &f.roots.home)
         .env("USERPROFILE", &f.roots.home)
         .env("XDG_CONFIG_HOME", &f.roots.config)
-        .env("RETOK_CONFIG_DIR", f.root.join("retok-config"))
-        .env("RETOK_STATE_DIR", f.root.join("retok-state"));
+        .env("SIFT_CONFIG_DIR", f.root.join("sift-config"))
+        .env("SIFT_STATE_DIR", f.root.join("sift-state"));
     for name in [
         "CLAUDE_CONFIG_DIR",
         "PI_CODING_AGENT_DIR",
@@ -1870,8 +1870,8 @@ fn relocated_environment_roots_reach_active_hosts_without_leaking_project_scope(
     let f = Fixture::new();
     for (agent, variable, suffix) in [
         ("claude", "CLAUDE_CONFIG_DIR", "settings.json"),
-        ("pi", "PI_CODING_AGENT_DIR", "extensions/retok/index.js"),
-        ("omp", "PI_CODING_AGENT_DIR", "extensions/retok.ts"),
+        ("pi", "PI_CODING_AGENT_DIR", "extensions/sift/index.js"),
+        ("omp", "PI_CODING_AGENT_DIR", "extensions/sift.ts"),
         ("droid", "FACTORY_HOME_OVERRIDE", ".factory/AGENTS.md"),
     ] {
         let relocated = f.root.join(format!("relocated-{agent}"));
@@ -1998,7 +1998,7 @@ fn shared_copilot_migration_preserves_both_consumers_until_explicit_downgrade() 
         let f = Fixture::new();
         let original = r#"{"version":1,"hooks":{"PreToolUse":[{"type":"command","command":"rtk hook copilot","cwd":".","timeout":5}]}}"#;
         let legacy = f.write(".copilot/hooks/rtk-rewrite.json", original);
-        let output = f.write(".copilot/hooks/retok.json", "{broken}");
+        let output = f.write(".copilot/hooks/sift.json", "{broken}");
         assert!(
             plan(
                 &["--agent".into(), agent.into(), "--replace-rtk".into()],
@@ -2116,7 +2116,7 @@ fn vibe_toml_migration_preserves_custom_tables_comments_and_bom() {
     assert!(!after.contains("rtk hook vibe"));
     assert!(after.contains(" hook vibe"));
     assert!(f.plan(&["--agent", "vibe"]).changes.is_empty());
-    f.roots.executable = f.root.join("new-install/retok");
+    f.roots.executable = f.root.join("new-install/sift");
     f.plan(&["--agent", "vibe"]).apply().unwrap();
     assert!(fs::read_to_string(&path).unwrap().contains("new-install"));
     let changed = fs::read_to_string(&path)
@@ -2166,7 +2166,7 @@ fn doctor_requires_correct_event_matcher_and_executable_not_just_guidance() {
             .join("\n")
             .contains("not fully configured")
     );
-    f.roots.executable = f.root.join("missing/retok");
+    f.roots.executable = f.root.join("missing/sift");
     f.plan(&["--agent", "codex"]).apply().unwrap();
     let status = f.plan(&["--agent", "codex", "--show"]).messages.join("\n");
     assert!(status.contains("executable missing"), "{status}");
@@ -2174,13 +2174,13 @@ fn doctor_requires_correct_event_matcher_and_executable_not_just_guidance() {
 }
 
 #[test]
-fn doctor_reports_effective_disabled_and_invalid_retok_config_without_writes() {
+fn doctor_reports_effective_disabled_and_invalid_sift_config_without_writes() {
     let f = Fixture::new();
-    let config = f.root.join("retok-config/config.json");
+    let config = f.root.join("sift-config/config.json");
     fs::create_dir_all(config.parent().unwrap()).unwrap();
     for (text, expected) in [
-        ("{\"enabled\":false}", "Retok config: disabled"),
-        ("broken", "Retok config: invalid or unreadable"),
+        ("{\"enabled\":false}", "Sift config: disabled"),
+        ("broken", "Sift config: invalid or unreadable"),
     ] {
         fs::write(&config, text).unwrap();
         let result = isolated_cli(&f)
@@ -2247,16 +2247,16 @@ fn installed_prehook_commands_execute_real_cli_contracts_with_shared_consumer_se
     use std::io::Write;
     use std::process::{Command, Stdio};
     let mut f = Fixture::new();
-    f.roots.executable = f.root.join("bin ' quoted $literal/retok");
+    f.roots.executable = f.root.join("bin ' quoted $literal/sift");
     fs::create_dir_all(f.roots.executable.parent().unwrap()).unwrap();
-    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_retok"), &f.roots.executable).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_sift"), &f.roots.executable).unwrap();
     let invoke = |command: &str, payload: &Value| {
         let mut child = Command::new("/bin/sh")
             .args(["-c", command])
             .current_dir(&f.roots.project)
             .env("HOME", &f.roots.home)
-            .env("RETOK_CONFIG_DIR", f.root.join("retok-config"))
-            .env("RETOK_STATE_DIR", f.root.join("retok-state"))
+            .env("SIFT_CONFIG_DIR", f.root.join("sift-config"))
+            .env("SIFT_STATE_DIR", f.root.join("sift-state"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -2325,7 +2325,7 @@ fn installed_prehook_commands_execute_real_cli_contracts_with_shared_consumer_se
             updated["command"], input["tool_input"]["command"],
             "{host}: {result}"
         );
-        assert!(updated["command"].as_str().unwrap().contains("retok"));
+        assert!(updated["command"].as_str().unwrap().contains("sift"));
         assert!(
             updated["command"]
                 .as_str()
@@ -2334,7 +2334,7 @@ fn installed_prehook_commands_execute_real_cli_contracts_with_shared_consumer_se
         );
     }
     f.plan(&["--agent", "copilot"]).apply().unwrap();
-    let post = value(&f.roots.copilot.join("hooks/retok.json"))["hooks"]["postToolUse"][0].clone();
+    let post = value(&f.roots.copilot.join("hooks/sift.json"))["hooks"]["postToolUse"][0].clone();
     let post_command =
         setup::native_shell_command(post["exec"].as_str().unwrap(), "copilot", false);
     let cli_output = json!({"toolName":"bash","toolResult":{"resultType":"success","textResultForLlm":"synthetic repeated line\n".repeat(100)}});
@@ -2351,7 +2351,7 @@ fn installed_prehook_commands_execute_real_cli_contracts_with_shared_consumer_se
     assert!(
         fs::read_to_string(project_hook)
             .unwrap()
-            .contains("retok-output")
+            .contains("sift-output")
     );
 }
 
@@ -2413,7 +2413,7 @@ fn hermes_yaml_boolean_disables_preserve_rtk_before_any_writes() {
             "!!bool 'off'",
         ] {
             let body = format!(
-                "plugins:\n  enabled: [rtk-rewrite, user-plugin]\n  entries:\n    retok-rewrite:\n      {field}:\n        enabled: {disabled}\n"
+                "plugins:\n  enabled: [rtk-rewrite, user-plugin]\n  entries:\n    sift-rewrite:\n      {field}:\n        enabled: {disabled}\n"
             );
             let f = hermes_migration_fixture(&body);
             let p = hermes_migration(&f).unwrap_or_else(|e| panic!("{disabled}: {e:#}"));
@@ -2423,7 +2423,7 @@ fn hermes_yaml_boolean_disables_preserve_rtk_before_any_writes() {
                 fs::read_to_string(f.roots.hermes.join("config.yaml")).unwrap(),
                 body
             );
-            assert!(!f.roots.hermes.join("plugins/retok-rewrite").exists());
+            assert!(!f.roots.hermes.join("plugins/sift-rewrite").exists());
             assert!(
                 f.plan(&["--agent", "hermes", "--show"])
                     .messages
@@ -2439,7 +2439,7 @@ fn hermes_yaml_migration_preserves_scalar_styles_tags_and_ordinary_values() {
     let custom = "# keep this comment\nquoted_off: 'off'\nplain_off: off\nquoted_yes: 'yes'\nplain_yes: yes\nordinary: example\noctal: 012\nquoted_octal: '012'\ndate: 2026-01-02\ntagged_string: !!str off\ntagged_boolean: !!bool 'no'\n";
     for enabled in ["true", "yes", "on", "'off'", "'yes'", "!!str off"] {
         let body = format!(
-            "{custom}plugins:\n  enabled: [rtk-rewrite, user-plugin]\n  entries:\n    retok-rewrite:\n      settings:\n        enabled: {enabled}\n"
+            "{custom}plugins:\n  enabled: [rtk-rewrite, user-plugin]\n  entries:\n    sift-rewrite:\n      settings:\n        enabled: {enabled}\n"
         );
         let f = hermes_migration_fixture(&body);
         let backups = hermes_migration(&f).unwrap().apply().unwrap();
@@ -2451,7 +2451,7 @@ fn hermes_yaml_migration_preserves_scalar_styles_tags_and_ordinary_values() {
         let after = fs::read_to_string(f.roots.hermes.join("config.yaml")).unwrap();
         assert!(after.starts_with(custom), "{after}");
         assert!(after.contains(&format!("enabled: {enabled}\n")), "{after}");
-        assert!(after.contains("user-plugin") && after.contains("retok-rewrite"));
+        assert!(after.contains("user-plugin") && after.contains("sift-rewrite"));
         assert!(hermes_migration(&f).unwrap().changes.is_empty());
     }
 }
@@ -2484,15 +2484,14 @@ fn hermes_yaml_merges_preserve_other_plugins_and_inherited_disables() {
         after.apply_merge().unwrap();
         assert_eq!(
             after["plugins"]["enabled"],
-            serde_yaml_ng::from_str::<serde_yaml_ng::Value>("[user-plugin, retok-rewrite]")
-                .unwrap()
+            serde_yaml_ng::from_str::<serde_yaml_ng::Value>("[user-plugin, sift-rewrite]").unwrap()
         );
         assert!(hermes_migration(&f).unwrap().changes.is_empty());
     }
     for inherited in [
-        "disabled: [retok-rewrite]",
-        "entries: {retok-rewrite: {settings: {enabled: off}}}",
-        "entries: {retok-rewrite: {config: {enabled: !!bool no}}}",
+        "disabled: [sift-rewrite]",
+        "entries: {sift-rewrite: {settings: {enabled: off}}}",
+        "entries: {sift-rewrite: {config: {enabled: !!bool no}}}",
     ] {
         let body = format!(
             "base: &base\n  {inherited}\nplugins:\n  <<: *base\n  enabled: [rtk-rewrite, user-plugin]\n"
@@ -2510,7 +2509,7 @@ fn hermes_yaml_merges_preserve_other_plugins_and_inherited_disables() {
         "plugins: {<<: 17}",
         "plugins: {<<: [17]}",
         "plugins: {<<: *missing}",
-        "plugins: {entries: {retok-rewrite: {settings: {enabled: !<tag:yaml.org,2002:bool> no}}}}",
+        "plugins: {entries: {sift-rewrite: {settings: {enabled: !<tag:yaml.org,2002:bool> no}}}}",
     ] {
         let f = hermes_migration_fixture(invalid);
         assert!(hermes_migration(&f).is_err());
@@ -2518,14 +2517,14 @@ fn hermes_yaml_merges_preserve_other_plugins_and_inherited_disables() {
             fs::read_to_string(f.roots.hermes.join("config.yaml")).unwrap(),
             invalid
         );
-        assert!(!f.roots.hermes.join("plugins/retok-rewrite").exists());
+        assert!(!f.roots.hermes.join("plugins/sift-rewrite").exists());
     }
 }
 
 #[test]
 fn hermes_completion_bundle_path_upgrade_and_uninstall_preserve_other_plugins() {
     let mut f = Fixture::new();
-    f.roots.executable = f.root.join("bin ' 日本 $value/retok");
+    f.roots.executable = f.root.join("bin ' 日本 $value/sift");
     let original = "# keep\nplugins:\n  enabled: [user-plugin]\ncustom: 'off'\n";
     let config = f.write(".hermes/config.yaml", original);
     let backups = f.plan(&["--agent", "hermes"]).apply().unwrap();
@@ -2534,7 +2533,7 @@ fn hermes_completion_bundle_path_upgrade_and_uninstall_preserve_other_plugins() 
             .iter()
             .any(|p| fs::read(p).unwrap() == original.as_bytes())
     );
-    let plugin = f.roots.hermes.join("plugins/retok-rewrite/__init__.py");
+    let plugin = f.roots.hermes.join("plugins/sift-rewrite/__init__.py");
     let text = fs::read_to_string(&plugin).unwrap();
     assert!(text.contains("register_hook(\"transform_tool_result\""));
     assert!(!text.contains("register_hook(\"pre_tool_call\""));
@@ -2549,7 +2548,7 @@ fn hermes_completion_bundle_path_upgrade_and_uninstall_preserve_other_plugins() 
         .collect();
     assert!(text.contains(&format!("bytes.fromhex('{hex}')")));
     assert!(f.plan(&["--agent", "hermes"]).changes.is_empty());
-    f.roots.executable = f.root.join("new-install/retok");
+    f.roots.executable = f.root.join("new-install/sift");
     f.plan(&["--agent", "hermes"]).apply().unwrap();
     f.plan(&["--agent", "hermes", "--uninstall"])
         .apply()
@@ -2584,7 +2583,7 @@ fn hermes_empty_and_flow_configs_install_and_repeat() {
                 .as_sequence()
                 .unwrap()
                 .iter()
-                .any(|v| v.as_str() == Some("retok-rewrite"))
+                .any(|v| v.as_str() == Some("sift-rewrite"))
         );
         assert!(f.plan(&["--agent", "hermes"]).changes.is_empty());
     }
@@ -2593,9 +2592,9 @@ fn hermes_empty_and_flow_configs_install_and_repeat() {
 #[test]
 fn native_plugin_explicit_disables_and_denies_are_preserved() {
     for body in [
-        "plugins:\n  disabled: [retok-rewrite]\n",
-        "plugins:\n  entries:\n    retok-rewrite:\n      settings:\n        enabled: false\n",
-        "plugins:\n  entries:\n    retok-rewrite:\n      config:\n        enabled: false\n",
+        "plugins:\n  disabled: [sift-rewrite]\n",
+        "plugins:\n  entries:\n    sift-rewrite:\n      settings:\n        enabled: false\n",
+        "plugins:\n  entries:\n    sift-rewrite:\n      config:\n        enabled: false\n",
     ] {
         let f = Fixture::new();
         let path = f.write(".hermes/config.yaml", body);
@@ -2606,9 +2605,9 @@ fn native_plugin_explicit_disables_and_denies_are_preserved() {
     }
     for plugins in [
         json!({"enabled":false}),
-        json!({"deny":["retok-rewrite"]}),
-        json!({"entries":{"retok-rewrite":{"enabled":false}}}),
-        json!({"entries":{"retok-rewrite":{"config":{"enabled":false}}}}),
+        json!({"deny":["sift-rewrite"]}),
+        json!({"entries":{"sift-rewrite":{"enabled":false}}}),
+        json!({"entries":{"sift-rewrite":{"config":{"enabled":false}}}}),
     ] {
         let f = Fixture::new();
         let body = serde_json::to_string(&json!({"plugins":plugins})).unwrap();
@@ -2632,7 +2631,7 @@ fn openclaw_json5_unknowns_and_explicit_single_plugin_allowlist_addition() {
     let detected = f.plan(&[]);
     assert!(detected.changes.is_empty());
     let p = f.plan(&["--agent", "openclaw"]);
-    assert!(p.messages.join(" ").contains("add only retok-rewrite"));
+    assert!(p.messages.join(" ").contains("add only sift-rewrite"));
     let backups = p.apply().unwrap();
     assert!(
         backups
@@ -2642,18 +2641,18 @@ fn openclaw_json5_unknowns_and_explicit_single_plugin_allowlist_addition() {
     let v = value(config);
     assert_eq!(
         v["plugins"]["allow"],
-        json!(["user-plugin", "retok-rewrite"])
+        json!(["user-plugin", "sift-rewrite"])
     );
     assert_eq!(v["plugins"]["entries"]["user-plugin"]["config"]["keep"], 7);
     assert_eq!(
-        v["plugins"]["entries"]["retok-rewrite"],
+        v["plugins"]["entries"]["sift-rewrite"],
         json!({"enabled":true,"config":{"enabled":true}})
     );
     assert_eq!(v["custom"], "keep");
     assert!(
         f.roots
             .openclaw
-            .join("extensions/retok-rewrite/index.mjs")
+            .join("extensions/sift-rewrite/index.mjs")
             .exists()
     );
     assert!(!f.roots.home.join(".openclaw").exists());
@@ -2664,7 +2663,7 @@ fn openclaw_json5_unknowns_and_explicit_single_plugin_allowlist_addition() {
     assert_eq!(value(config)["plugins"]["allow"], json!(["user-plugin"]));
     assert!(
         value(config)["plugins"]["entries"]
-            .get("retok-rewrite")
+            .get("sift-rewrite")
             .is_none()
     );
 }
@@ -2674,13 +2673,13 @@ fn openclaw_uninstall_never_turns_a_restrictive_allowlist_into_allow_all() {
     let f = Fixture::new();
     let config = f.write(
         ".openclaw/openclaw.json",
-        r#"{"plugins":{"allow":["retok-rewrite"]}}"#,
+        r#"{"plugins":{"allow":["sift-rewrite"]}}"#,
     );
     f.plan(&["--agent", "openclaw"]).apply().unwrap();
     f.plan(&["--agent", "openclaw", "--uninstall"])
         .apply()
         .unwrap();
-    assert_eq!(value(&config)["plugins"]["allow"], json!(["retok-rewrite"]));
+    assert_eq!(value(&config)["plugins"]["allow"], json!(["sift-rewrite"]));
 }
 
 #[test]
@@ -2688,12 +2687,12 @@ fn edited_native_plugin_bundle_preserves_activation_and_every_file() {
     for (host, relative, config) in [
         (
             "hermes",
-            ".hermes/plugins/retok-rewrite/__init__.py",
+            ".hermes/plugins/sift-rewrite/__init__.py",
             ".hermes/config.yaml",
         ),
         (
             "openclaw",
-            ".openclaw/extensions/retok-rewrite/index.mjs",
+            ".openclaw/extensions/sift-rewrite/index.mjs",
             ".openclaw/openclaw.json",
         ),
     ] {
@@ -2777,7 +2776,7 @@ fn stock_native_plugin_migration_switches_activation_only_after_replacement_is_r
                 serde_yaml_ng::from_slice(&fs::read(&config).unwrap()).unwrap();
             assert_eq!(
                 v["plugins"]["enabled"],
-                serde_yaml_ng::from_str::<serde_yaml_ng::Value>("[user-plugin, retok-rewrite]")
+                serde_yaml_ng::from_str::<serde_yaml_ng::Value>("[user-plugin, sift-rewrite]")
                     .unwrap()
             );
         } else {
@@ -2786,7 +2785,7 @@ fn stock_native_plugin_migration_switches_activation_only_after_replacement_is_r
                 false
             );
             assert_eq!(
-                value(&config)["plugins"]["entries"]["retok-rewrite"]["enabled"],
+                value(&config)["plugins"]["entries"]["sift-rewrite"]["enabled"],
                 true
             );
         }
@@ -2797,7 +2796,7 @@ fn stock_native_plugin_migration_switches_activation_only_after_replacement_is_r
                 .is_empty()
         );
         assert!(f.plan(&["--agent", host]).changes.is_empty());
-        let alias = f.root.join("upgraded-retok");
+        let alias = f.root.join("upgraded-sift");
         std::os::unix::fs::symlink(&f.roots.executable, &alias).unwrap();
         f.roots.executable = alias;
         let upgrade = f.plan(&["--agent", host]);
@@ -2865,7 +2864,7 @@ fn unsupported_windows_prehooks_preserve_rtk_while_posthooks_still_install() {
         p.apply().unwrap();
     }
     assert!(value(&f.roots.claude.join("settings.json"))["hooks"]["PostToolUse"].is_array());
-    assert!(value(&f.roots.copilot.join("hooks/retok.json"))["hooks"]["postToolUse"].is_array());
+    assert!(value(&f.roots.copilot.join("hooks/sift.json"))["hooks"]["postToolUse"].is_array());
 }
 
 #[test]
@@ -2900,16 +2899,21 @@ fn openclaw_json5_preserves_literal_number_marker_and_rejects_ambiguous_configs(
 #[test]
 fn pi_cjs_is_only_a_module_syntax_conversion_and_migrates_exact_current_ts() {
     let f = Fixture::new();
-    let template = format!("// retok managed plugin v2 pi-session; edits prevent automatic replacement/removal\n{}\n{}",
-        include_str!("../integrations/runtime.js").replace("__RETOK_SOURCE__", "\"pi\""),
-        include_str!("../integrations/pi_session.js"))
-        .replace("__RETOK_EXECUTABLE__", &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap());
-    let old = f.write(".pi/agent/extensions/retok.ts", &template);
+    let template = format!(
+        "// sift managed plugin v2 pi-session; edits prevent automatic replacement/removal\n{}\n{}",
+        include_str!("../integrations/runtime.js").replace("__SIFT_SOURCE__", "\"pi\""),
+        include_str!("../integrations/pi_session.js")
+    )
+    .replace(
+        "__SIFT_EXECUTABLE__",
+        &serde_json::to_string(f.roots.executable.to_str().unwrap()).unwrap(),
+    );
+    let old = f.write(".pi/agent/extensions/sift.ts", &template);
     let backups = f.plan(&["--agent", "pi"]).apply().unwrap();
     assert!(!old.exists());
     assert_eq!(backups.len(), 1);
     assert_eq!(fs::read_to_string(&backups[0]).unwrap(), template);
-    let dir = old.with_file_name("retok");
+    let dir = old.with_file_name("sift");
     assert_eq!(value(&dir.join("package.json"))["type"], "commonjs");
     let native = fs::read_to_string(dir.join("index.js")).unwrap();
     // Independently normalize the generated native syntax back to the old entry.
@@ -2932,8 +2936,8 @@ fn pi_cjs_is_only_a_module_syntax_conversion_and_migrates_exact_current_ts() {
             "import { StringDecoder } from \"node:string_decoder\";",
         )
         .replace(
-            "module.exports = function retok(pi) {",
-            "export default function retok(pi) {",
+            "module.exports = function sift(pi) {",
+            "export default function sift(pi) {",
         );
     assert_eq!(esm, template);
     assert!(f.plan(&["--agent", "pi"]).changes.is_empty());
@@ -2949,11 +2953,11 @@ fn pi_cjs_collisions_preserve_legacy_and_rtk_until_replacement_ready() {
     ] {
         let f = Fixture::new();
         let old = f.write(
-            ".pi/agent/extensions/retok.ts",
+            ".pi/agent/extensions/sift.ts",
             &legacy_pi_plugin(&f.roots.executable),
         );
         let rtk = f.write(".pi/agent/extensions/rtk.ts", SYNTHETIC_PI);
-        let collision = f.write(&format!(".pi/agent/extensions/retok/{file}"), contents);
+        let collision = f.write(&format!(".pi/agent/extensions/sift/{file}"), contents);
         let original = fs::read(&old).unwrap();
         assert!(stock_plan(&f, &["--agent", "pi", "--replace-rtk"]).is_err());
         assert_eq!(fs::read(&old).unwrap(), original);
@@ -2963,7 +2967,7 @@ fn pi_cjs_collisions_preserve_legacy_and_rtk_until_replacement_ready() {
     let mut f = Fixture::new();
     f.roots.omp = f.roots.pi.clone();
     let old = f.write(
-        ".pi/agent/extensions/retok.ts",
+        ".pi/agent/extensions/sift.ts",
         &legacy_pi_plugin(&f.roots.executable),
     );
     let rtk = f.write(".pi/agent/extensions/rtk.ts", SYNTHETIC_PI);
@@ -2976,9 +2980,9 @@ fn pi_cjs_bundle_edits_and_missing_files_are_not_reported_as_configured() {
     for file in ["package.json", "index.js"] {
         for edit in [false, true] {
             let mut f = Fixture::new();
-            f.roots.executable = PathBuf::from(env!("CARGO_BIN_EXE_retok"));
+            f.roots.executable = PathBuf::from(env!("CARGO_BIN_EXE_sift"));
             f.plan(&["--agent", "pi"]).apply().unwrap();
-            let path = f.roots.pi.join("extensions/retok").join(file);
+            let path = f.roots.pi.join("extensions/sift").join(file);
             if edit {
                 fs::write(&path, "user edit").unwrap();
             } else {
@@ -3015,8 +3019,8 @@ fn pi_cjs_migration_of_owned_ts_link_preserves_external_target_and_backup() {
     use std::os::unix::fs::symlink;
     let f = Fixture::new();
     let original = legacy_pi_plugin(&f.roots.executable);
-    let target = f.write("dotfiles/retok.ts", &original);
-    let path = f.roots.pi.join("extensions/retok.ts");
+    let target = f.write("dotfiles/sift.ts", &original);
+    let path = f.roots.pi.join("extensions/sift.ts");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     symlink(&target, &path).unwrap();
     let backups = f.plan(&["--agent", "pi"]).apply().unwrap();
@@ -3027,7 +3031,7 @@ fn pi_cjs_migration_of_owned_ts_link_preserves_external_target_and_backup() {
             .any(|b| fs::read_to_string(b).unwrap() == original)
     );
     assert!(fs::symlink_metadata(&path).is_err());
-    assert!(path.with_file_name("retok/index.js").is_file());
+    assert!(path.with_file_name("sift/index.js").is_file());
 }
 
 #[cfg(unix)]
@@ -3039,9 +3043,9 @@ fn pi_cjs_sequential_root_alias_setup_removes_native_entry_and_keeps_shared_sema
     fs::create_dir_all(f.roots.omp.parent().unwrap()).unwrap();
     symlink(&f.roots.pi, &f.roots.omp).unwrap();
     f.plan(&["--agent", "omp"]).apply().unwrap();
-    assert!(!f.roots.pi.join("extensions/retok/index.js").exists());
-    assert!(!f.roots.pi.join("extensions/retok/package.json").exists());
-    assert_pi_kind(&f.roots.pi.join("extensions/retok.ts"), "pi-omp-one-shot");
+    assert!(!f.roots.pi.join("extensions/sift/index.js").exists());
+    assert!(!f.roots.pi.join("extensions/sift/package.json").exists());
+    assert_pi_kind(&f.roots.pi.join("extensions/sift.ts"), "pi-omp-one-shot");
     assert!(f.plan(&[]).changes.is_empty());
 }
 
@@ -3053,14 +3057,14 @@ fn pi_cjs_migration_failure_rolls_back_new_bundle_and_retains_old_entry() {
     let old = legacy_pi_plugin(&f.roots.executable);
     // Force old-entry backup failure after the bundle writes, without chmod tricks.
     let target = f.write(&"x".repeat(240), &old);
-    let path = f.roots.pi.join("extensions/retok.ts");
+    let path = f.roots.pi.join("extensions/sift.ts");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     symlink(&target, &path).unwrap();
     assert!(f.plan(&["--agent", "pi"]).apply().is_err());
     assert_eq!(fs::read_link(&path).unwrap(), target);
     assert_eq!(fs::read_to_string(&path).unwrap(), old);
-    assert!(!path.with_file_name("retok/index.js").exists());
-    assert!(!path.with_file_name("retok/package.json").exists());
+    assert!(!path.with_file_name("sift/index.js").exists());
+    assert!(!path.with_file_name("sift/package.json").exists());
 }
 
 #[cfg(unix)]
@@ -3072,8 +3076,8 @@ fn pi_cjs_bundle_alias_migration_keeps_both_distinct_roots_one_shot() {
         f.plan(&["--agent", "pi"]).apply().unwrap();
         fs::create_dir_all(f.roots.omp.join("extensions")).unwrap();
         symlink(
-            f.roots.pi.join("extensions/retok"),
-            f.roots.omp.join("extensions/retok"),
+            f.roots.pi.join("extensions/sift"),
+            f.roots.omp.join("extensions/sift"),
         )
         .unwrap();
         let args = if selected == "both" {
@@ -3083,8 +3087,8 @@ fn pi_cjs_bundle_alias_migration_keeps_both_distinct_roots_one_shot() {
         };
         f.plan(&args).apply().unwrap();
         for root in [&f.roots.pi, &f.roots.omp] {
-            assert!(!root.join("extensions/retok/index.js").exists());
-            assert_pi_kind(&root.join("extensions/retok.ts"), "pi-omp-one-shot");
+            assert!(!root.join("extensions/sift/index.js").exists());
+            assert_pi_kind(&root.join("extensions/sift.ts"), "pi-omp-one-shot");
         }
         assert!(f.plan(&[]).changes.is_empty());
     }
@@ -3095,10 +3099,10 @@ fn pi_cjs_missing_package_still_remembers_pi_when_omp_joins() {
     let mut f = Fixture::new();
     f.roots.omp = f.roots.pi.clone();
     f.plan(&["--agent", "pi"]).apply().unwrap();
-    fs::remove_file(f.roots.pi.join("extensions/retok/package.json")).unwrap();
+    fs::remove_file(f.roots.pi.join("extensions/sift/package.json")).unwrap();
     f.plan(&["--agent", "omp"]).apply().unwrap();
-    assert!(!f.roots.pi.join("extensions/retok/index.js").exists());
-    assert_pi_kind(&f.roots.pi.join("extensions/retok.ts"), "pi-omp-one-shot");
+    assert!(!f.roots.pi.join("extensions/sift/index.js").exists());
+    assert_pi_kind(&f.roots.pi.join("extensions/sift.ts"), "pi-omp-one-shot");
 }
 
 #[test]
@@ -3106,12 +3110,12 @@ fn pi_cjs_plan_rejects_changed_unchanged_package_before_relocation_or_repair() {
     for repair in [false, true] {
         let mut f = Fixture::new();
         f.plan(&["--agent", "pi"]).apply().unwrap();
-        let dir = f.roots.pi.join("extensions/retok");
+        let dir = f.roots.pi.join("extensions/sift");
         let original = fs::read(dir.join("index.js")).unwrap();
         if repair {
             fs::remove_file(dir.join("index.js")).unwrap();
         }
-        f.roots.executable = f.root.join("relocated/retok");
+        f.roots.executable = f.root.join("relocated/sift");
         let p = f.plan(&["--agent", "pi"]);
         assert_eq!(p.changes.len(), 1);
         fs::write(dir.join("package.json"), "{\"type\":\"module\"}\n").unwrap();
@@ -3131,7 +3135,7 @@ fn pi_cjs_plan_rejects_changed_unchanged_package_before_relocation_or_repair() {
 
 #[test]
 fn pi_cjs_plan_rejects_new_discovery_entry_before_legacy_or_rtk_removal() {
-    for old_name in ["retok.ts", "rtk.ts"] {
+    for old_name in ["sift.ts", "rtk.ts"] {
         let f = Fixture::new();
         let old_text = if old_name == "rtk.ts" {
             SYNTHETIC_PI.to_string()
@@ -3141,7 +3145,7 @@ fn pi_cjs_plan_rejects_new_discovery_entry_before_legacy_or_rtk_removal() {
         let old = f.write(&format!(".pi/agent/extensions/{old_name}"), &old_text);
         let p = stock_plan(&f, &["--agent", "pi", "--replace-rtk"]).unwrap();
         let collision = f.write(
-            ".pi/agent/extensions/retok/index.ts",
+            ".pi/agent/extensions/sift/index.ts",
             "// new user extension\n",
         );
         assert!(p.apply().is_err());

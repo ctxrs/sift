@@ -1,6 +1,6 @@
 //! Bounded stdin filter for native shell pipelines. It never starts a command.
 use anyhow::Result;
-use retok::{CompactResult, Compactor};
+use sift::{CompactResult, Compactor};
 use std::io::{self, Read, Write};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};

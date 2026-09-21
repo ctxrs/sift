@@ -1,26 +1,26 @@
 # Release v0.3.0 synthetic comparison — 2026-09-17
 
-These measurements use the **final Linux x64 Retok v0.3.0 release binary**. RTK
-remains faster on the seven non-control workloads: Retok took 41–51 ms, versus
+These measurements use the **final Linux x64 Sift v0.3.0 release binary**. RTK
+remains faster on the seven non-control workloads: Sift took 41–51 ms, versus
 RTK's 2.5–13.4 ms. RTK emitted fewer tokens on six workloads and tied on search.
-Retok preserved the requested command, exit status and reversible output; RTK's
+Sift preserved the requested command, exit status and reversible output; RTK's
 command-specific transformations differ, as detailed below. No aggregate winner
 or model-task-success claim follows from these small fixtures.
 
 ## Identity and measurements
 
-- Retok 0.3.0 SHA-256: `4019e56d8598c493e8e2d7c947529cfd3190fae56f0682ca06f0fc666976a494`
+- Sift 0.3.0 SHA-256: `4019e56d8598c493e8e2d7c947529cfd3190fae56f0682ca06f0fc666976a494`
 - RTK 0.49.0 SHA-256: `dd97f3c0a08f91ed90d3e87e05520c448bfda112b3cb101847ccb4d5444c9b07`
-- Retok source: `64de3adb0d2813941dc3a3c8eb048c504f91978a`
+- Sift source: `64de3adb0d2813941dc3a3c8eb048c504f91978a`
 
 Seven timed repeats per arm after one warmup, rotating arm order and warm filesystem
 caches on a shared Linux host. Hashes were unchanged afterward. Times include
 startup, child execution and local tracking. Tokens count actual stdout and stderr
-separately as ordinary `o200k_base`, using the same warmed Retok tokenizer for all
+separately as ordinary `o200k_base`, using the same warmed Sift tokenizer for all
 arms. Counts were stable across repeats. This is not an independent tokenizer
 comparison or a memory, billing, agent-success or first-byte-latency measurement.
 
-| Workload | Native tokens | Retok tokens | RTK tokens | Native ms | Retok ms | RTK ms |
+| Workload | Native tokens | Sift tokens | RTK tokens | Native ms | Sift ms | RTK ms |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | git-status | 144 | 144 | 43 | 1.351 | 41.155 | 5.119 |
 | git-diff | 507 | 506 | 429 | 1.375 | 41.443 | 5.132 |
@@ -44,10 +44,10 @@ fixtures, never historical commands or user repositories.
 
 ## Execution and retention
 
-All ten Retok workloads executed the requested command once with unchanged argv,
+All ten Sift workloads executed the requested command once with unchanged argv,
 cwd and fixture contents. Timed exits matched native behavior, including the
-intentional test failure. Every Retok stream matched the original or its explicit
-encoding. Restoration uses Retok’s product decoder. Restored text is compared byte-for-byte;
+intentional test failure. Every Sift stream matched the original or its explicit
+encoding. Restoration uses Sift’s product decoder. Restored text is compared byte-for-byte;
 JSON is compared independently for values, types and numeric lexemes while
 permitting whitespace and object-key order changes.
 
@@ -57,10 +57,10 @@ search changed flags. JSON used an internal reader and emitted the first record
 plus a remaining-row count: the final record's marker was absent. Test output
 moved the native stderr diagnostic into stdout. These observations describe the
 actual representations, not inferred reread costs or semantic-retention scores.
-Missing literal markers in Retok's reversible encoding restored correctly.
+Missing literal markers in Sift's reversible encoding restored correctly.
 
 No-op and progress controls show passthrough behavior; RTK uses `proxy` for them.
-Retok bypasses tiny output and streams progress after its capture window. The
+Sift bypasses tiny output and streams progress after its capture window. The
 separate warmed-protocol times in the JSON exclude tokenizer startup and include
 serialization/pipe overhead; they are not comparable to whole-command RTK times.
 

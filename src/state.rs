@@ -51,7 +51,7 @@ impl Settings {
         match File::open(path) {
             Ok(file) => {
                 let settings: Self = serde_json::from_reader(file)
-                    .context("invalid Retok config; file left unchanged")?;
+                    .context("invalid Sift config; file left unchanged")?;
                 ensure!(
                     settings.exclude_commands.iter().all(|s| valid_label(s)),
                     "exclude_commands must contain exact executable basenames"
@@ -108,9 +108,9 @@ pub fn state_dir() -> Result<PathBuf> {
 }
 fn directory(config: bool) -> Result<PathBuf> {
     if let Some(path) = env_path(if config {
-        "RETOK_CONFIG_DIR"
+        "SIFT_CONFIG_DIR"
     } else {
-        "RETOK_STATE_DIR"
+        "SIFT_STATE_DIR"
     }) {
         return Ok(path);
     }
@@ -118,7 +118,7 @@ fn directory(config: bool) -> Result<PathBuf> {
     {
         Ok(env_path(if config { "APPDATA" } else { "LOCALAPPDATA" })
             .context("Windows application data directory unavailable")?
-            .join("Retok"))
+            .join("Sift"))
     }
     #[cfg(not(windows))]
     {
@@ -127,14 +127,14 @@ fn directory(config: bool) -> Result<PathBuf> {
         } else {
             "XDG_STATE_HOME"
         }) {
-            return Ok(path.join("retok"));
+            return Ok(path.join("sift"));
         }
         Ok(env_path("HOME")
-            .context("HOME unavailable; set RETOK_CONFIG_DIR and RETOK_STATE_DIR")?
+            .context("HOME unavailable; set SIFT_CONFIG_DIR and SIFT_STATE_DIR")?
             .join(if config {
-                ".config/retok"
+                ".config/sift"
             } else {
-                ".local/state/retok"
+                ".local/state/sift"
             }))
     }
 }
@@ -240,7 +240,7 @@ pub fn record_at(
 ) -> Result<()> {
     record_project_at(dir, settings, event, originals, None)
 }
-/// Explicit project identity for callers whose command ran outside Retok's cwd.
+/// Explicit project identity for callers whose command ran outside Sift's cwd.
 /// Use project_at to normalize an existing directory before recording/querying.
 pub fn record_project_at(
     dir: &Path,
@@ -328,7 +328,7 @@ fn private_dir(path: &Path) -> Result<()> {
     builder.create(path)?;
     ensure!(
         !fs::symlink_metadata(path)?.file_type().is_symlink(),
-        "Retok directory must not be a symlink"
+        "Sift directory must not be a symlink"
     );
     #[cfg(unix)]
     {
@@ -341,7 +341,7 @@ fn private_open(path: &Path, append: bool, new: bool) -> Result<File> {
     if let Ok(meta) = fs::symlink_metadata(path) {
         ensure!(
             meta.is_file() && !meta.file_type().is_symlink(),
-            "Retok state path must be a regular file"
+            "Sift state path must be a regular file"
         );
     }
     let mut options = OpenOptions::new();
@@ -762,22 +762,22 @@ fn utc_date(epoch_days: u64) -> String {
     }
     format!("{year:04}-{:02}-{:02}", month + 1, days + 1)
 }
-const GAIN_HELP: &str = "Usage: retok gain [--json|--csv|--format text|json|csv] [--history]
+const GAIN_HELP: &str = "Usage: sift gain [--json|--csv|--format text|json|csv] [--history]
        [--daily] [--weekly] [--monthly] [--graph] [--project [PATH]]
        [--since TIME] [--until TIME] [--command NAME] [--source NAME]
-       retok gain --reset
+       sift gain --reset
 Show measured token savings from retained records (all projects by default).
 --project defaults to the current checkout; legacy records have no project.
 TIME is YYYY-MM-DD at UTC midnight or Unix milliseconds; since includes, until excludes.
 Weeks start Monday UTC. --graph uses daily buckets unless a period is selected.
 CSV exports totals, selected periods, or --history records. --reset clears metrics only.";
-const RECALL_HELP: &str = "Usage: retok recall --list
-       retok recall ID-OR-PREFIX [--stderr] [--from LINE] [--lines COUNT] [--grep TEXT]
+const RECALL_HELP: &str = "Usage: sift recall --list
+       sift recall ID-OR-PREFIX [--stderr] [--from LINE] [--lines COUNT] [--grep TEXT]
 Without navigation, writes the entire saved stream as raw bytes.
 --from is one-based; --grep is literal and case-sensitive; --lines limits matches.
 Navigation returns at most 200 lines by default (maximum --lines 10000).
 Only opt-in saved originals are available; commands are never rerun.";
-const CONFIG_HELP: &str = "Usage: retok config [show|--create]
+const CONFIG_HELP: &str = "Usage: sift config [show|--create]
 Show effective settings. --create writes defaults only if no config exists.
 Set originals_max_entries, originals_max_bytes (total), and originals_max_days in config.json.
 Caps must be positive; originals are saved only when keep_originals is true.

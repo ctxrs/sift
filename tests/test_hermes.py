@@ -28,15 +28,15 @@ REPLACEMENT = NATIVE.replace(json.dumps("checkpoint α 🦄\r\n" * 100, ensure_a
 
 class HermesAdapterTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="retok hermes ")
+        self.temp = tempfile.TemporaryDirectory(prefix="sift hermes ")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.executable = self.root / "retok ' 🦄.py"
+        self.executable = self.root / "sift ' 🦄.py"
         self.receipt = self.root / "argv.json"
         self.request = self.root / "request.bin"
-        self.module = types.ModuleType("retok_hermes_fixture")
+        self.module = types.ModuleType("sift_hermes_fixture")
         source = SOURCE.read_text().replace(
-            "__RETOK_EXECUTABLE_UTF8_HEX__", str(self.executable).encode("utf-8").hex())
+            "__SIFT_EXECUTABLE_UTF8_HEX__", str(self.executable).encode("utf-8").hex())
         exec(compile(source, str(SOURCE), "exec"), self.module.__dict__)
         if os.name == "nt":
             # Windows cannot directly execute a shebang fixture. Only substitute
@@ -102,7 +102,7 @@ class HermesAdapterTests(unittest.TestCase):
             self.module.register(ctx)
         self.assertEqual(hooks, [("transform_tool_result", self.module._transform_tool_result)])
         manifest = SOURCE.with_name("plugin.yaml").read_text()
-        self.assertIn("name: retok-rewrite", manifest)
+        self.assertIn("name: sift-rewrite", manifest)
         self.assertEqual(manifest.count("  - transform_tool_result"), 2)
         self.assertNotIn("pre_tool_call", manifest)
         self.assertNotIn("transform_terminal_output", manifest)

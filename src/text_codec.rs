@@ -1,8 +1,8 @@
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
-const HEADER: &str = "retok:text-runs-v1 counts repeat exact JSON strings; concatenate\n";
-const PREFIX_HEADER: &str = "retok:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n";
+const HEADER: &str = "sift:text-runs-v1 counts repeat exact JSON strings; concatenate\n";
+const PREFIX_HEADER: &str = "sift:text-prefixes-v1 strings are literal; [prefix,[suffixes]] repeats prefix before each suffix; concatenate\n";
 const MAX_RESTORED_BYTES: usize = 64 * 1024 * 1024;
 
 pub(crate) fn candidate(input: &str) -> Option<String> {
@@ -206,7 +206,7 @@ mod tests {
             "\r\n\r\n",
             "\"\\\0🦀\n\"\\\0🦀\nend",
             "x\nx\ny\ny",
-            "retok:text-runs-v1\nretok:text-runs-v1\n",
+            "sift:text-runs-v1\nsift:text-runs-v1\n",
         ] {
             assert_eq!(restore(&candidate(input).unwrap()).unwrap(), input);
         }

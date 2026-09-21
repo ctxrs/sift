@@ -222,7 +222,7 @@ impl CountTokenizer {
             // PRE_DATA is immutable and aligned beyond the required u32 boundary.
             // The anchored, nonempty UTF-8 patterns and their order are unchanged.
             pre: unsafe { DFA::from_bytes_unchecked(&PRE_DATA.0) }
-                .expect("valid embedded pretokenizer")
+                .expect("valid embedded pre-tokenizer")
                 .0,
         }
     }
@@ -249,7 +249,7 @@ impl CountTokenizer {
     }
 
     /// A partial count is only a rejection, never an emitted token measurement.
-    /// BPE is completed for each exact pretokenizer piece before testing the limit.
+    /// BPE is completed for each exact pre-tokenizer piece before testing the limit.
     pub(crate) fn count_below(&self, text: &str, limit: usize) -> Option<usize> {
         if limit == 0 {
             return None;
@@ -281,7 +281,7 @@ fn embedded_count_archive_is_valid() {
 
 #[cfg(test)]
 #[test]
-fn embedded_pretokenizer_is_valid() {
+fn embedded_pre_tokenizer_is_valid() {
     let (checked, consumed) = DFA::from_bytes(&PRE_DATA.0).unwrap();
     assert_eq!(consumed, PRE_DATA.0.len());
     assert_eq!(

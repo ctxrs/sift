@@ -2,10 +2,10 @@
 # Platform variables are synthetic, so these checks also run with pwsh on Unix.
 $ErrorActionPreference = 'Stop'
 $installer = Join-Path (Split-Path $PSScriptRoot -Parent) 'install.ps1'
-$root = Join-Path ([IO.Path]::GetTempPath()) ('retok-installer-test-' + [guid]::NewGuid())
+$root = Join-Path ([IO.Path]::GetTempPath()) ('sift-installer-test-' + [guid]::NewGuid())
 $variables = @('OS', 'PROCESSOR_ARCHITECTURE', 'PROCESSOR_ARCHITEW6432',
-    'LOCALAPPDATA', 'RETOK_VERSION', 'RETOK_INSTALL_DIR', 'TEMP', 'TMP', 'TMPDIR',
-    'RETOK_TEST_SETUP_LOG', 'RETOK_TEST_SETUP_EXIT')
+    'LOCALAPPDATA', 'SIFT_VERSION', 'SIFT_INSTALL_DIR', 'TEMP', 'TMP', 'TMPDIR',
+    'SIFT_TEST_SETUP_LOG', 'SIFT_TEST_SETUP_EXIT')
 $saved = @{}
 foreach ($name in $variables) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
 
@@ -21,7 +21,7 @@ function Invoke-WebRequest {
     $script:requests += $Uri
     $asset = ($Uri -split '/')[-1]
     Assert ($Uri -ceq "$script:base/$asset") "Unexpected release URL: $Uri"
-    Assert ($asset -in @('retok-windows-x64.exe', 'retok-windows-x64.exe.third-party-notices.txt', 'SHA256SUMS')) 'Unexpected asset'
+    Assert ($asset -in @('sift-windows-x64.exe', 'sift-windows-x64.exe.third-party-notices.txt', 'SHA256SUMS')) 'Unexpected asset'
     Assert ((Split-Path (Split-Path $OutFile -Parent) -Parent) -ceq (Split-Path $script:destination -Parent)) 'Download was not staged beside the destination'
     if ($asset -eq $script:failDownload) {
         [IO.File]::WriteAllText($OutFile, 'partial download')
@@ -29,7 +29,7 @@ function Invoke-WebRequest {
     }
     if ($asset -eq 'SHA256SUMS') {
         [IO.File]::WriteAllText($OutFile, $script:manifest)
-    } elseif ($asset -eq 'retok-windows-x64.exe') {
+    } elseif ($asset -eq 'sift-windows-x64.exe') {
         [IO.File]::WriteAllBytes($OutFile, $script:payload)
     } else {
         [IO.File]::WriteAllBytes($OutFile, $script:notices)
@@ -45,7 +45,7 @@ function Get-FileHash {
         # Portable fault injection: deny the final file operation by turning only
         # the staged executable into a directory after hashing. Never touch the
         # installed executable. Native Windows tests below instead use a lock.
-        $binary = Join-Path (Split-Path $LiteralPath -Parent) 'retok-windows-x64.exe'
+        $binary = Join-Path (Split-Path $LiteralPath -Parent) 'sift-windows-x64.exe'
         [IO.File]::Delete($binary)
         [IO.Directory]::CreateDirectory($binary) | Out-Null
     }
@@ -53,12 +53,12 @@ function Get-FileHash {
 }
 
 function Test-DeniedBinaryReplacement([bool]$hadBinary, [bool]$hadNotices, [bool]$nativeLock = $false) {
-    $env:RETOK_INSTALL_DIR = Join-Path $script:root ("denied-$hadBinary-$hadNotices-$nativeLock")
-    [IO.Directory]::CreateDirectory($env:RETOK_INSTALL_DIR) | Out-Null
-    $script:destination = Join-Path $env:RETOK_INSTALL_DIR 'retok.exe'
+    $env:SIFT_INSTALL_DIR = Join-Path $script:root ("denied-$hadBinary-$hadNotices-$nativeLock")
+    [IO.Directory]::CreateDirectory($env:SIFT_INSTALL_DIR) | Out-Null
+    $script:destination = Join-Path $env:SIFT_INSTALL_DIR 'sift.exe'
     $noticePath = $script:destination + '.third-party-notices.txt'
     $oldNotices = [byte[]]@(111, 108, 100, 13, 10, 0, 255, 10)
-    if ($hadBinary) { [IO.File]::WriteAllText($script:destination, 'previous working retok') }
+    if ($hadBinary) { [IO.File]::WriteAllText($script:destination, 'previous working sift') }
     if ($hadNotices) { [IO.File]::WriteAllBytes($noticePath, $oldNotices) }
     $script:requests = @()
     $script:denyBinarySource = -not $nativeLock
@@ -74,7 +74,7 @@ function Test-DeniedBinaryReplacement([bool]$hadBinary, [bool]$hadNotices, [bool
         Assert ($failure.InnerException -is [IO.IOException] -or $failure.InnerException -is [UnauthorizedAccessException]) "Unexpected replacement failure: $failure"
         Assert ($script:requests.Count -eq 3) 'Failed before downloading all release files'
         if ($hadBinary) {
-            Assert ([IO.File]::ReadAllText($script:destination) -ceq 'previous working retok') 'Changed denied executable'
+            Assert ([IO.File]::ReadAllText($script:destination) -ceq 'previous working sift') 'Changed denied executable'
         } else {
             Assert (-not (Test-Path -LiteralPath $script:destination)) 'Left a binary after failed fresh install'
         }
@@ -83,7 +83,7 @@ function Test-DeniedBinaryReplacement([bool]$hadBinary, [bool]$hadNotices, [bool
         } else {
             Assert (-not (Test-Path -LiteralPath $noticePath)) 'Left new notices after executable replacement failed'
         }
-        Assert (@(Get-ChildItem -LiteralPath $env:RETOK_INSTALL_DIR -Filter '.retok-*' -Force).Count -eq 0) 'Leaked staged files after rollback'
+        Assert (@(Get-ChildItem -LiteralPath $env:SIFT_INSTALL_DIR -Filter '.sift-*' -Force).Count -eq 0) 'Leaked staged files after rollback'
         $script:checks++
     } finally {
         if ($null -ne $handle) { $handle.Dispose() }
@@ -100,11 +100,11 @@ function Run-Installer($expectedFailure = '') {
     Assert ($env:PATH -ceq $beforePath) 'Changed caller PATH'
     Assert (@(Get-ChildItem -LiteralPath $script:temp).Count -eq 0) 'Leaked temporary download'
     $parent = Split-Path $script:destination -Parent
-    Assert (@(Get-ChildItem -LiteralPath $parent -Filter '.retok-*' -Force).Count -eq 0) 'Leaked staged files'
+    Assert (@(Get-ChildItem -LiteralPath $parent -Filter '.sift-*' -Force).Count -eq 0) 'Leaked staged files'
     $installedNotices = $script:destination + '.third-party-notices.txt'
     if ($expectedFailure) {
         Assert ($null -ne $failure -and $failure.Contains($expectedFailure)) "Expected '$expectedFailure'; got '$failure'"
-        Assert ([IO.File]::ReadAllText($script:destination) -ceq 'previous working retok') 'Replaced existing binary on failure'
+        Assert ([IO.File]::ReadAllText($script:destination) -ceq 'previous working sift') 'Replaced existing binary on failure'
         Assert ([IO.File]::ReadAllText($installedNotices) -ceq 'previous notices') 'Replaced existing notices on failure'
     } else {
         Assert ($null -eq $failure) "Install failed: $failure"
@@ -112,8 +112,8 @@ function Run-Installer($expectedFailure = '') {
         Assert ([Convert]::ToBase64String([IO.File]::ReadAllBytes($installedNotices)) -ceq [Convert]::ToBase64String($script:notices)) 'Wrong installed notices'
         Assert ($script:requests.Count -eq 3) 'Expected exactly three downloads'
         Assert ($script:requests[0] -ceq "$script:base/SHA256SUMS") 'Wrong checksum URL'
-        Assert ($script:requests[1] -ceq "$script:base/retok-windows-x64.exe") 'Wrong binary URL'
-        Assert ($script:requests[2] -ceq "$script:base/retok-windows-x64.exe.third-party-notices.txt") 'Wrong notices URL'
+        Assert ($script:requests[1] -ceq "$script:base/sift-windows-x64.exe") 'Wrong binary URL'
+        Assert ($script:requests[2] -ceq "$script:base/sift-windows-x64.exe.third-party-notices.txt") 'Wrong notices URL'
     }
     $script:requests = @()
     $script:checks++
@@ -129,8 +129,8 @@ try {
     $env:PROCESSOR_ARCHITECTURE = 'AMD64'
     $env:PROCESSOR_ARCHITEW6432 = ''
     $env:LOCALAPPDATA = Join-Path $root 'local app data'
-    $env:RETOK_VERSION = ''
-    $env:RETOK_INSTALL_DIR = ''
+    $env:SIFT_VERSION = ''
+    $env:SIFT_INSTALL_DIR = ''
     $payload = [Text.Encoding]::UTF8.GetBytes("synthetic Windows release`n")
     $notices = [Text.Encoding]::UTF8.GetBytes("synthetic third-party notices`n")
     $sha = [Security.Cryptography.SHA256]::Create()
@@ -139,16 +139,16 @@ try {
         $noticesDigest = [BitConverter]::ToString($sha.ComputeHash($notices)).Replace('-', '').ToLowerInvariant()
     }
     finally { $sha.Dispose() }
-    $binaryEntry = "$digest  retok-windows-x64.exe`r`n"
-    $noticesEntry = "$noticesDigest  retok-windows-x64.exe.third-party-notices.txt`r`n"
+    $binaryEntry = "$digest  sift-windows-x64.exe`r`n"
+    $noticesEntry = "$noticesDigest  sift-windows-x64.exe.third-party-notices.txt`r`n"
     $validManifest = $binaryEntry + $noticesEntry
     $manifest = $validManifest
-    $base = 'https://github.com/ctxrs/retok/releases/latest/download'
+    $base = 'https://github.com/ctxrs/sift/releases/latest/download'
     $requests = @()
     $checks = 0
     $failChecksum = $false
     $failDownload = ''
-    $destination = Join-Path $env:LOCALAPPDATA 'Programs/Retok/retok.exe'
+    $destination = Join-Path $env:LOCALAPPDATA 'Programs/Sift/sift.exe'
     # Native parameter binding must reject bad options before downloads or files.
     $installerEntry = [scriptblock]::Create([IO.File]::ReadAllText($installer))
     foreach ($options in @(@{ UnknownOption = $true }, @{ Init = $true; ReplaceRtk = $true },
@@ -173,18 +173,18 @@ try {
     Run-Installer
 
     # Pinned release, custom path with spaces, and 32-bit PowerShell on x64 Windows.
-    $env:RETOK_VERSION = 'v0.1.0'
-    $base = 'https://github.com/ctxrs/retok/releases/download/v0.1.0'
-    $env:RETOK_INSTALL_DIR = Join-Path $root 'custom bin'
-    $destination = Join-Path $env:RETOK_INSTALL_DIR 'retok.exe'
+    $env:SIFT_VERSION = 'v0.1.0'
+    $base = 'https://github.com/ctxrs/sift/releases/download/v0.1.0'
+    $env:SIFT_INSTALL_DIR = Join-Path $root 'custom bin'
+    $destination = Join-Path $env:SIFT_INSTALL_DIR 'sift.exe'
     $env:PROCESSOR_ARCHITECTURE = 'x86'
     $env:PROCESSOR_ARCHITEW6432 = 'AMD64'
-    $manifest = $digest.ToUpperInvariant() + " *retok-windows-x64.exe`n" + $noticesDigest.ToUpperInvariant() + " *retok-windows-x64.exe.third-party-notices.txt`n"
+    $manifest = $digest.ToUpperInvariant() + " *sift-windows-x64.exe`n" + $noticesDigest.ToUpperInvariant() + " *sift-windows-x64.exe.third-party-notices.txt`n"
     Run-Installer
     Run-Installer # Upgrade an existing installation.
 
     # Hold the old files open: a replacement must not truncate their contents.
-    [IO.File]::WriteAllText($destination, 'previous working retok')
+    [IO.File]::WriteAllText($destination, 'previous working sift')
     [IO.File]::WriteAllText(($destination + '.third-party-notices.txt'), 'previous notices')
     $sharing = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
     $oldBinary = [IO.File]::Open($destination, [IO.FileMode]::Open, [IO.FileAccess]::Read, $sharing)
@@ -194,7 +194,7 @@ try {
         $binaryReader = [IO.StreamReader]::new($oldBinary)
         $noticesReader = [IO.StreamReader]::new($oldNotices)
         try {
-            Assert ($binaryReader.ReadToEnd() -ceq 'previous working retok') 'Truncated old executable'
+            Assert ($binaryReader.ReadToEnd() -ceq 'previous working sift') 'Truncated old executable'
             Assert ($noticesReader.ReadToEnd() -ceq 'previous notices') 'Truncated old notices'
         } finally {
             $binaryReader.Dispose()
@@ -205,7 +205,7 @@ try {
         $oldNotices.Dispose()
     }
 
-    [IO.File]::WriteAllText($destination, 'previous working retok')
+    [IO.File]::WriteAllText($destination, 'previous working sift')
     [IO.File]::WriteAllText(($destination + '.third-party-notices.txt'), 'previous notices')
     foreach ($entry in @($binaryEntry, $noticesEntry)) {
         $name = ($entry.Trim() -split '  ')[1]
@@ -221,15 +221,15 @@ try {
     $failChecksum = $true
     Run-Installer 'Synthetic checksum failure'
     $failChecksum = $false
-    foreach ($asset in @('retok-windows-x64.exe', 'retok-windows-x64.exe.third-party-notices.txt', 'SHA256SUMS')) {
+    foreach ($asset in @('sift-windows-x64.exe', 'sift-windows-x64.exe.third-party-notices.txt', 'SHA256SUMS')) {
         $failDownload = $asset
         Run-Installer 'Synthetic download failure'
     }
     $failDownload = ''
 
-    $env:RETOK_VERSION = '../../other'
-    Run-Installer 'Invalid RETOK_VERSION'
-    $env:RETOK_VERSION = 'v0.1.0'
+    $env:SIFT_VERSION = '../../other'
+    Run-Installer 'Invalid SIFT_VERSION'
+    $env:SIFT_VERSION = 'v0.1.0'
     $env:PROCESSOR_ARCHITEW6432 = ''
     foreach ($arch in @('ARM64', 'x86')) {
         $env:PROCESSOR_ARCHITECTURE = $arch
@@ -258,7 +258,7 @@ try {
     Assert ($failure.Contains('checksum')) 'Accepted missing notices checksum'
     Assert (-not (Test-Path -LiteralPath $destination)) 'Installed binary without notices'
     Assert (-not (Test-Path -LiteralPath ($destination + '.third-party-notices.txt'))) 'Installed unverified notices'
-    Assert (@(Get-ChildItem -LiteralPath (Split-Path $destination -Parent) -Filter '.retok-*' -Force).Count -eq 0) 'Leaked staged files'
+    Assert (@(Get-ChildItem -LiteralPath (Split-Path $destination -Parent) -Filter '.sift-*' -Force).Count -eq 0) 'Leaked staged files'
     $checks++
     $manifest = $validManifest
     foreach ($hadBinary in @($false, $true)) {
@@ -288,8 +288,8 @@ public class SetupFixture {
         string[] lines = new string[args.Length + 1];
         lines[0] = binary;
         Array.Copy(args, 0, lines, 1, args.Length);
-        File.WriteAllLines(Environment.GetEnvironmentVariable("RETOK_TEST_SETUP_LOG"), lines);
-        return int.Parse(Environment.GetEnvironmentVariable("RETOK_TEST_SETUP_EXIT"));
+        File.WriteAllLines(Environment.GetEnvironmentVariable("SIFT_TEST_SETUP_LOG"), lines);
+        return int.Parse(Environment.GetEnvironmentVariable("SIFT_TEST_SETUP_EXIT"));
     }
 }
 '@)
@@ -299,17 +299,17 @@ public class SetupFixture {
         Assert ($LASTEXITCODE -eq 0) 'Could not compile synthetic setup executable'
         $payload = [IO.File]::ReadAllBytes($fixtureBinary)
         $digest = (Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $fixtureBinary -Algorithm SHA256).Hash.ToLowerInvariant()
-        $manifest = "$digest  retok-windows-x64.exe`r`n" + $noticesEntry
-        $env:RETOK_INSTALL_DIR = Join-Path $root 'setup bin with spaces'
-        $destination = Join-Path $env:RETOK_INSTALL_DIR 'retok.exe'
-        $env:RETOK_TEST_SETUP_LOG = Join-Path $root 'setup-args.txt'
-        $env:RETOK_TEST_SETUP_EXIT = '0'
+        $manifest = "$digest  sift-windows-x64.exe`r`n" + $noticesEntry
+        $env:SIFT_INSTALL_DIR = Join-Path $root 'setup bin with spaces'
+        $destination = Join-Path $env:SIFT_INSTALL_DIR 'sift.exe'
+        $env:SIFT_TEST_SETUP_LOG = Join-Path $root 'setup-args.txt'
+        $env:SIFT_TEST_SETUP_EXIT = '0'
         $requests = @()
         Run-Installer # No-argument irm | iex behavior must never execute setup.
-        Assert (-not (Test-Path -LiteralPath $env:RETOK_TEST_SETUP_LOG)) 'No-argument install executed setup'
+        Assert (-not (Test-Path -LiteralPath $env:SIFT_TEST_SETUP_LOG)) 'No-argument install executed setup'
         foreach ($option in @('Init', 'ReplaceRtk')) {
             foreach ($exitCode in @('0', '7')) {
-                $env:RETOK_TEST_SETUP_EXIT = $exitCode
+                $env:SIFT_TEST_SETUP_EXIT = $exitCode
                 $options = @{ $option = $true }
                 $requests = @()
                 $beforePath = $env:PATH
@@ -323,7 +323,7 @@ public class SetupFixture {
                 }
                 Assert ($env:PATH -ceq $beforePath) 'Setup installer changed PATH'
                 Assert ($ErrorActionPreference -eq $beforePreference) 'Setup installer changed caller error preference'
-                $forwarded = [IO.File]::ReadAllLines($env:RETOK_TEST_SETUP_LOG)
+                $forwarded = [IO.File]::ReadAllLines($env:SIFT_TEST_SETUP_LOG)
                 Assert ($forwarded[0] -ceq $destination) 'Did not execute exact installed absolute binary'
                 Assert ($forwarded[1] -ceq 'init') 'Missing init argument'
                 if ($option -eq 'ReplaceRtk') {
@@ -334,16 +334,16 @@ public class SetupFixture {
                 Assert ([Convert]::ToBase64String([IO.File]::ReadAllBytes($destination)) -ceq [Convert]::ToBase64String($payload)) 'Setup failure lost installed executable'
                 Assert ([Convert]::ToBase64String([IO.File]::ReadAllBytes($destination + '.third-party-notices.txt')) -ceq [Convert]::ToBase64String($notices)) 'Setup failure lost installed notices'
                 Assert ($requests.Count -eq 3) 'Setup install did not download exactly three files'
-                Assert (@(Get-ChildItem -LiteralPath $env:RETOK_INSTALL_DIR -Filter '.retok-*' -Force).Count -eq 0) 'Setup install leaked staged files'
-                Remove-Item -LiteralPath $env:RETOK_TEST_SETUP_LOG
+                Assert (@(Get-ChildItem -LiteralPath $env:SIFT_INSTALL_DIR -Filter '.sift-*' -Force).Count -eq 0) 'Setup install leaked staged files'
+                Remove-Item -LiteralPath $env:SIFT_TEST_SETUP_LOG
                 $checks++
             }
         }
-        $manifest = '0' * 64 + "  retok-windows-x64.exe`r`n" + $noticesEntry
+        $manifest = '0' * 64 + "  sift-windows-x64.exe`r`n" + $noticesEntry
         $failure = $null
         try { & $installerEntry -Init } catch { $failure = $_.Exception.Message }
         Assert ($null -ne $failure -and $failure.Contains('SHA-256 mismatch')) 'Accepted invalid setup binary'
-        Assert (-not (Test-Path -LiteralPath $env:RETOK_TEST_SETUP_LOG)) 'Ran setup after verification failure'
+        Assert (-not (Test-Path -LiteralPath $env:SIFT_TEST_SETUP_LOG)) 'Ran setup after verification failure'
         $checks++
     } else {
         Write-Host 'Skipped native setup executable checks: requires Windows and the .NET Framework compiler.'

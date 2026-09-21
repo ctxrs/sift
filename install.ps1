@@ -25,30 +25,30 @@ The installer does not edit shell profiles or PATH.
     }
     $arch = $env:PROCESSOR_ARCHITEW6432
     if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
-    if ($arch -ne 'AMD64') { throw 'Retok Windows releases require x64 Windows.' }
+    if ($arch -ne 'AMD64') { throw 'Sift Windows releases require x64 Windows.' }
 
-    $asset = 'retok-windows-x64.exe'
+    $asset = 'sift-windows-x64.exe'
     $notices = "$asset.third-party-notices.txt"
-    $base = 'https://github.com/ctxrs/retok/releases'
-    if ($env:RETOK_VERSION) {
-        if ($env:RETOK_VERSION -notmatch '^[A-Za-z0-9._-]+$') {
-            throw 'Invalid RETOK_VERSION release tag.'
+    $base = 'https://github.com/ctxrs/sift/releases'
+    if ($env:SIFT_VERSION) {
+        if ($env:SIFT_VERSION -notmatch '^[A-Za-z0-9._-]+$') {
+            throw 'Invalid SIFT_VERSION release tag.'
         }
-        $base += '/download/' + $env:RETOK_VERSION
+        $base += '/download/' + $env:SIFT_VERSION
     } else {
         $base += '/latest/download'
     }
-    $installDir = $env:RETOK_INSTALL_DIR
+    $installDir = $env:SIFT_INSTALL_DIR
     if (-not $installDir) {
-        $installDir = Join-Path $env:LOCALAPPDATA 'Programs/Retok'
+        $installDir = Join-Path $env:LOCALAPPDATA 'Programs/Sift'
     }
     $installDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($installDir)
     [IO.Directory]::CreateDirectory($installDir) | Out-Null
-    foreach ($name in @('retok.exe', 'retok.exe.third-party-notices.txt')) {
+    foreach ($name in @('sift.exe', 'sift.exe.third-party-notices.txt')) {
         $target = Join-Path $installDir $name
         if (Test-Path -LiteralPath $target -PathType Container) { throw "$target is a directory." }
     }
-    $tempDir = Join-Path $installDir ('.retok-' + [guid]::NewGuid())
+    $tempDir = Join-Path $installDir ('.sift-' + [guid]::NewGuid())
     [IO.Directory]::CreateDirectory($tempDir) | Out-Null
     $keepTempDir = $false
     try {
@@ -69,7 +69,7 @@ The installer does not edit shell profiles or PATH.
         # Both files are verified and staged on the destination filesystem.
         # Replace existing files without opening them for truncation; binary last.
         $noticeSource = Join-Path $tempDir $notices
-        $noticeDestination = Join-Path $installDir 'retok.exe.third-party-notices.txt'
+        $noticeDestination = Join-Path $installDir 'sift.exe.third-party-notices.txt'
         $noticeBackup = Join-Path $tempDir 'previous-notices'
         if ([IO.File]::Exists($noticeDestination)) {
             [IO.File]::Replace($noticeSource, $noticeDestination, $noticeBackup)
@@ -77,7 +77,7 @@ The installer does not edit shell profiles or PATH.
             [IO.File]::Move($noticeSource, $noticeDestination)
         }
         $source = Join-Path $tempDir $asset
-        $destination = Join-Path $installDir 'retok.exe'
+        $destination = Join-Path $installDir 'sift.exe'
         try {
             if ([IO.File]::Exists($destination)) {
                 [IO.File]::Replace($source, $destination, [NullString]::Value)
@@ -98,7 +98,7 @@ The installer does not edit shell profiles or PATH.
             }
             throw $installFailure
         }
-        Write-Host "Installed retok to $destination"
+        Write-Host "Installed sift to $destination"
         if ($Init -or $ReplaceRtk) {
             $setupArguments = @('init')
             if ($ReplaceRtk) { $setupArguments += '--replace-rtk' }
@@ -109,7 +109,7 @@ The installer does not edit shell profiles or PATH.
                 throw "Binary installed at $destination, but integration failed. Retry setup with that binary. $_"
             }
         }
-        Write-Host "Add $installDir to your user PATH if needed, then run retok --help."
+        Write-Host "Add $installDir to your user PATH if needed, then run sift --help."
     } finally {
         if (-not $keepTempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force }
     }

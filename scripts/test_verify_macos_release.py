@@ -25,13 +25,13 @@ class MacosVersionTests(unittest.TestCase):
             team = "TESTTEAM01"
             team_hash = hashlib.sha256(team.encode()).hexdigest()
             (contracts / "release-signing-v1.json").write_text(json.dumps({
-                "product": {"binary_identifier": "retok"},
+                "product": {"binary_identifier": "sift"},
                 "apple": {"team_id_sha256": team_hash},
             }))
             codesign = tools / "codesign"
             codesign.write_text("#!" + sys.executable + "\n" +
                                 "import sys\nif sys.argv[1] == '-d':\n    print(" + repr(
-                                    "Identifier=retok\nTeamIdentifier=" + team +
+                                    "Identifier=sift\nTeamIdentifier=" + team +
                                     "\nAuthority=Developer ID Application: Test Publisher (" + team + ")" +
                                     "\nCodeDirectory v=20500 flags=0x10000(runtime)" +
                                     "\nTimestamp=synthetic timestamp"
@@ -43,13 +43,13 @@ class MacosVersionTests(unittest.TestCase):
             (tools / "shasum").symlink_to(shasum)
             artifact_dir = root / "back\\slash-and-new\nline"
             artifact_dir.mkdir()
-            artifact = artifact_dir / "retok-macos-x64"
+            artifact = artifact_dir / "sift-macos-x64"
             for stdout, stderr, code, accepted in (
-                (b"Retok 0.1.0\n", b"", 0, True),
-                (b"Retok 0.1.0\n\n", b"", 0, False),
-                (b"Retok 0.1.0\n", b"warning\n", 0, False),
-                (b"Retok 0.1.0", b"", 0, False),
-                (b"Retok 0.1.0\n", b"", 1, False),
+                (b"Sift 0.1.0\n", b"", 0, True),
+                (b"Sift 0.1.0\n\n", b"", 0, False),
+                (b"Sift 0.1.0\n", b"warning\n", 0, False),
+                (b"Sift 0.1.0", b"", 0, False),
+                (b"Sift 0.1.0\n", b"", 1, False),
             ):
                 with self.subTest(stdout=stdout, stderr=stderr, code=code):
                     artifact.write_text("#!" + sys.executable + "\nimport sys\n"

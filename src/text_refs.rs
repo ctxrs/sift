@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-pub(crate) const HEADER: &str = "retok:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n";
+pub(crate) const HEADER: &str = "sift:text-refs-v1 concatenate strings; integer N copies the earlier string at zero-based array index N\n";
 const MAX_RESTORED_BYTES: usize = 64 * 1024 * 1024;
 const PREFIX_BUDGET: usize = 32;
 

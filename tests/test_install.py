@@ -11,13 +11,13 @@ import unittest
 
 
 INSTALLER = Path(__file__).resolve().parents[1] / "install.sh"
-RELEASES = "https://github.com/ctxrs/retok/releases"
+RELEASES = "https://github.com/ctxrs/sift/releases"
 ASSETS = (
-    "retok-linux-x64",
-    "retok-linux-aarch64",
-    "retok-macos-x64",
-    "retok-macos-arm64",
-    "retok-windows-x64.exe",
+    "sift-linux-x64",
+    "sift-linux-aarch64",
+    "sift-macos-x64",
+    "sift-macos-arm64",
+    "sift-windows-x64.exe",
 )
 
 # Only these mocks are on PATH for network/platform/checksum commands. The curl
@@ -47,9 +47,9 @@ elif name == "curl":
 elif name == "mv":
     assert args[0] == "-f", args
     source, destination = map(Path, args[1:])
-    if destination.name == "retok":
-        notices = destination.with_name("retok.third-party-notices.txt")
-        expected = Path(os.environ["MOCK_RELEASE"]) / "retok-linux-x64.third-party-notices.txt"
+    if destination.name == "sift":
+        notices = destination.with_name("sift.third-party-notices.txt")
+        expected = Path(os.environ["MOCK_RELEASE"]) / "sift-linux-x64.third-party-notices.txt"
         assert notices.read_bytes() == expected.read_bytes(), "Notices were not replaced first"
         Path(os.environ["MOCK_DENIED_LOG"]).write_text("binary replacement denied")
         print("mv: permission denied replacing executable", file=sys.stderr)
@@ -69,7 +69,7 @@ else:
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="retok-installer-test-")
+        self.temp = tempfile.TemporaryDirectory(prefix="sift-installer-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.bin = self.root / "bin"
@@ -99,7 +99,7 @@ class InstallerTests(unittest.TestCase):
             "MOCK_LOG": str(self.root / "requests"),
             "MOCK_RELEASE": str(self.release),
         }
-        self.destination = self.home / ".local/bin/retok"
+        self.destination = self.home / ".local/bin/sift"
 
     def mock(self, name):
         command = self.bin / name
@@ -113,7 +113,7 @@ class InstallerTests(unittest.TestCase):
         )
         self.assertEqual(list(self.downloads.iterdir()), [], "downloads must be cleaned up")
         if self.destination.parent.exists():
-            self.assertEqual(list(self.destination.parent.glob(".retok.*")), [])
+            self.assertEqual(list(self.destination.parent.glob(".sift.*")), [])
         return result
 
     def assert_installed(self, asset):
@@ -121,7 +121,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.destination.read_bytes(), (self.release / asset).read_bytes())
         self.assertEqual(self.destination.stat().st_mode & 0o777, 0o755)
-        notices = self.destination.with_name("retok.third-party-notices.txt")
+        notices = self.destination.with_name("sift.third-party-notices.txt")
         self.assertEqual(notices.read_bytes(), (self.release / (asset + ".third-party-notices.txt")).read_bytes())
         self.assertEqual(notices.stat().st_mode & 0o777, 0o644)
         self.assertIn("PATH", result.stdout)
@@ -134,16 +134,16 @@ class InstallerTests(unittest.TestCase):
 
     def assert_preserved(self, message=None):
         self.destination.parent.mkdir(parents=True, exist_ok=True)
-        self.destination.write_bytes(b"previous working retok")
-        notices = self.destination.with_name("retok.third-party-notices.txt")
+        self.destination.write_bytes(b"previous working sift")
+        notices = self.destination.with_name("sift.third-party-notices.txt")
         notices.write_bytes(b"previous notices")
         result = self.run_installer()
         self.assertNotEqual(result.returncode, 0)
         if message:
             self.assertIn(message, result.stderr)
-        self.assertEqual(self.destination.read_bytes(), b"previous working retok")
+        self.assertEqual(self.destination.read_bytes(), b"previous working sift")
         self.assertEqual(notices.read_bytes(), b"previous notices")
-        self.assertNotIn("Installed retok", result.stdout)
+        self.assertNotIn("Installed sift", result.stdout)
 
     def setup_executable(self):
         payload = ("#!" + sys.executable + "\n" + r'''
@@ -151,13 +151,13 @@ import json, os, sys
 from pathlib import Path
 binary = Path(sys.argv[0])
 assert binary.is_absolute()
-assert binary.with_name("retok.third-party-notices.txt").read_bytes() == (
-    Path(os.environ["MOCK_RELEASE"]) / "retok-linux-x64.third-party-notices.txt"
+assert binary.with_name("sift.third-party-notices.txt").read_bytes() == (
+    Path(os.environ["MOCK_RELEASE"]) / "sift-linux-x64.third-party-notices.txt"
 ).read_bytes()
 Path(os.environ["MOCK_SETUP_LOG"]).write_text(json.dumps(sys.argv))
 sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
 ''').encode()
-        asset = "retok-linux-x64"
+        asset = "sift-linux-x64"
         (self.release / asset).write_bytes(payload)
         lines = self.sums.read_text().splitlines()
         self.sums.write_text("".join(
@@ -166,14 +166,14 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
         ))
         self.env["MOCK_SETUP_LOG"] = str(self.root / "setup-args.json")
         # If setup accidentally uses PATH, fail instead of touching any real binary.
-        shadow = self.bin / "retok"
+        shadow = self.bin / "sift"
         shadow.write_text("#!/bin/sh\nexit 99\n")
         shadow.chmod(0o755)
 
     def test_setup_runs_exact_installed_binary_and_arguments(self):
         self.setup_executable()
-        self.env["RETOK_INSTALL_DIR"] = "relative install dir/bin"
-        self.destination = self.root / "relative install dir/bin/retok"
+        self.env["SIFT_INSTALL_DIR"] = "relative install dir/bin"
+        self.destination = self.root / "relative install dir/bin/sift"
         for flag, expected in (("--init", ["init"]), ("--replace-rtk", ["init", "--replace-rtk"])):
             with self.subTest(flag=flag):
                 result = self.run_installer(flag)
@@ -183,7 +183,7 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
 
     def test_no_arguments_never_runs_setup(self):
         self.setup_executable()
-        self.assert_installed("retok-linux-x64")
+        self.assert_installed("sift-linux-x64")
         self.assertFalse((self.root / "setup-args.json").exists())
 
     def test_setup_failure_retains_installed_binary_and_notices(self):
@@ -195,9 +195,9 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Binary installed", result.stderr)
                 self.assertIn("integration failed", result.stderr)
-                self.assertEqual(self.destination.read_bytes(), (self.release / "retok-linux-x64").read_bytes())
-                self.assertEqual(self.destination.with_name("retok.third-party-notices.txt").read_bytes(),
-                                 (self.release / "retok-linux-x64.third-party-notices.txt").read_bytes())
+                self.assertEqual(self.destination.read_bytes(), (self.release / "sift-linux-x64").read_bytes())
+                self.assertEqual(self.destination.with_name("sift.third-party-notices.txt").read_bytes(),
+                                 (self.release / "sift-linux-x64.third-party-notices.txt").read_bytes())
 
     def test_invalid_flags_and_help_do_not_download_or_create_files(self):
         before = set(self.root.rglob("*"))
@@ -217,7 +217,7 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
 
     def test_failed_verification_never_runs_setup(self):
         self.setup_executable()
-        (self.release / "retok-linux-x64.third-party-notices.txt").write_bytes(b"corrupt")
+        (self.release / "sift-linux-x64.third-party-notices.txt").write_bytes(b"corrupt")
         result = self.run_installer("--replace-rtk")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.root / "setup-args.json").exists())
@@ -225,10 +225,10 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
 
     def test_all_unix_assets_and_upgrade(self):
         for system, arch, asset in (
-            ("Linux", "x86_64", "retok-linux-x64"),
-            ("Linux", "aarch64", "retok-linux-aarch64"),
-            ("Darwin", "x86_64", "retok-macos-x64"),
-            ("Darwin", "arm64", "retok-macos-arm64"),
+            ("Linux", "x86_64", "sift-linux-x64"),
+            ("Linux", "aarch64", "sift-linux-aarch64"),
+            ("Darwin", "x86_64", "sift-macos-x64"),
+            ("Darwin", "arm64", "sift-macos-arm64"),
         ):
             with self.subTest(system=system, arch=arch):
                 self.env.update(MOCK_OS=system, MOCK_ARCH=arch)
@@ -237,10 +237,10 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
     def test_pinned_version_custom_directory_and_shasum(self):
         (self.bin / "sha256sum").unlink()
         self.mock("shasum")
-        self.env.update(RETOK_VERSION="v0.1.0", RETOK_INSTALL_DIR="relative dir/bin")
+        self.env.update(SIFT_VERSION="v0.1.0", SIFT_INSTALL_DIR="relative dir/bin")
         self.env["MOCK_BASE"] = RELEASES + "/download/v0.1.0"
-        self.destination = self.root / "relative dir/bin/retok"
-        self.assert_installed("retok-linux-x64")
+        self.destination = self.root / "relative dir/bin/sift"
+        self.assert_installed("sift-linux-x64")
 
     def test_real_checksum_utilities_with_special_directory_names(self):
         (self.bin / "sha256sum").unlink()
@@ -254,19 +254,19 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
                     with self.subTest(utility=utility, directory=special):
                         directory = self.root / special
                         directory.mkdir(exist_ok=True)
-                        self.env.update(TMPDIR=str(directory), RETOK_INSTALL_DIR=str(directory / "bin"))
-                        self.destination = directory / "bin/retok"
-                        self.assert_installed("retok-linux-x64")
+                        self.env.update(TMPDIR=str(directory), SIFT_INSTALL_DIR=str(directory / "bin"))
+                        self.destination = directory / "bin/sift"
+                        self.assert_installed("sift-linux-x64")
             finally:
                 command.unlink()
 
     def test_binary_marker_and_uppercase_digest(self):
         entries = [line.split() for line in self.sums.read_text().splitlines()]
         self.sums.write_text("".join(digest.upper() + " *" + asset + "\n" for digest, asset in entries))
-        self.assert_installed("retok-linux-x64")
+        self.assert_installed("sift-linux-x64")
 
     def test_corrupt_binary_or_notices_preserves_installation(self):
-        for name in ("retok-linux-x64", "retok-linux-x64.third-party-notices.txt"):
+        for name in ("sift-linux-x64", "sift-linux-x64.third-party-notices.txt"):
             with self.subTest(asset=name):
                 path = self.release / name
                 original = path.read_bytes()
@@ -276,7 +276,7 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
 
     def test_missing_malformed_duplicate_and_wrong_asset_checksums(self):
         original = self.sums.read_text()
-        for name in ("retok-linux-x64", "retok-linux-x64.third-party-notices.txt"):
+        for name in ("sift-linux-x64", "sift-linux-x64.third-party-notices.txt"):
             entry = next(line + "\n" for line in original.splitlines() if line.split()[1] == name)
             for replacement in ("", entry.replace(name, "other-asset"), entry * 2,
                                 "z" * 64 + "  " + name + "\n", "abc  " + name + "\n",
@@ -286,7 +286,7 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
                     self.assert_preserved("checksum")
 
     def test_failed_downloads_preserve_installation(self):
-        for asset in ("retok-linux-x64", "retok-linux-x64.third-party-notices.txt", "SHA256SUMS"):
+        for asset in ("sift-linux-x64", "sift-linux-x64.third-party-notices.txt", "SHA256SUMS"):
             with self.subTest(asset=asset):
                 self.env["MOCK_DOWNLOAD_FAILURE"] = asset
                 self.assert_preserved()
@@ -311,12 +311,12 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
                 self.mock(name)
 
     def test_invalid_version_fails_before_download(self):
-        self.env["RETOK_VERSION"] = "../../other"
-        self.assert_preserved("Invalid RETOK_VERSION")
+        self.env["SIFT_VERSION"] = "../../other"
+        self.assert_preserved("Invalid SIFT_VERSION")
         self.assertFalse((self.root / "requests").exists())
 
     def test_destination_directory_is_not_treated_as_install_target(self):
-        for name in ("retok", "retok.third-party-notices.txt"):
+        for name in ("sift", "sift.third-party-notices.txt"):
             with self.subTest(name=name):
                 target = self.destination.with_name(name)
                 target.mkdir(parents=True)
@@ -334,20 +334,20 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
 
     def test_replacement_does_not_truncate_open_files(self):
         self.destination.parent.mkdir(parents=True)
-        self.destination.write_bytes(b"previous working retok")
-        notices = self.destination.with_name("retok.third-party-notices.txt")
+        self.destination.write_bytes(b"previous working sift")
+        notices = self.destination.with_name("sift.third-party-notices.txt")
         notices.write_bytes(b"previous notices")
         with self.destination.open("rb") as old_binary, notices.open("rb") as old_notices:
-            self.assert_installed("retok-linux-x64")
-            self.assertEqual(old_binary.read(), b"previous working retok")
+            self.assert_installed("sift-linux-x64")
+            self.assertEqual(old_binary.read(), b"previous working sift")
             self.assertEqual(old_notices.read(), b"previous notices")
 
     def test_bad_notices_on_fresh_install_installs_neither_file(self):
-        (self.release / "retok-linux-x64.third-party-notices.txt").write_bytes(b"corrupt")
+        (self.release / "sift-linux-x64.third-party-notices.txt").write_bytes(b"corrupt")
         result = self.run_installer()
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.destination.exists())
-        self.assertFalse(self.destination.with_name("retok.third-party-notices.txt").exists())
+        self.assertFalse(self.destination.with_name("sift.third-party-notices.txt").exists())
 
     def test_denied_binary_replacement_restores_previous_notices_state(self):
         (self.bin / "mv").unlink()
@@ -360,17 +360,17 @@ sys.exit(int(os.environ.get("MOCK_SETUP_EXIT", "0")))
             with self.subTest(had_binary=had_binary, had_notices=had_notices):
                 self.destination.parent.mkdir(parents=True, exist_ok=True)
                 if had_binary:
-                    self.destination.write_bytes(b"previous working retok")
-                notices = self.destination.with_name("retok.third-party-notices.txt")
+                    self.destination.write_bytes(b"previous working sift")
+                notices = self.destination.with_name("sift.third-party-notices.txt")
                 if had_notices:
                     notices.write_bytes(old_notices)
                 result = self.run_installer()
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("permission denied replacing executable", result.stderr)
                 self.assertEqual(denied_log.read_text(), "binary replacement denied")
-                self.assertNotIn("Installed retok", result.stdout)
+                self.assertNotIn("Installed sift", result.stdout)
                 if had_binary:
-                    self.assertEqual(self.destination.read_bytes(), b"previous working retok")
+                    self.assertEqual(self.destination.read_bytes(), b"previous working sift")
                     self.destination.unlink()
                 else:
                     self.assertFalse(self.destination.exists())
