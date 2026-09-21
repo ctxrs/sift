@@ -1,8 +1,8 @@
-// Retok output adapter. Installation supplies the absolute executable path.
+// Sift output adapter. Installation supplies the absolute executable path.
 // Execution and permissions remain with the host; no command is rewritten.
 import { execFile } from "node:child_process";
-const retokExecutable = __RETOK_EXECUTABLE__;
-const retokSource = __RETOK_SOURCE__;
+const siftExecutable = __SIFT_EXECUTABLE__;
+const siftSource = __SIFT_SOURCE__;
 
 async function compactTexts(texts, tool) {
   if (!texts.length || texts.some(text => typeof text !== "string")) return texts;
@@ -11,8 +11,8 @@ async function compactTexts(texts, tool) {
     let settled = false;
     const finish = value => { if (!settled) { settled = true; resolve(value); } };
     try {
-      const child = execFile(retokExecutable,
-        ["compact", "--protocol=json-v1", "--record-source", retokSource,
+      const child = execFile(siftExecutable,
+        ["compact", "--protocol=json-v1", "--record-source", siftSource,
           ...(tool ? ["--record-tool", tool] : [])],
         { timeout: 3000, maxBuffer: 32 * 1024 * 1024, windowsHide: true },
         (error, stdout) => {

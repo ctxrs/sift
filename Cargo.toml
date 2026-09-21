@@ -1,11 +1,11 @@
 [package]
-name = "retok"
+name = "sift"
 version = "0.3.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Lossless, token-counted compaction of tool output"
 license = "MIT"
-repository = "https://github.com/ctxrs/retok"
+repository = "https://github.com/ctxrs/sift"
 readme = "README.md"
 
 [dependencies]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage and verify already-built Retok release assets (Python 3.11+ stdlib).
+"""Stage and verify already-built Sift release assets (Python 3.11+ stdlib).
 
 Usage:
   python3 scripts/release.py stage INPUT_DIR NEW_OUTPUT_DIR \
@@ -10,8 +10,8 @@ Usage:
       --runtime-manifest RUNTIMES.json
 
 INPUT_DIR must contain exactly these binaries:
-  retok-linux-x64, retok-linux-aarch64, retok-macos-x64,
-  retok-macos-arm64, retok-windows-x64.exe
+  sift-linux-x64, sift-linux-aarch64, sift-macos-x64,
+  sift-macos-arm64, sift-windows-x64.exe
 Each binary requires an
 appended .cdx.json and .third-party-notices.txt sidecar (including after .exe).
 Generate the sidecars for each final, signed binary using the metadata command. It uses
@@ -66,11 +66,11 @@ import release_signing
 
 VERSION = release_metadata.VERSION
 TARGETS = {
-    "retok-linux-x64": ("Linux", "x64"),
-    "retok-linux-aarch64": ("Linux", "arm64"),
-    "retok-macos-x64": ("Darwin", "x64"),
-    "retok-macos-arm64": ("Darwin", "arm64"),
-    "retok-windows-x64.exe": ("Windows", "x64"),
+    "sift-linux-x64": ("Linux", "x64"),
+    "sift-linux-aarch64": ("Linux", "arm64"),
+    "sift-macos-x64": ("Darwin", "x64"),
+    "sift-macos-arm64": ("Darwin", "arm64"),
+    "sift-windows-x64.exe": ("Windows", "x64"),
 }
 ASSETS = sorted(name + suffix for name in TARGETS for suffix in (
     "", ".cdx.json", ".third-party-notices.txt"
@@ -146,9 +146,9 @@ def metadata(directory, name):
     component = info.get("component") if isinstance(info, dict) else None
     require(isinstance(component, dict)
             and isinstance(component.get("name"), str)
-            and component.get("name", "").lower() == "retok"
+            and component.get("name", "").lower() == "sift"
             and component.get("version") == VERSION,
-            f"{path.name}: metadata.component must identify Retok {VERSION}")
+            f"{path.name}: metadata.component must identify Sift {VERSION}")
     components = data.get("components")
     require(isinstance(components, list) and components and all(
         isinstance(item, dict) and all(
@@ -189,7 +189,7 @@ def validate(directory, with_checksums, project=None, require_release_profile=Fa
         document = metadata(directory, name)
         if require_release_profile:
             vocabulary = next(c for c in document["components"] if c["type"] == "data")
-            profile = release_metadata.property_map(vocabulary).get("retok:profile-status")
+            profile = release_metadata.property_map(vocabulary).get("sift:profile-status")
             require(profile in (None, "release"),
                     f"{name}: development tokenizer profile cannot be released")
         if project is not None:
@@ -203,10 +203,10 @@ def validate(directory, with_checksums, project=None, require_release_profile=Fa
                                     timeout=10, check=False)
             require(result.returncode == 0
                     and result.stdout in (
-                        f"Retok {VERSION}\n".encode(), f"Retok {VERSION}\r\n".encode()
+                        f"Sift {VERSION}\n".encode(), f"Sift {VERSION}\r\n".encode()
                     )
                     and not result.stderr,
-                    f"{name}: --version must succeed and report only Retok {VERSION}")
+                    f"{name}: --version must succeed and report only Sift {VERSION}")
             print(f"{name}: version verified ({VERSION})")
         else:
             print(f"{name}: structure verified; version not run (foreign target)")
@@ -218,7 +218,7 @@ def stage(source, destination, signing_evidence):
     require(not destination.exists() and not destination.is_symlink(),
             f"{destination}: output must not already exist")
     # Publish only a complete validated directory; leave failed staging private.
-    with tempfile.TemporaryDirectory(prefix=".retok-stage-", dir=destination.parent) as temp:
+    with tempfile.TemporaryDirectory(prefix=".sift-stage-", dir=destination.parent) as temp:
         staged = Path(temp) / "assets"
         staged.mkdir()
         for name in ASSETS:

@@ -5,7 +5,7 @@ import os
 import subprocess
 import threading
 
-RETOK_EXECUTABLE = bytes.fromhex('__RETOK_EXECUTABLE_UTF8_HEX__').decode('utf-8')
+SIFT_EXECUTABLE = bytes.fromhex('__SIFT_EXECUTABLE_UTF8_HEX__').decode('utf-8')
 TIMEOUT_SECONDS = 2
 MAX_INPUT_BYTES = 16 * 1024 * 1024
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024
@@ -52,7 +52,7 @@ def _transform_tool_result(tool_name=None, args=None, result=None, **_metadata):
 def _complete(request):
     failed = threading.Event()
     with subprocess.Popen(
-        [RETOK_EXECUTABLE, "hook", "hermes"],
+        [SIFT_EXECUTABLE, "hook", "hermes"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         shell=False,
     ) as child:

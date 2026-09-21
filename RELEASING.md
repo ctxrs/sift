@@ -1,6 +1,6 @@
-# Releasing Retok
+# Releasing Sift
 
-Retok releases contain five standalone binaries. The release path signs and
+Sift releases contain five standalone binaries. The release path signs and
 notarizes the macOS binaries, Authenticode-signs the Windows binary, verifies
 those exact bytes on their native operating systems, then generates SBOMs and
 checksums. Signing credentials are never available to Cargo or dependency
@@ -32,11 +32,11 @@ Build Linux x64 and arm64 as static musl executables and Windows x64 as a GNU
 PE executable. Place only these files in a fresh input directory:
 
 ```text
-retok-linux-x64
-retok-linux-aarch64
-retok-macos-x64
-retok-macos-arm64
-retok-windows-x64.exe
+sift-linux-x64
+sift-linux-aarch64
+sift-macos-x64
+sift-macos-arm64
+sift-windows-x64.exe
 ```
 
 ## 2. Sign
@@ -62,15 +62,15 @@ On macOS, run the checker for both artifacts. Execute `--version` for every
 architecture the host can run:
 
 ```sh
-scripts/verify_macos_release.sh signed/retok-macos-x64 0.3.0 > macos-x64.json
-scripts/verify_macos_release.sh signed/retok-macos-arm64 > macos-arm64.json
+scripts/verify_macos_release.sh signed/sift-macos-x64 0.3.0 > macos-x64.json
+scripts/verify_macos_release.sh signed/sift-macos-arm64 > macos-arm64.json
 ```
 
 On Windows x64, use Windows PowerShell or PowerShell 7:
 
 ```powershell
 scripts/verify_windows_release.ps1 `
-  -Artifact signed/retok-windows-x64.exe `
+  -Artifact signed/sift-windows-x64.exe `
   -ExpectedVersion 0.3.0 | Set-Content -NoNewline windows-x64.json
 ```
 
@@ -79,11 +79,11 @@ hash, identity, policy, or result shape.
 
 ```sh
 python3 scripts/release_signing.py record-native signing-evidence \
-  signed/retok-macos-x64 macos-x64.json
+  signed/sift-macos-x64 macos-x64.json
 python3 scripts/release_signing.py record-native signing-evidence \
-  signed/retok-macos-arm64 macos-arm64.json
+  signed/sift-macos-arm64 macos-arm64.json
 python3 scripts/release_signing.py record-native signing-evidence \
-  signed/retok-windows-x64.exe windows-x64.json
+  signed/sift-windows-x64.exe windows-x64.json
 python3 scripts/release_signing.py verify signed signing-evidence
 ```
 

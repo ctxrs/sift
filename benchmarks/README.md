@@ -1,9 +1,9 @@
 # Synthetic command comparison
 
-`compare.py` compares native commands, `retok run -- COMMAND ...`, and native
+`compare.py` compares native commands, `sift run -- COMMAND ...`, and native
 RTK 0.49.0 subcommands. It needs Python 3.9+, Git, and ordinary POSIX command-line
 tools. It uses only Python's standard library, installs nothing, and builds no
-binaries. Use a fixed, release-mode Retok candidate after runner changes settle.
+binaries. Use a fixed, release-mode Sift candidate after runner changes settle.
 
 The [2026-09-17 release v0.3.0 results](results/2026-09-17-release-v0.3.0/README.md)
 include sanitized samples, token and elapsed charts, and execution differences
@@ -12,7 +12,7 @@ is retained unchanged. Neither run establishes an aggregate win over RTK.
 
 ```sh
 python3 benchmarks/compare.py --self-test
-python3 benchmarks/compare.py --retok /path/to/retok --rtk /path/to/rtk \
+python3 benchmarks/compare.py --sift /path/to/sift --rtk /path/to/rtk \
   --output /path/to/new-local-results --repeats 5 --save-raw
 ```
 
@@ -22,9 +22,9 @@ The output directory **must not exist**. Keep generated results outside the
 source checkout or in an ignored runtime directory. Results contain local binary
 paths, command paths, and execution working directories; review before sharing.
 No historical commands, real repositories, user settings, or user stores are used.
-HOME, XDG directories, Retok settings/state, temporary files, and Git configuration
+HOME, XDG directories, Sift settings/state, temporary files, and Git configuration
 are isolated under the output directory. RTK's normal local tracking is included
-in its elapsed times, as is Retok's normal tracking. No network access is needed.
+in its elapsed times, as is Sift's normal tracking. No network access is needed.
 
 ## Fixed workloads
 
@@ -54,7 +54,7 @@ before checking read-only command effects; intentional modified/deleted files re
   interface is pinned to RTK 0.49.0; another version is rejected. Native utilities
   and the synthetic helper have content hashes too.
 * `results.json` retains all 5 or 7 elapsed samples, exit codes, output hashes,
-  stream lengths, tokens, audit events, marker checks, and Retok candidate data.
+  stream lengths, tokens, audit events, marker checks, and Sift candidate data.
   `results.csv` contains summaries; `elapsed.svg` plots end-to-end median times.
   Separately, `token.svg` plots the already-measured `median_tokens` for the same
   workload/arm rows, with no additional runs or aggregate winner. Its caption
@@ -66,11 +66,11 @@ before checking read-only command effects; intentional modified/deleted files re
   command, compaction, and local tracking. The no-op control estimates the
   small-command startup/runner cost; it is not subtracted from other workloads.
   Min/max accompany medians. Filesystem caches are warm, not forcibly flushed.
-* A separate persistent Retok JSONL protocol warms its tokenizer once. Its
+* A separate persistent Sift JSONL protocol warms its tokenizer once. Its
   `input_tokens` counts **each actual emitted stream**, including RTK's output,
   as ordinary `o200k_base`. Stdout and stderr counts are summed; there is no
   cross-stream token boundary. No byte/character estimate or RTK savings counter
-  substitutes for token counts. This is the same Retok tokenizer for all arms,
+  substitutes for token counts. This is the same Sift tokenizer for all arms,
   not an independent tiktoken verification.
 * `median_warm_processing_ms` sums the median compact-protocol round trips for
   the original stdout and stderr. This excludes tokenizer startup but includes
@@ -87,18 +87,18 @@ before checking read-only command effects; intentional modified/deleted files re
   after execution. They detect content changes, not access times or identical
   rewrites. This is bounded synthetic execution evidence, not a proof covering
   every subprocess or external side effect.
-* Retok compacts each saved native stream through the explicit JSONL protocol,
+* Sift compacts each saved native stream through the explicit JSONL protocol,
   then `restore --encoding ENCODING` must reproduce text byte-for-byte, or preserve
   JSON values, types, and numeric lexemes for JSON encodings. JSON whitespace and
   object key order may change; byte equality is separately recorded even for JSON.
   Each timed
-  Retok stream must equal that candidate or the exact original. Raw marker-like
+  Sift stream must equal that candidate or the exact original. Raw marker-like
   text is never inferred to be encoded. Streams shorter than 256 bytes bypass
   runner compaction; progress may stream raw after the runner's capture window.
   The saved protocol candidate can therefore differ from valid raw runner output.
 * Selected literal markers are reported as present or absent in each arm's text.
   Absence means only that exact text is absent from the emitted representation;
-  Retok's reversible encoding can also remove a literal from view. These are
+  Sift's reversible encoding can also remove a literal from view. These are
   neither semantic-retention percentages nor invented reread/model-call costs.
   RTK's internal JSON reader and rewritten Git calls are useful workflow results
   but must not be described as identical native-command execution.
@@ -107,5 +107,5 @@ No aggregate winner, speed claim, billing estimate, or model-task-success claim
 is generated. Memory is not measured. Shared-host elapsed times are descriptive
 of this run, including scheduling noise. Compare retention, execution compatibility,
 output tokens, and elapsed time together before making a practical product claim.
-A Retok execution/restore/output mismatch makes the harness fail; RTK differences
+A Sift execution/restore/output mismatch makes the harness fail; RTK differences
 remain visible results rather than being silently dropped.

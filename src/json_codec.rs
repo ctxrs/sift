@@ -190,7 +190,7 @@ pub(crate) fn candidates(input: &str) -> Vec<(Encoding, String)> {
         return Vec::new();
     };
     let compact = minify(value.get());
-    // The fixed o200k pretokenizer separates JSON_HEADER from minified JSON,
+    // The fixed o200k pre-tokenizer separates JSON_HEADER from minified JSON,
     // so the legacy header only adds tokens. Keep its decoder for old frames.
     let mut candidates = vec![(Encoding::JsonMinV1, compact)];
     if let Some(table) = table(value) {

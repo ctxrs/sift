@@ -31,7 +31,7 @@ const HOSTS: &[&str] = &[
     "vibe",
     "openclaw",
 ];
-const INSTRUCTIONS: &str = "<!-- retok managed instructions v1 -->\n# Retok\n\nInstalled executable (JSON string): __RETOK_EXECUTABLE__\nIf retok is not on PATH, invoke this absolute executable using your shell's\nliteral path quoting, followed by the same arguments shown below.\n\nFor final model-facing output of suitable non-interactive commands, use\n`retok run -- COMMAND ARG...` explicitly. This is optional agent guidance,\nnot automatic output compression. Keep ordinary commands for programmatic\npipelines, redirected data, interactive sessions, and scripts that parse output.\nNever change approval or sandbox rules to use Retok.\n<!-- /retok managed instructions v1 -->\n";
+const INSTRUCTIONS: &str = "<!-- sift managed instructions v1 -->\n# Sift\n\nInstalled executable (JSON string): __SIFT_EXECUTABLE__\nIf sift is not on PATH, invoke this absolute executable using your shell's\nliteral path quoting, followed by the same arguments shown below.\n\nFor final model-facing output of suitable non-interactive commands, use\n`sift run -- COMMAND ARG...` explicitly. This is optional agent guidance,\nnot automatic output compression. Keep ordinary commands for programmatic\npipelines, redirected data, interactive sessions, and scripts that parse output.\nNever change approval or sandbox rules to use Sift.\n<!-- /sift managed instructions v1 -->\n";
 
 /// Explicit roots keep tests independent of the process environment and real homes.
 #[derive(Clone, Debug)]
@@ -68,7 +68,7 @@ impl Roots {
             vibe: home.join(".vibe"),
             openclaw: home.join(".openclaw"),
             openclaw_config: None,
-            executable: home.join("bin/retok"),
+            executable: home.join("bin/sift"),
             home,
             project,
         }
@@ -241,13 +241,13 @@ fn host(name: &'static str, r: &Roots, project: bool) -> Host {
             );
         }
         "copilot" | "vscode" => {
-            h.output = Some(h.root.join("hooks/retok.json"));
+            h.output = Some(h.root.join("hooks/sift.json"));
         }
         "cursor" => {
             h.output = Some(h.root.join("hooks.json"));
             h.settings.push(h.root.join("hooks.json"));
             if project {
-                h.instructions = Some(h.root.join("rules/retok.mdc"));
+                h.instructions = Some(h.root.join("rules/sift.mdc"));
                 h.dedicated = true;
             }
         }
@@ -275,7 +275,7 @@ fn host(name: &'static str, r: &Roots, project: bool) -> Host {
         "windsurf" => {
             h.settings.push(h.root.join("hooks.json"));
             h.instructions = Some(if project {
-                h.root.join("rules/retok.md")
+                h.root.join("rules/sift.md")
             } else {
                 h.root.join("memories/global_rules.md")
             });
@@ -283,19 +283,19 @@ fn host(name: &'static str, r: &Roots, project: bool) -> Host {
         }
         "cline" => {
             if project {
-                h.instructions = Some(h.root.join("retok.md"));
+                h.instructions = Some(h.root.join("sift.md"));
                 h.dedicated = true;
             } else {
                 h.limitation = Some("global rule directory is not qualified; select --project");
             }
         }
         "roo" => {
-            h.instructions = Some(h.root.join("rules/retok.md"));
+            h.instructions = Some(h.root.join("rules/sift.md"));
             h.dedicated = true;
         }
         "antigravity" => {
             h.instructions = Some(if project {
-                h.root.join("rules/retok.md")
+                h.root.join("rules/sift.md")
             } else {
                 h.root.join("GEMINI.md")
             });
@@ -331,13 +331,13 @@ fn host(name: &'static str, r: &Roots, project: bool) -> Host {
                 Some("project guidance only; global setup supports native post-output compaction");
         }
         "pi" | "omp" => {
-            h.plugin = Some(h.root.join("extensions/retok.ts"));
+            h.plugin = Some(h.root.join("extensions/sift.ts"));
         }
         "opencode" => {
-            h.plugin = Some(h.root.join("plugins/retok.ts"));
+            h.plugin = Some(h.root.join("plugins/sift.ts"));
         }
         "kilo" => {
-            h.plugin = Some(h.root.join("plugin/retok.ts"));
+            h.plugin = Some(h.root.join("plugin/sift.ts"));
             h.limitation =
                 Some("current-generation Kilo plugin; legacy extension rules are unchanged");
         }
@@ -356,7 +356,7 @@ fn mode(h: &Host) -> &'static str {
     } else if h.output.is_some() {
         "native post-output hook"
     } else {
-        "instructions only (agent must choose Retok explicitly)"
+        "instructions only (agent must choose Sift explicitly)"
     }
 }
 fn prehook_unavailable(name: &str) -> Option<&'static str> {
@@ -578,11 +578,11 @@ fn legacy_owned_entry(entry: &Value, h: &Host) -> bool {
         return false;
     }
     if h.name == "copilot" {
-        entry.get("exec").and_then(Value::as_str) == Some("retok")
+        entry.get("exec").and_then(Value::as_str) == Some("sift")
             && entry.get("args") == Some(&json!(["hook", "copilot"]))
     } else {
         entry.get("command").and_then(Value::as_str)
-            == Some(format!("retok hook {}", h.name).as_str())
+            == Some(format!("sift hook {}", h.name).as_str())
     }
 }
 fn owned_entry(entry: &Value, h: &Host) -> bool {
@@ -1156,7 +1156,7 @@ fn unique_file(path: &Path, suffix: &str) -> Result<(PathBuf, fs::File)> {
     for _ in 0..100 {
         let mut name = path.as_os_str().to_owned();
         name.push(format!(
-            ".retok-{suffix}-{stamp}-{}-{}",
+            ".sift-{suffix}-{stamp}-{}-{}",
             std::process::id(),
             SERIAL.fetch_add(1, Ordering::Relaxed)
         ));
@@ -1222,7 +1222,7 @@ fn replace(path: &Path, expected: Option<&[u8]>, next: Option<&[u8]>) -> Result<
 fn instruction_template(h: &Host) -> String {
     if h.name == "cursor" {
         format!(
-            "---\ndescription: Retok explicit output compaction\nalwaysApply: true\n---\n{INSTRUCTIONS}"
+            "---\ndescription: Sift explicit output compaction\nalwaysApply: true\n---\n{INSTRUCTIONS}"
         )
     } else if h.name == "windsurf" && h.dedicated {
         format!("---\ntrigger: always_on\n---\n{INSTRUCTIONS}")
@@ -1239,11 +1239,11 @@ fn instruction_text(h: &Host) -> Result<String> {
         .executable
         .to_str()
         .context("instruction executable path must be UTF-8")?;
-    Ok(instruction_template(h).replace("__RETOK_EXECUTABLE__", &serde_json::to_string(path)?))
+    Ok(instruction_template(h).replace("__SIFT_EXECUTABLE__", &serde_json::to_string(path)?))
 }
 fn instruction_range(text: &str, h: &Host) -> Option<std::ops::Range<usize>> {
     let template = instruction_template(h);
-    let (prefix, suffix) = template.split_once("__RETOK_EXECUTABLE__")?;
+    let (prefix, suffix) = template.split_once("__SIFT_EXECUTABLE__")?;
     for (start, _) in text.match_indices(prefix) {
         let rest = &text[start + prefix.len()..];
         let mut strings = serde_json::Deserializer::from_str(rest).into_iter::<String>();
@@ -1298,8 +1298,8 @@ fn instruction_change(plan: &mut Plan, h: &Host, uninstall: bool) -> Result<bool
             Some(managed.into_bytes())
         } else {
             ensure!(
-                !text.contains("<!-- retok managed instructions"),
-                "Retok instruction block was edited; unchanged: {}",
+                !text.contains("<!-- sift managed instructions"),
+                "Sift instruction block was edited; unchanged: {}",
                 path.display()
             );
             Some(
@@ -1328,7 +1328,7 @@ fn vibe_entry(executable: &Path) -> Result<toml_edit::Table> {
         .context("hook executable path must be UTF-8")?;
     let mut table = toml_edit::Table::new();
     for (key, val) in [
-        ("name", "retok-output"),
+        ("name", "sift-output"),
         ("type", "pre_tool"),
         ("match", "bash"),
     ] {
@@ -1395,7 +1395,7 @@ fn vibe_change(plan: &mut Plan, h: &Host, o: &Options) -> Result<()> {
             .context("Vibe hooks must be an array of tables; unchanged")?;
         for (index, hook) in hooks.iter().enumerate() {
             let field = |key| hook.get(key).and_then(toml_edit::Item::as_str);
-            if field("name") == Some("retok-output") {
+            if field("name") == Some("sift-output") {
                 let entry = json!({"command":field("command")});
                 let old = entry_executable(&entry, h);
                 let owned = old
@@ -1411,7 +1411,7 @@ fn vibe_change(plan: &mut Plan, h: &Host, o: &Options) -> Result<()> {
                     }
                 } else if !o.uninstall && !o.show {
                     bail!(
-                        "edited or unowned Vibe Retok hook; unchanged: {}",
+                        "edited or unowned Vibe Sift hook; unchanged: {}",
                         path.display()
                     );
                 }
@@ -1533,9 +1533,9 @@ fn native_plugin_literal(path: &Path, h: &Host) -> Result<String> {
 }
 fn native_plugin_marker(h: &Host) -> &'static str {
     if h.name == "hermes" {
-        "__RETOK_EXECUTABLE_UTF8_HEX__"
+        "__SIFT_EXECUTABLE_UTF8_HEX__"
     } else {
-        "__RETOK_EXECUTABLE_JSON__"
+        "__SIFT_EXECUTABLE_JSON__"
     }
 }
 fn native_plugin_executable(bytes: &[u8], template: &str, h: &Host) -> Option<PathBuf> {
@@ -1561,7 +1561,7 @@ fn native_plugin_executable(bytes: &[u8], template: &str, h: &Host) -> Option<Pa
 }
 
 fn native_plugin_bundle(plan: &mut Plan, h: &Host, o: &Options) -> Result<bool> {
-    let dir = native_plugin_dir(h, "retok-rewrite");
+    let dir = native_plugin_dir(h, "sift-rewrite");
     let mut files = vec![];
     let mut configured = h.name == "hermes" || !cfg!(windows);
     let mut edited = false;
@@ -1781,7 +1781,7 @@ fn hermes_plugin_change(plan: &mut Plan, h: &Host, o: &Options, rtk_present: boo
     for field in ["settings", "config"] {
         ensure!(
             !matches!(
-                config["plugins"]["entries"]["retok-rewrite"][field]["enabled"],
+                config["plugins"]["entries"]["sift-rewrite"][field]["enabled"],
                 Yaml::Tagged(_)
             ),
             "Hermes plugin enabled tag cannot be resolved; unchanged"
@@ -1797,12 +1797,12 @@ fn hermes_plugin_change(plan: &mut Plan, h: &Host, o: &Options, rtk_present: boo
         plan.messages.push("hermes: active RTK plugin preserved; select --replace-rtk to migrate a recognized stock plugin".into());
         return Ok(());
     }
-    let denied = contains("disabled", "retok-rewrite")
-        || config["plugins"]["entries"]["retok-rewrite"]["settings"]["enabled"].as_bool()
+    let denied = contains("disabled", "sift-rewrite")
+        || config["plugins"]["entries"]["sift-rewrite"]["settings"]["enabled"].as_bool()
             == Some(false)
-        || config["plugins"]["entries"]["retok-rewrite"]["config"]["enabled"].as_bool()
+        || config["plugins"]["entries"]["sift-rewrite"]["config"]["enabled"].as_bool()
             == Some(false);
-    let enabled = contains("enabled", "retok-rewrite");
+    let enabled = contains("enabled", "sift-rewrite");
     plan.messages.push(format!("hermes: host activation {}; project plugins require a separate host opt-in which setup does not change", if denied { "explicitly disabled; preserved" } else if enabled { "enabled" } else { "not enabled" }));
     if denied && !o.uninstall {
         return Ok(());
@@ -1816,10 +1816,10 @@ fn hermes_plugin_change(plan: &mut Plan, h: &Host, o: &Options, rtk_present: boo
         .cloned()
         .unwrap_or_default();
     if o.uninstall {
-        enabled.retain(|v| v.as_str() != Some("retok-rewrite"));
+        enabled.retain(|v| v.as_str() != Some("sift-rewrite"));
     } else {
-        if !enabled.iter().any(|v| v.as_str() == Some("retok-rewrite")) {
-            enabled.push(Yaml::String("retok-rewrite".into()));
+        if !enabled.iter().any(|v| v.as_str() == Some("sift-rewrite")) {
+            enabled.push(Yaml::String("sift-rewrite".into()));
         }
         if o.replace && rtk_present {
             enabled.retain(|v| v.as_str() != Some("rtk-rewrite"));
@@ -1959,13 +1959,10 @@ fn openclaw_plugin_change(
     }
     for (value, label) in [
         (&config["plugins"]["entries"], "plugins.entries"),
+        (&config["plugins"]["entries"]["sift-rewrite"], "Sift entry"),
         (
-            &config["plugins"]["entries"]["retok-rewrite"],
-            "Retok entry",
-        ),
-        (
-            &config["plugins"]["entries"]["retok-rewrite"]["config"],
-            "Retok config",
+            &config["plugins"]["entries"]["sift-rewrite"]["config"],
+            "Sift config",
         ),
     ] {
         ensure!(
@@ -1975,8 +1972,8 @@ fn openclaw_plugin_change(
     }
     for value in [
         &config["plugins"]["enabled"],
-        &config["plugins"]["entries"]["retok-rewrite"]["enabled"],
-        &config["plugins"]["entries"]["retok-rewrite"]["config"]["enabled"],
+        &config["plugins"]["entries"]["sift-rewrite"]["enabled"],
+        &config["plugins"]["entries"]["sift-rewrite"]["config"]["enabled"],
     ] {
         ensure!(
             value.is_null() || value.is_boolean(),
@@ -1997,27 +1994,26 @@ fn openclaw_plugin_change(
     let denied = config["plugins"]["enabled"] == false
         || config["plugins"]["deny"]
             .as_array()
-            .is_some_and(|v| v.iter().any(|v| v == "retok-rewrite"))
-        || config["plugins"]["entries"]["retok-rewrite"]["enabled"] == false
-        || config["plugins"]["entries"]["retok-rewrite"]["config"]["enabled"] == false;
+            .is_some_and(|v| v.iter().any(|v| v == "sift-rewrite"))
+        || config["plugins"]["entries"]["sift-rewrite"]["enabled"] == false
+        || config["plugins"]["entries"]["sift-rewrite"]["config"]["enabled"] == false;
     let excluded = config["plugins"]["allow"]
         .as_array()
-        .is_some_and(|v| !v.is_empty() && !v.iter().any(|v| v == "retok-rewrite"));
+        .is_some_and(|v| !v.is_empty() && !v.iter().any(|v| v == "sift-rewrite"));
     if (denied || excluded && o.agent.as_deref() != Some("openclaw")) && !o.uninstall {
         plan.messages.push(format!(
             "openclaw: host activation blocked; {}; existing plugins/configuration preserved",
             if denied {
                 "explicit disable/deny is unchanged"
             } else {
-                "select --agent openclaw to add only retok-rewrite to the existing allowlist"
+                "select --agent openclaw to add only sift-rewrite to the existing allowlist"
             }
         ));
         return Ok(());
     }
     plan.messages.push(format!(
         "openclaw: host activation {}",
-        if config["plugins"]["entries"]["retok-rewrite"]["enabled"] == true && !denied && !excluded
-        {
+        if config["plugins"]["entries"]["sift-rewrite"]["enabled"] == true && !denied && !excluded {
             "enabled"
         } else {
             "not enabled"
@@ -2032,18 +2028,18 @@ fn openclaw_plugin_change(
         if let Some(allow) = plugins.get_mut("allow").and_then(Value::as_array_mut) {
             // Empty means unrestricted in OpenClaw. Keep a singleton rather
             // than authorizing unrelated plugins during uninstall.
-            if allow.iter().any(|v| v != "retok-rewrite") {
-                allow.retain(|v| v != "retok-rewrite");
+            if allow.iter().any(|v| v != "sift-rewrite") {
+                allow.retain(|v| v != "sift-rewrite");
             } else if !allow.is_empty() {
                 plan.messages.push("openclaw: singleton plugin allowlist retained to avoid enabling unrelated plugins".into());
             }
         }
         if let Some(entries) = plugins.get_mut("entries").and_then(Value::as_object_mut) {
-            if entries.get("retok-rewrite")
+            if entries.get("sift-rewrite")
                 == Some(&json!({"enabled":true,"config":{"enabled":true}}))
             {
-                entries.remove("retok-rewrite");
-            } else if entries.contains_key("retok-rewrite") {
+                entries.remove("sift-rewrite");
+            } else if entries.contains_key("sift-rewrite") {
                 plan.messages
                     .push("openclaw: customized plugin entry preserved".into());
             }
@@ -2055,9 +2051,9 @@ fn openclaw_plugin_change(
                 .unwrap()
                 .as_array_mut()
                 .unwrap()
-                .push(json!("retok-rewrite"));
+                .push(json!("sift-rewrite"));
             plan.messages
-                .push("openclaw: add only retok-rewrite to the existing plugin allowlist".into());
+                .push("openclaw: add only sift-rewrite to the existing plugin allowlist".into());
         }
         let entries = plugins
             .entry("entries")
@@ -2065,7 +2061,7 @@ fn openclaw_plugin_change(
             .as_object_mut()
             .context("OpenClaw plugins.entries must be an object; unchanged")?;
         let entry = entries
-            .entry("retok-rewrite")
+            .entry("sift-rewrite")
             .or_insert_with(|| json!({}))
             .as_object_mut()
             .context("OpenClaw plugin entry must be an object; unchanged")?;
@@ -2145,7 +2141,7 @@ impl PluginKind {
 fn plugin_template(h: &Host, kind: PluginKind) -> Result<String> {
     let source = if h.name == "omp" { "pi" } else { h.name };
     let runtime = include_str!("../integrations/runtime.js")
-        .replace("__RETOK_SOURCE__", &serde_json::to_string(source)?);
+        .replace("__SIFT_SOURCE__", &serde_json::to_string(source)?);
     let adapter = match source {
         "pi" if matches!(kind, PluginKind::PiSession | PluginKind::PiCommonJs) => {
             include_str!("../integrations/pi_session.js")
@@ -2163,7 +2159,7 @@ fn plugin_template(h: &Host, kind: PluginKind) -> Result<String> {
         PluginKind::SharedOneShot => "v2 pi-omp-one-shot",
     };
     let mut text = format!(
-        "// retok managed plugin {owner}; edits prevent automatic replacement/removal\n{runtime}\n{adapter}"
+        "// sift managed plugin {owner}; edits prevent automatic replacement/removal\n{runtime}\n{adapter}"
     );
     if kind == PluginKind::PiCommonJs {
         // Render the same adapter; only module syntax differs from the TS entry.
@@ -2185,8 +2181,8 @@ fn plugin_template(h: &Host, kind: PluginKind) -> Result<String> {
                 "const { StringDecoder } = require(\"node:string_decoder\");",
             ),
             (
-                "export default function retok(pi) {",
-                "module.exports = function retok(pi) {",
+                "export default function sift(pi) {",
+                "module.exports = function sift(pi) {",
             ),
         ] {
             ensure!(
@@ -2208,7 +2204,7 @@ fn plugin_text(h: &Host, roots: &Roots, kind: PluginKind) -> Result<String> {
         .to_str()
         .context("plugin executable path must be UTF-8")?;
     Ok(plugin_template(h, kind)?
-        .replace("__RETOK_EXECUTABLE__", &serde_json::to_string(executable)?))
+        .replace("__SIFT_EXECUTABLE__", &serde_json::to_string(executable)?))
 }
 fn plugin_owner(bytes: &[u8], h: &Host) -> Option<(PathBuf, PluginKind)> {
     let text = std::str::from_utf8(bytes).ok()?;
@@ -2225,7 +2221,7 @@ fn plugin_owner(bytes: &[u8], h: &Host) -> Option<(PathBuf, PluginKind)> {
     };
     kinds.iter().find_map(|&kind| {
         let template = plugin_template(h, kind).ok()?;
-        let (prefix, suffix) = template.split_once("__RETOK_EXECUTABLE__")?;
+        let (prefix, suffix) = template.split_once("__SIFT_EXECUTABLE__")?;
         let remainder = text.strip_prefix(prefix)?;
         let literal = remainder.strip_suffix(suffix).or_else(|| {
             if kind != PluginKind::PiSession {
@@ -2235,10 +2231,10 @@ fn plugin_owner(bytes: &[u8], h: &Host) -> Option<(PathBuf, PluginKind)> {
             // executable literal varies. Never accept arbitrary marker-owned JS.
             use sha2::{Digest, Sha256};
             let (literal, tail) = remainder.split_once(";\n")?;
-            let old = format!("{prefix}__RETOK_EXECUTABLE__;\n{tail}");
+            let old = format!("{prefix}__SIFT_EXECUTABLE__;\n{tail}");
             [
-                "0b3ff6d799cdf2ad6bc167da8a817083faed755da88e7315689fbada12ebeea7",
-                "23aae68bda735b5230a7b2ea3dd4c49ffb126c28b8a88e9a001f7f87b3f57472",
+                "d5582c1d357c693325d9882bc60d1b7ac84a97e44a71e3227892074ab7919323",
+                "a82d3e98a4ffc7b167d3a9a5ba07a0d103bf45dfc09f5e42acecd8b6cceb75e8",
             ]
             .contains(&format!("{:x}", Sha256::digest(old.as_bytes())).as_str())
             .then_some(literal)
@@ -2251,7 +2247,7 @@ fn plugin_owner(bytes: &[u8], h: &Host) -> Option<(PathBuf, PluginKind)> {
 }
 
 const PI_PACKAGE: &str =
-    "{\n  \"name\": \"retok-pi\",\n  \"private\": true,\n  \"type\": \"commonjs\"\n}\n";
+    "{\n  \"name\": \"sift-pi\",\n  \"private\": true,\n  \"type\": \"commonjs\"\n}\n";
 
 fn pi_bundle_entries(dir: &Path) -> Result<Vec<OsString>> {
     let mut names = match fs::read_dir(dir) {
@@ -2273,7 +2269,7 @@ struct PiBundleCheck {
 }
 impl PiBundleCheck {
     fn new(h: &Host) -> Result<Self> {
-        let dir = h.root.join("extensions/retok");
+        let dir = h.root.join("extensions/sift");
         let mut files = vec![];
         for path in [
             dir.join("package.json"),
@@ -2320,7 +2316,7 @@ struct PiBundle {
 }
 impl PiBundle {
     fn read(plan: &Plan, h: &Host) -> Result<Self> {
-        let dir = h.root.join("extensions/retok");
+        let dir = h.root.join("extensions/sift");
         let mut files = vec![];
         for name in ["package.json", "index.js"] {
             let path = dir.join(name);
@@ -2338,7 +2334,7 @@ impl PiBundle {
         for name in pi_bundle_entries(&dir)? {
             let name = name.to_string_lossy();
             edited |= !["package.json", "index.js"].contains(&name.as_ref())
-                && !["package.json.retok-backup-", "index.js.retok-backup-"]
+                && !["package.json.sift-backup-", "index.js.sift-backup-"]
                     .iter()
                     .any(|prefix| name.starts_with(prefix));
         }
@@ -2423,7 +2419,7 @@ fn pi_plugin_changes(
         ensure!(
             !bundle.edited,
             "edited or unowned Pi plugin bundle; unchanged: {}",
-            h.root.join("extensions/retok").display()
+            h.root.join("extensions/sift").display()
         );
         // Even a missing package file must not erase the recorded Pi consumer.
         let mut pi = bundle.files[1].1.is_some();
@@ -2434,7 +2430,7 @@ fn pi_plugin_changes(
             }
             ensure!(
                 !legacy || o.replace,
-                "RTK plugin is present; review/remove it before installing Retok for {}",
+                "RTK plugin is present; review/remove it before installing Sift for {}",
                 request.name
             );
             pi |= request.name == "pi";
@@ -2477,7 +2473,7 @@ fn pi_plugin_changes(
         // A bundle-directory/file alias can share native Pi without sharing the
         // legacy TS path. Move both consumers to their own shared one-shot entry.
         let other = host(if h.name == "pi" { "omp" } else { "pi" }, roots, o.project);
-        let other_index = other.root.join("extensions/retok/index.js");
+        let other_index = other.root.join("extensions/sift/index.js");
         let alias = if bundle.files[1].1.is_some()
             && other_index.exists()
             && config_target(&other_index)? == config_target(&bundle.files[1].0)?
@@ -2538,7 +2534,7 @@ fn pi_plugin_changes(
     Ok(())
 }
 
-const HELP: &str = "Usage: retok init [--agent HOST | --all] [--global | -g | --project]
+const HELP: &str = "Usage: sift init [--agent HOST | --all] [--global | -g | --project]
                   [--replace-rtk] [--instructions-only] [--dry-run] [--show | --uninstall]
 
 Default: global scope, detected existing agent homes only. --project stays local.
@@ -2546,7 +2542,7 @@ Default: global scope, detected existing agent homes only. --project stays local
 --replace-rtk selects recognizable RTK integrations and migrates supported stock
 files. Modified or unrecognized RTK plugins/blocks require manual migration.
 --dry-run previews writes and removals; --show reports status without writes.
---uninstall removes unchanged Retok-owned files/blocks and exact hook entries.
+--uninstall removes unchanged Sift-owned files/blocks and exact hook entries.
 --help, -h shows this help without reading agent configuration.
 
 Native post-output integration: claude (>=2.1.121), copilot CLI, pi, omp,
@@ -3018,7 +3014,7 @@ fn plan_using_stock(
                 };
                 if installed_owner.is_none() {
                     plan.messages.push(format!(
-                        "{name}: native Pi bundle incomplete, edited, or conflicts with retok.ts"
+                        "{name}: native Pi bundle incomplete, edited, or conflicts with sift.ts"
                     ));
                 }
             }
@@ -3145,7 +3141,7 @@ fn plan_using_stock(
                 );
                 ensure!(
                     !has_legacy_plugin || o.replace,
-                    "RTK plugin is present; review/remove it before installing Retok for {name}"
+                    "RTK plugin is present; review/remove it before installing Sift for {name}"
                 );
                 plan.change(path.clone(), before, Some(text.into_bytes()))?;
             }
@@ -3218,7 +3214,7 @@ pub fn doctor(args: &[OsString]) -> Result<()> {
     {
         match crate::state::Settings::load() {
             Ok(settings) => println!(
-                "Retok config: {}; excluded commands: {}",
+                "Sift config: {}; excluded commands: {}",
                 if settings.enabled {
                     "enabled"
                 } else {
@@ -3226,7 +3222,7 @@ pub fn doctor(args: &[OsString]) -> Result<()> {
                 },
                 settings.exclude_commands.len()
             ),
-            Err(error) => println!("Retok config: invalid or unreadable: {error:#}"),
+            Err(error) => println!("Sift config: invalid or unreadable: {error:#}"),
         }
     }
     let mut args = args.to_vec();

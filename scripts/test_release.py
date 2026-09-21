@@ -24,8 +24,8 @@ import release_metadata as metadata
 
 # Deliberately independent of the implementation's asset inventory.
 BINARIES = (
-    "retok-linux-x64", "retok-linux-aarch64", "retok-macos-x64",
-    "retok-macos-arm64", "retok-windows-x64.exe",
+    "sift-linux-x64", "sift-linux-aarch64", "sift-macos-x64",
+    "sift-macos-arm64", "sift-windows-x64.exe",
 )
 TEST_VOCAB = b"synthetic vocabulary\n"
 
@@ -86,7 +86,7 @@ def synthetic_metadata(binary):
     start, end = metadata.runtime_notice_markers(runtime_entry, runtime_entry["notices"][0])
     notices += start + runtime_text + end
     runtime_manifest = metadata.canonical_runtime_manifest([runtime_entry], target)
-    root = {"type": "application", "name": "retok", "version": release.VERSION, "bom-ref": "root",
+    root = {"type": "application", "name": "sift", "version": release.VERSION, "bom-ref": "root",
             "hashes": metadata.hashes(metadata.sha256(binary)),
             "properties": metadata.properties({
                 "target": metadata.TRIPLES[binary.name][0], "source-commit": "4" * 40,
@@ -127,7 +127,7 @@ class ReleaseTests(unittest.TestCase):
         self.machine = self.enterContext(patch("release.platform.machine", return_value="unknown"))
         self.run = self.enterContext(patch("release.subprocess.run"))
         self.run.return_value = subprocess.CompletedProcess(
-            [], 0, f"Retok {release.VERSION}\n".encode(), b""
+            [], 0, f"Sift {release.VERSION}\n".encode(), b""
         )
         self.verify_signing = self.enterContext(
             patch("release.release_signing.verify_release_evidence")
@@ -155,11 +155,11 @@ class ReleaseTests(unittest.TestCase):
 
     def test_each_native_target_runs_only_its_binary(self):
         for system, machine, name in (
-            ("Linux", "x86_64", "retok-linux-x64"),
-            ("Linux", "aarch64", "retok-linux-aarch64"),
-            ("Darwin", "x86_64", "retok-macos-x64"),
-            ("Darwin", "arm64", "retok-macos-arm64"),
-            ("Windows", "AMD64", "retok-windows-x64.exe"),
+            ("Linux", "x86_64", "sift-linux-x64"),
+            ("Linux", "aarch64", "sift-linux-aarch64"),
+            ("Darwin", "x86_64", "sift-macos-x64"),
+            ("Darwin", "arm64", "sift-macos-arm64"),
+            ("Windows", "AMD64", "sift-windows-x64.exe"),
         ):
             with self.subTest(name=name):
                 self.system.return_value = system
@@ -175,19 +175,19 @@ class ReleaseTests(unittest.TestCase):
         self.system.return_value = "Linux"
         self.machine.return_value = "x86_64"
         for code, stdout, stderr in (
-            (0, b"Retok 9.9.9\n", b""),
-            (1, f"Retok {release.VERSION}\n".encode(), b""),
-            (0, f"retok {release.VERSION}\n".encode(), b""),
-            (0, f"Retok {release.VERSION}\nextra\n".encode(), b""),
-            (0, f"Retok {release.VERSION}\n".encode(), b"warning"),
+            (0, b"Sift 9.9.9\n", b""),
+            (1, f"Sift {release.VERSION}\n".encode(), b""),
+            (0, f"sift {release.VERSION}\n".encode(), b""),
+            (0, f"Sift {release.VERSION}\nextra\n".encode(), b""),
+            (0, f"Sift {release.VERSION}\n".encode(), b"warning"),
         ):
             with self.subTest(code=code, stdout=stdout, stderr=stderr):
                 self.run.return_value = subprocess.CompletedProcess([], code, stdout, stderr)
                 with self.assertRaisesRegex(ValueError, "--version"):
                     release.stage(self.source, self.output, self.evidence)
                 self.assertFalse(self.output.exists())
-                self.assertEqual(list(self.root.glob(".retok-stage-*")), [])
-        for failure in (OSError("cannot execute"), subprocess.TimeoutExpired("retok", 10)):
+                self.assertEqual(list(self.root.glob(".sift-stage-*")), [])
+        for failure in (OSError("cannot execute"), subprocess.TimeoutExpired("sift", 10)):
             self.run.side_effect = failure
             with self.assertRaises(type(failure)):
                 release.stage(self.source, self.output, self.evidence)
@@ -196,7 +196,7 @@ class ReleaseTests(unittest.TestCase):
     def test_crlf_version_output_is_accepted(self):
         self.system.return_value = "Windows"
         self.machine.return_value = "AMD64"
-        self.run.return_value.stdout = f"Retok {release.VERSION}\r\n".encode()
+        self.run.return_value.stdout = f"Sift {release.VERSION}\r\n".encode()
         release.stage(self.source, self.output, self.evidence)
 
     def test_exact_inventory_rejects_missing_and_extra_files(self):
@@ -241,7 +241,7 @@ class ReleaseTests(unittest.TestCase):
             release.stage(self.source, self.output, self.evidence)
         self.assertEqual(appeared, [self.output.stat().st_ino])
         self.assertEqual(list(self.output.iterdir()), [])
-        self.assertEqual(list(self.root.glob(".retok-stage-*")), [])
+        self.assertEqual(list(self.root.glob(".sift-stage-*")), [])
 
     def test_signing_evidence_is_required_before_staging(self):
         self.verify_signing.side_effect = ValueError("invalid signing evidence")
@@ -250,7 +250,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
     def test_copied_bytes_are_rechecked_against_signing_evidence(self):
-        signed_name = "retok-macos-x64"
+        signed_name = "sift-macos-x64"
         calls = 0
 
         def verify(directory, _evidence):
@@ -314,7 +314,7 @@ class ReleaseTests(unittest.TestCase):
         original = path.read_bytes()
         for invalid in (b"not json", b"[]", b"{}",
                         original.replace(release.VERSION.encode(), b"9.9.9"),
-                        original.replace(b'"name": "retok"', b'"name": 123'),
+                        original.replace(b'"name": "sift"', b'"name": 123'),
                         original.replace(b'"version": "1.2.3"', b'"version": ""')):
             path.write_bytes(invalid)
             with self.assertRaises(ValueError):
@@ -330,7 +330,7 @@ class ReleaseTests(unittest.TestCase):
         document = json.loads(path.read_text(encoding="utf-8"))
         vocabulary = next(c for c in document["components"] if c["type"] == "data")
         vocabulary.setdefault("properties", []).append(
-            {"name": "retok:profile-status", "value": "development"}
+            {"name": "sift:profile-status", "value": "development"}
         )
         path.write_text(json.dumps(document), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "development tokenizer profile"):

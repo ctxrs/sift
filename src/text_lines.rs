@@ -1,7 +1,7 @@
 //! Shared prefixes with literal lines, avoiding JSON string framing per line.
 use anyhow::{Context, Result, ensure};
 
-const HEADER: &str = "retok:lines-v1 [N,prefix] then N lines; prepend prefix\n";
+const HEADER: &str = "sift:lines-v1 [N,prefix] then N lines; prepend prefix\n";
 const LIMIT: usize = 64 * 1024 * 1024;
 
 fn emit(output: &mut String, lines: &[&str], prefix: &str) -> Option<()> {

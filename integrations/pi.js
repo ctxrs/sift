@@ -1,5 +1,5 @@
 
-export default function retok(pi) {
+export default function sift(pi) {
   pi.on("tool_result", async event => {
     if (!["bash", "powershell"].includes(event.toolName) || !Array.isArray(event.content)) return;
     const indices = [];

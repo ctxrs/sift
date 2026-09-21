@@ -8,7 +8,7 @@ use serde::de::{MapAccess, Visitor};
 use std::collections::HashMap;
 use std::fmt;
 
-const HEADER: &str = "retok:symbols-v1 substitute each character using this JSON dictionary:\n";
+const HEADER: &str = "sift:symbols-v1 substitute each character using this JSON dictionary:\n";
 const LIMIT: usize = 64 * 1024 * 1024;
 const SYMBOLS: &str = "§¶¤†‡°ªºµ½¼¾¿¡¢£¥©®™±÷×•–—αβγδελπΩΔΣθσφψω✓★☆♦●○■□→←↑↓∞";
 
