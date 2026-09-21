@@ -108,3 +108,15 @@ python3 scripts/release.py verify release-assets --project .
 `SHA256SUMS`. Signing evidence remains release-control evidence rather than a
 public asset. Any binary change after signing invalidates the evidence, SBOM,
 and checksums and requires a new release candidate.
+
+## 5. Tag, publish, and update Homebrew
+
+Create the immutable version tag from the reviewed source commit, then publish
+exactly the 16 files in `release-assets`. Download every published asset and
+compare it byte-for-byte with the staged file before announcing the release.
+
+Only after the tag exists, hash that tag's GitHub source archive and update
+`Formula/sift.rb` to the new tag and checksum in a reviewed follow-up change.
+The formula must never point at a version whose immutable archive has not yet
+been verified. Test `brew install --build-from-source` from the updated formula
+before merging it.

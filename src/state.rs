@@ -387,25 +387,56 @@ pub fn record_semantic_receipt_at(dir: &Path, receipt: &SemanticReceipt) -> Resu
     };
     let mut bytes = serde_json::to_vec(receipt)?;
     bytes.push(b'\n');
-    let path = dir.join("semantic.jsonl");
+    append_jsonl(
+        dir,
+        "semantic.jsonl",
+        "semantic.1.jsonl",
+        "semantic receipts",
+        &bytes,
+    )
+}
+
+fn append_jsonl(
+    dir: &Path,
+    name: &str,
+    backup_name: &str,
+    label: &str,
+    bytes: &[u8],
+) -> Result<()> {
+    let path = dir.join(name);
     let size = match fs::symlink_metadata(&path) {
         Ok(meta) => {
             ensure!(
                 meta.is_file() && !meta.file_type().is_symlink(),
-                "semantic receipts must be a regular file"
+                "{label} must be a regular file"
             );
             meta.len()
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
         Err(error) => return Err(error.into()),
     };
-    if size + bytes.len() as u64 > METRICS_LIMIT {
-        let backup = dir.join("semantic.1.jsonl");
+    // Preserve an interrupted append as a malformed record rather than joining
+    // the next valid event onto it. Never rewrite or discard the damaged bytes.
+    let needs_separator = if size > 0 {
+        let mut file = File::open(&path)?;
+        file.seek(SeekFrom::End(-1))?;
+        let mut last = [0];
+        file.read_exact(&mut last)?;
+        last[0] != b'\n'
+    } else {
+        false
+    };
+    let rotate = size + bytes.len() as u64 + u64::from(needs_separator) > METRICS_LIMIT;
+    if rotate {
+        let backup = dir.join(backup_name);
         remove_if_exists(&backup)?;
         fs::rename(&path, backup)?;
     }
     let mut file = private_open(&path, true, false)?;
-    file.write_all(&bytes)?;
+    if needs_separator && !rotate {
+        file.write_all(b"\n")?;
+    }
+    file.write_all(bytes)?;
     file.flush()?;
     Ok(())
 }
@@ -457,42 +488,7 @@ pub fn record_project_at(
         project: project.map(str::to_owned),
     })?;
     bytes.push(b'\n');
-    let path = dir.join("metrics.jsonl");
-    let size = match fs::symlink_metadata(&path) {
-        Ok(meta) => {
-            ensure!(
-                meta.is_file() && !meta.file_type().is_symlink(),
-                "metrics must be a regular file"
-            );
-            meta.len()
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => 0,
-        Err(e) => return Err(e.into()),
-    };
-    // Preserve an interrupted append as a malformed record rather than joining
-    // the next valid event onto it. Never rewrite or discard the damaged bytes.
-    let needs_separator = if size > 0 {
-        let mut file = File::open(&path)?;
-        file.seek(SeekFrom::End(-1))?;
-        let mut last = [0];
-        file.read_exact(&mut last)?;
-        last[0] != b'\n'
-    } else {
-        false
-    };
-    let rotate = size + bytes.len() as u64 + u64::from(needs_separator) > METRICS_LIMIT;
-    if rotate {
-        let backup = dir.join("metrics.1.jsonl");
-        remove_if_exists(&backup)?;
-        fs::rename(&path, backup)?;
-    }
-    let mut file = private_open(&path, true, false)?;
-    if needs_separator && !rotate {
-        file.write_all(b"\n")?;
-    }
-    file.write_all(&bytes)?;
-    file.flush()?;
-    Ok(())
+    append_jsonl(dir, "metrics.jsonl", "metrics.1.jsonl", "metrics", &bytes)
 }
 fn private_dir(path: &Path) -> Result<()> {
     let mut builder = fs::DirBuilder::new();

@@ -131,6 +131,33 @@ fn semantic_original_and_receipt_are_private_and_do_not_change_usage() {
     assert_eq!(receipt["disposition"], "selected");
     assert!(receipt.get("task").is_none());
     assert!(receipt.get("text").is_none());
+
+    fs::write(temp.path().join("semantic.jsonl"), b"interrupted").unwrap();
+    state::record_semantic_receipt_at(
+        temp.path(),
+        &state::SemanticReceipt {
+            unix_millis: 2,
+            status: "fallback",
+            disposition: "ordinary",
+            model: "jev-1.13.0",
+            http_status: None,
+            usage: None,
+            latency_ms: 1,
+            passage_count: 0,
+            selected_count: 0,
+            omitted_count: 0,
+            ordinary_tokens: 3,
+            semantic_tokens: None,
+            memoized: false,
+        },
+    )
+    .unwrap();
+    let repaired = fs::read_to_string(temp.path().join("semantic.jsonl")).unwrap();
+    let mut lines = repaired.lines();
+    assert_eq!(lines.next(), Some("interrupted"));
+    let receipt: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    assert_eq!(receipt["disposition"], "ordinary");
+    assert_eq!(lines.next(), None);
 }
 #[test]
 fn concurrent_writers_produce_complete_records() {

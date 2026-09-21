@@ -45,7 +45,7 @@ async function waitFor(check) {
   assert.fail("timed out waiting for fixture observation");
 }
 
-async function fixture(mode, body, moduleType = "module") {
+async function fixture(mode, body, moduleType = "module", grepSource = "builtin") {
   const dir = await mkdtemp(join(tmpdir(), "sift-pi-adapter-"));
   const previousCwd = process.cwd();
   const executable = process.execPath, program = join(dir, "compact"), log = join(dir, "calls.jsonl");
@@ -89,7 +89,11 @@ lines.on("line", line => {
     } else {
       plugin = (await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`)).default;
     }
-    plugin({on:(name, handler) => {handlers[name] = handler;}});
+    const pi = {on:(name, handler) => {handlers[name] = handler;}};
+    if (grepSource !== null) {
+      pi.getAllTools = () => [{name:"grep", sourceInfo:{source:grepSource}}];
+    }
+    plugin(pi);
     await body(handlers, calls);
   } finally {
     await handlers.session_shutdown?.();
@@ -117,6 +121,15 @@ test("CommonJS uses one exact session-v2 child for repeated native grep", isolat
     assert.deepEqual(spawns[0].args, ["--protocol=session-v2","--record-source","pi","--record-tool","pi"]);
     assert.deepEqual(rows.filter(row => row.kind === "request").map(row => row.item.id), [1,2]);
   }, "commonjs");
+});
+
+test("semantic selection declines overridden or unverifiable grep tools", isolated, async () => {
+  for (const source of ["extension", null]) {
+    await fixture("normal", async (handlers, calls) => {
+      assert.equal(await handlers.tool_result(grep()), undefined);
+      assert.deepEqual(await calls(), []);
+    }, "module", source);
+  }
 });
 
 test("task lifecycle sends only the current prompt and clears it", isolated, async () => {
