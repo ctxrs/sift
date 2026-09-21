@@ -287,9 +287,7 @@ fn literal_at(entries: &[Entry], position: usize) -> Result<&str> {
 }
 
 pub(crate) fn restore(input: &str) -> Result<String> {
-    let body = input
-        .strip_prefix(HEADER)
-        .context("invalid text-refs-v1 header")?;
+    let body = crate::strip_product_header(input, HEADER).context("invalid text-refs-v1 header")?;
     let entries: Vec<Entry> = serde_json::from_str(body).context("invalid text references")?;
     let mut total = 0usize;
     for position in 0..entries.len() {

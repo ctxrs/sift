@@ -120,8 +120,7 @@ pub(crate) fn restore(input: &str) -> Result<String> {
         input.len() <= LIMIT,
         "symbols exceed the 64 MiB input limit"
     );
-    let (dictionary, body) = input
-        .strip_prefix(HEADER)
+    let (dictionary, body) = crate::strip_product_header(input, HEADER)
         .context("invalid symbols-v1 header")?
         .split_once('\n')
         .context("missing symbol dictionary newline")?;

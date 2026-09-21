@@ -313,6 +313,105 @@ fn generic_protocol_does_not_accept_command_and_session_requires_pi_bash() {
 }
 
 #[test]
+fn session_v2_validates_selection_and_fails_open_without_api_key() {
+    static NEXT: AtomicU64 = AtomicU64::new(10_000);
+    let root = std::env::temp_dir().join(format!(
+        "sift-pi-session-v2-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&root).unwrap();
+    fs::create_dir(root.join("config")).unwrap();
+    let project = fs::canonicalize(&root)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    fs::write(
+        root.join("config/config.json"),
+        json!({"record_usage":false,"semantic_selection":{"mode":"select","allowed_projects":[project]}}).to_string(),
+    )
+    .unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sift"))
+        .args([
+            "compact",
+            "--protocol=session-v2",
+            "--record-source",
+            "pi",
+            "--record-tool",
+            "pi",
+        ])
+        .current_dir(&root)
+        .env("SIFT_CONFIG_DIR", root.join("config"))
+        .env("SIFT_STATE_DIR", root.join("state"))
+        .env_remove("TYPESAFE_API_KEY")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let read = |output: &mut BufReader<ChildStdout>| {
+        let mut line = String::new();
+        output.read_line(&mut line).unwrap();
+        serde_json::from_str::<Value>(&line).unwrap()
+    };
+    assert_eq!(read(&mut output), json!({"version":1,"session":2}));
+    let text = "alpha repeated output\n".repeat(120);
+    let first = text.len() / 3;
+    let second = first * 2;
+    let selection = json!({"policy":"sift-semantic-v1","task":"find alpha","path":project,"kind":"pi-grep-v1","passages":[
+        {"id":"p1","start":0,"end":first,"required":false},
+        {"id":"p2","start":first,"end":second,"required":false},
+        {"id":"p3","start":second,"end":text.len(),"required":false}
+    ]});
+    let expected = sift::Compactor::new().unwrap().compact(&text);
+    for (id, tool, candidate) in [
+        (1, "grep", json!({"policy":"bad"})),
+        (2, "grep", selection.clone()),
+        (3, "bash", selection),
+    ] {
+        writeln!(
+            input,
+            "{}",
+            json!({"id":id,"tool":tool,"selection":candidate,"request":{"version":1,"text":text}})
+        )
+        .unwrap();
+        let response = read(&mut output);
+        assert_eq!(response["text"], expected.text);
+        assert!(response.get("semantic").is_none());
+        assert_eq!(read(&mut output), json!({"version":1,"id":id,"done":true}));
+    }
+    let (cargo, proposal) = cargo_fixture(false, "");
+    let ordinary = sift::Compactor::new().unwrap().compact(&cargo);
+    let selected = sift::Compactor::new().unwrap().compact(&proposal);
+    writeln!(
+        input,
+        "{}",
+        json!({"id":4,"tool":"bash","command":"cargo test","delivered_view":true,
+            "request":{"version":1,"text":cargo}})
+    )
+    .unwrap();
+    let response = read(&mut output);
+    if selected.output_tokens < ordinary.output_tokens {
+        assert_eq!(response["text"], selected.text);
+        assert_eq!(response["semantic"], true);
+    } else {
+        assert_eq!(response["text"], ordinary.text);
+        assert!(response.get("semantic").is_none());
+    }
+    assert_eq!(read(&mut output), json!({"version":1,"id":4,"done":true}));
+    drop(input);
+    assert!(child.wait().unwrap().success());
+    let receipts = fs::read_to_string(root.join("state/semantic.jsonl")).unwrap();
+    let receipt: Value = serde_json::from_str(receipts.trim()).unwrap();
+    assert_eq!(receipt["status"], "disabled");
+    assert_eq!(receipt["disposition"], "fallback");
+    assert!(!root.join("state/metrics.jsonl").exists());
+    assert!(!root.join("state/originals").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn delivered_selection_marks_semantics_and_keeps_full_original_metrics_and_storage() {
     let mut session = Session::new();
     session.settings(json!({"keep_originals":true}));

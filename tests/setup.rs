@@ -407,11 +407,9 @@ fn previous_pi_session_upgrades_exactly_and_rejects_edits() {
                 assert!(!path.exists());
                 let path = path.with_file_name("sift/index.js");
                 assert_pi_kind(&path, "pi-session");
-                assert!(
-                    fs::read_to_string(&path)
-                        .unwrap()
-                        .contains("delivered_view:true")
-                );
+                let installed = fs::read_to_string(&path).unwrap();
+                assert!(installed.contains("--protocol=session-v2"));
+                assert!(installed.contains("policy:\"sift-semantic-v1\""));
                 assert!(f.plan(&["--agent", "pi"]).changes.is_empty());
                 f.plan(&["--agent", "pi", "--uninstall"]).apply().unwrap();
                 assert!(!path.exists());

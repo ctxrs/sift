@@ -267,7 +267,7 @@ class MetadataTests(unittest.TestCase):
                          ("bpe-openai", "bpe", "rmp-serde", "aneubeck-daachorse",
                           "vocab-builder", "vocab-codec", "build-only")))
         vp = metadata.property_map(components["o200k_base"])
-        self.assertEqual(vp["sift:profile-status"], "development")
+        self.assertEqual(vp["sift:profile-status"], "release")
         for name, raw in self.count_assets.items():
             offset = int(vp["sift:" + name + "-offset"])
             self.assertEqual(int(vp["sift:" + name + "-size"]), len(raw))
@@ -334,7 +334,7 @@ class MetadataTests(unittest.TestCase):
     def test_count_sidecar_cannot_redefine_profile_or_embedded_bytes(self):
         self.use_count_tokenizer()
         document, notices = self.generate()
-        for key, value in (("representation", "unreviewed"), ("profile-status", "release"),
+        for key, value in (("representation", "unreviewed"), ("profile-status", "development"),
                            ("archive-endian", "big"), ("dfa-endian", "big"),
                            ("archive-pointer-width", "64"), ("archive-alignment", "unaligned"),
                            ("count-size", "1"), ("dfa-size", "1"), ("embedded-offset", "0"),

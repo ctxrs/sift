@@ -13,7 +13,10 @@ executable through `sift run`. Completion adapters replace eligible output;
 pre-execution adapters rewrite supported literal POSIX commands before they run.
 Codex on Unix omits the requested shell from hook input: disable its Sift
 pre-hook before using non-POSIX shell requests and use manual `sift run` instead.
-There are no model calls, telemetry, background services, or shell-profile changes. Supported JSON keeps
+Normal Sift compaction makes no model calls and Sift has no telemetry, background
+service, or shell-profile changes. An optional, explicitly enabled Pi semantic
+selector sends a narrow task and eligible grep passages to TypeSafe as described
+below. Supported JSON keeps
 values, types, numeric lexemes, rows, and key associations; whitespace and object
 key order can change.
 
@@ -90,15 +93,15 @@ signature and the Windows binary carries a timestamped Authenticode signature.
 The v0.1.0 binaries remain unsigned. The installers do not disable Gatekeeper,
 SmartScreen, or other operating-system protections.
 
-To pin an existing release (v0.3.0 shown) or choose a different directory, set
+To pin this release or choose a different directory, set
 the installer environment variables (either variable can be used on its own):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ctxrs/sift/main/install.sh | SIFT_VERSION=v0.3.0 SIFT_INSTALL_DIR="$HOME/.local/bin" sh
+curl -fsSL https://raw.githubusercontent.com/ctxrs/sift/main/install.sh | SIFT_VERSION=v0.4.0 SIFT_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 ```powershell
-$env:SIFT_VERSION = 'v0.3.0'
+$env:SIFT_VERSION = 'v0.4.0'
 $env:SIFT_INSTALL_DIR = "$env:LOCALAPPDATA\Programs\Sift"
 irm https://raw.githubusercontent.com/ctxrs/sift/main/install.ps1 | iex
 ```
@@ -150,7 +153,7 @@ count tables and precompiled tokenizer pattern are embedded in the binary;
 the build validates the count tables and pre-tokenizer; the runtime borrows those
 immutable tables without repeating validation or downloading a vocabulary. The adapted
 public algorithms and licenses are recorded in [THIRD_PARTY_TOKENIZER.md](THIRD_PARTY_TOKENIZER.md).
-This README describes the current source, including changes after v0.3.0.
+This README describes the current source for v0.4.0.
 Check your installed version's `sift --help` and subcommand help for available
 features.
 
@@ -258,6 +261,60 @@ output stays raw. These command views use bounded complete capture, delay
 progress and preserve the child's status; capture overflow passes through raw.
 Use `sift run -- test -f FILE` to invoke the native `test` utility.
 
+## Optional semantic selection
+
+Semantic selection is off by default. Its first supported route is a successful
+native Pi `grep` result containing one text block. Pi supplies the current task
+and divides the fresh result into exact, ordered passages. Deterministic rules
+keep task anchors and truncation notices; the pinned `jev-1.13.0` model judges
+the remaining passages for relevance and counterevidence. Jev selects passages;
+it does not summarize, rewrite facts, choose tools, or authorize commands.
+
+Enable it for one canonical checkout only after reviewing the data flow:
+
+```sh
+export TYPESAFE_API_KEY='...'
+sift semantic shadow --project .  # Send eligible inputs; keep ordinary Sift output
+sift semantic enable --project .  # Permit recoverable passage omission
+sift semantic status
+sift semantic disable             # Disable semantic calls globally
+```
+
+Key presence alone never enables the feature. `shadow` and `enable` add the
+canonical checkout to the local allowlist; the selected mode applies to all
+previously allowlisted checkouts. An eligible request sends the current task,
+passage IDs, and passage text over HTTPS to TypeSafe. Sift sends no prior
+conversation, system prompt, tool schema, project path, command arguments, or
+saved history. The API key is read from the environment and is never written to
+Sift configuration or receipts. TypeSafe is an external processor; its account
+terms and retention policy still apply, and Sift does not itself establish a
+zero-data-retention agreement.
+
+The local adapter must identify the grep search path, and Sift resolves it
+through the filesystem before any request. Missing paths, failed resolution,
+`..` escapes, and symlinks whose targets leave the allowlisted checkout stay on
+ordinary local compaction. The resolved path is used only for this gate and is
+not included in the TypeSafe request.
+
+Every timeout, missing key, invalid response, ineligible result, or local storage
+failure returns the ordinary local Sift result. In select mode, Sift first saves
+the complete raw grep text in its private originals store. It emits an explicit
+`INCOMPLETE` notice, omitted passage IDs, and `sift recall ID` only when the
+semantic frame saves at least 300 bytes and also beats ordinary Sift by exact
+`o200k_base` token count. Those originals use the configured entry, byte, and
+age limits and can later expire. `shadow` never omits passages. Sanitized semantic
+receipts record status, counts, latency, model usage, and the ordinary/semantic
+token comparison without task or passage text; semantic savings are kept out of
+ordinary `sift gain` totals.
+
+The frozen experiment behind this scope retained every labeled relevant and
+critical fact across 24 repeated holdout selections while reducing rendered
+evidence from 6,330 to 1,401 tokens (77.9%); downstream answers scored 24/24 in
+both raw and selected arms. Cache-weighted main-model input fell 30.1%, but total
+tokens across Jev and the main model increased. This is a context-capacity and
+main-model-cost feature, not a claim of fewer aggregate provider tokens or proven
+latency improvement.
+
 ## Local usage and original output
 
 ```sh
@@ -311,7 +368,11 @@ without overwriting an existing file:
   "exclude_commands": [],
   "originals_max_entries": 100,
   "originals_max_bytes": 104857600,
-  "originals_max_days": 30
+  "originals_max_days": 30,
+  "semantic_selection": {
+    "mode": "off",
+    "allowed_projects": []
+  }
 }
 ```
 
@@ -322,10 +383,12 @@ labels such as `Bash` for Claude or `bash` for completion plugins. Pre-execution
 adapters also check executable names in their supported literal command forms;
 they do not evaluate arbitrary scripts to discover exclusions.
 
-Original output is saved only when `keep_originals:true`, for complete bounded
-captures; it may contain sensitive data. `recall` reads the saved bytes without
-rerunning a command. Streaming or inherited output is never accumulated for
-recall. Original retention defaults to 100 entries, 100 MiB total and 30 days;
+Ordinary original output is saved only when `keep_originals:true`, for complete
+bounded captures; it may contain sensitive data. Semantic selection is the one
+exception: select mode must save its complete grep input before omitting passages,
+even when ordinary retention is off. `recall` reads saved bytes without rerunning
+a command. Streaming or inherited output is never accumulated for recall.
+Original retention defaults to 100 entries, 100 MiB total and 30 days;
 set positive `originals_max_entries`, `originals_max_bytes` and
 `originals_max_days` to change these caps. Pruning happens when another original
 is saved, not immediately when settings change. Oversized originals are skipped.

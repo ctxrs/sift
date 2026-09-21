@@ -125,6 +125,22 @@ WORKLOADS = [
     ("control-progress", ["fixture-check", "progress"], ["proxy", "fixture-check", "progress"], ["processed batch 8/8"]),
 ]
 
+JSON_ENCODINGS = ("json-v1", "json-rows-v1", "json-min-v1", "json-columns-v1")
+
+# Independently fixed from the synthetic repository state above. Sift's Git
+# status presentation is intentionally not a reversible codec.
+EXPECTED_SIFT_STDOUT = {
+    "git-status": (
+        b"## main\n"
+        b"M  src/module_01.txt\n"
+        b" M src/module_04.txt\n"
+        b" M src/module_07.txt\n"
+        b" M src/module_10.txt\n"
+        b" D src/module_17.txt\n"
+        b"?? notes.txt\n"
+    )
+}
+
 
 def tree_hash(repo):
     return digest(json.dumps([(str(p.relative_to(repo)), digest(p.read_bytes()))
@@ -270,7 +286,7 @@ def benchmark(args):
                 restored, _ = execute([sift, "restore", "--encoding", candidate["encoding"]], repo, env,
                                       candidate["text"].encode())
                 restore_exact = restored.stdout == raw
-                is_json = candidate["encoding"] in ("json-v1", "json-rows-v1")
+                is_json = candidate["encoding"] in JSON_ENCODINGS
                 contract_verified = (json_values(restored.stdout) == json_values(raw)) if is_json else restore_exact
                 if restored.returncode or not contract_verified:
                     raise RuntimeError(f"explicit encoding restore failed: {workload}")
@@ -301,7 +317,14 @@ def benchmark(args):
                     for stream, data, raw, candidate in zip(("stdout", "stderr"),
                             (result.stdout, result.stderr), (original.stdout, original.stderr), candidates):
                         text = data.decode("utf-8")
-                        selection = "raw" if data == raw else ("candidate" if data == candidate["text"].encode() else "other")
+                        if data == raw:
+                            selection = "raw"
+                        elif data == candidate["text"].encode():
+                            selection = "candidate"
+                        elif arm == "sift" and stream == "stdout" and data == EXPECTED_SIFT_STDOUT.get(workload):
+                            selection = "verified-view"
+                        else:
+                            selection = "other"
                         streams.append({"stream": stream, "bytes": len(data), "sha256": digest(data),
                                         "tokens": protocol.ask(text)["input_tokens"],
                                         "matches_saved_original_or_candidate": selection})
@@ -357,10 +380,15 @@ def benchmark(args):
 
 class HarnessChecks(unittest.TestCase):
     def test_json_restoration_contract(self):
+        self.assertEqual(
+            set(JSON_ENCODINGS),
+            {"json-v1", "json-rows-v1", "json-min-v1", "json-columns-v1"},
+        )
         self.assertEqual(json_values('{"b": [true, null], "a": 1.00}'),
                          json_values('{"a":1.00,"b":[true,null]}'))
         self.assertNotEqual(json_values('{"a":1.00}'), json_values('{"a":1.0}'))
         self.assertNotEqual(json_values('{"a":true}'), json_values('{"a":1}'))
+        self.assertEqual(EXPECTED_SIFT_STDOUT["git-status"].count(b"\n"), 7)
 
     def test_isolation_fixture_audit_and_classification(self):
         with tempfile.TemporaryDirectory() as temp:

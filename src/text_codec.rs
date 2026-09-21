@@ -113,8 +113,7 @@ pub(crate) fn prefix_candidate(input: &str) -> Option<String> {
 }
 
 pub(crate) fn restore_prefixes(input: &str) -> Result<String> {
-    let body = input
-        .strip_prefix(PREFIX_HEADER)
+    let body = crate::strip_product_header(input, PREFIX_HEADER)
         .context("invalid text-prefixes-v1 header")?;
     let entries: Vec<PrefixEntry<String>> =
         serde_json::from_str(body).context("invalid text prefixes")?;
@@ -160,9 +159,7 @@ pub(crate) fn restore_prefixes(input: &str) -> Result<String> {
 }
 
 pub(crate) fn restore(input: &str) -> Result<String> {
-    let body = input
-        .strip_prefix(HEADER)
-        .context("invalid text-runs-v1 header")?;
+    let body = crate::strip_product_header(input, HEADER).context("invalid text-runs-v1 header")?;
     let runs: Vec<(u64, String)> = serde_json::from_str(body).context("invalid text runs")?;
     let mut total = 0usize;
     for (count, line) in &runs {
