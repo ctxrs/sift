@@ -93,8 +93,9 @@ before checking read-only command effects; intentional modified/deleted files re
   then `restore --encoding ENCODING` must reproduce text byte-for-byte, or preserve
   JSON values, types, and numeric lexemes for JSON encodings. JSON whitespace and
   object key order may change; byte equality is separately recorded even for JSON.
-  Each timed
-  Sift stream must equal that candidate or the exact original. Raw marker-like
+  Each timed Sift stream must equal that candidate or the exact original, except
+  the Git status stdout command-aware view, which is checked against independently
+  fixed expected branch and file-status lines rather than decoded. Raw marker-like
   text is never inferred to be encoded. Streams shorter than 256 bytes bypass
   runner compaction; progress may stream raw after the runner's capture window.
   The saved protocol candidate can therefore differ from valid raw runner output.
