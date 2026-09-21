@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="755" role="img" aria-label="End-to-end milliseconds (includes command and startup; lower is faster)">
+<rect width="100%" height="100%" fill="white"/>
+<text x="10" y="22" font-family="sans-serif">End-to-end milliseconds (includes command and startup; lower is faster)</text>
+<text x="10" y="57" font-size="12" font-family="sans-serif">git-status / native</text>
+<rect x="240" y="45" height="15" width="2.06" fill="#555"/>
+<text x="247.06" y="57" font-size="12">1.71</text>
+<text x="10" y="80" font-size="12" font-family="sans-serif">git-status / sift</text>
+<rect x="240" y="68" height="15" width="3.60" fill="#1565c0"/>
+<text x="248.60" y="80" font-size="12">2.98</text>
+<text x="10" y="103" font-size="12" font-family="sans-serif">git-status / rtk</text>
+<rect x="240" y="91" height="15" width="7.34" fill="#bd5d00"/>
+<text x="252.34" y="103" font-size="12">6.08</text>
+<text x="10" y="126" font-size="12" font-family="sans-serif">git-diff / native</text>
+<rect x="240" y="114" height="15" width="1.98" fill="#555"/>
+<text x="246.98" y="126" font-size="12">1.64</text>
+<text x="10" y="149" font-size="12" font-family="sans-serif">git-diff / sift</text>
+<rect x="240" y="137" height="15" width="3.60" fill="#1565c0"/>
+<text x="248.60" y="149" font-size="12">2.98</text>
+<text x="10" y="172" font-size="12" font-family="sans-serif">git-diff / rtk</text>
+<rect x="240" y="160" height="15" width="6.95" fill="#bd5d00"/>
+<text x="251.95" y="172" font-size="12">5.76</text>
+<text x="10" y="195" font-size="12" font-family="sans-serif">git-log / native</text>
+<rect x="240" y="183" height="15" width="1.93" fill="#555"/>
+<text x="246.93" y="195" font-size="12">1.60</text>
+<text x="10" y="218" font-size="12" font-family="sans-serif">git-log / sift</text>
+<rect x="240" y="206" height="15" width="3.34" fill="#1565c0"/>
+<text x="248.34" y="218" font-size="12">2.77</text>
+<text x="10" y="241" font-size="12" font-family="sans-serif">git-log / rtk</text>
+<rect x="240" y="229" height="15" width="5.80" fill="#bd5d00"/>
+<text x="250.80" y="241" font-size="12">4.81</text>
+<text x="10" y="264" font-size="12" font-family="sans-serif">listing / native</text>
+<rect x="240" y="252" height="15" width="2.97" fill="#555"/>
+<text x="247.97" y="264" font-size="12">2.46</text>
+<text x="10" y="287" font-size="12" font-family="sans-serif">listing / sift</text>
+<rect x="240" y="275" height="15" width="2.97" fill="#1565c0"/>
+<text x="247.97" y="287" font-size="12">2.46</text>
+<text x="10" y="310" font-size="12" font-family="sans-serif">listing / rtk</text>
+<rect x="240" y="298" height="15" width="5.90" fill="#bd5d00"/>
+<text x="250.90" y="310" font-size="12">4.89</text>
+<text x="10" y="333" font-size="12" font-family="sans-serif">search / native</text>
+<rect x="240" y="321" height="15" width="3.13" fill="#555"/>
+<text x="248.13" y="333" font-size="12">2.60</text>
+<text x="10" y="356" font-size="12" font-family="sans-serif">search / sift</text>
+<rect x="240" y="344" height="15" width="2.83" fill="#1565c0"/>
+<text x="247.83" y="356" font-size="12">2.34</text>
+<text x="10" y="379" font-size="12" font-family="sans-serif">search / rtk</text>
+<rect x="240" y="367" height="15" width="7.60" fill="#bd5d00"/>
+<text x="252.60" y="379" font-size="12">6.29</text>
+<text x="10" y="402" font-size="12" font-family="sans-serif">json / native</text>
+<rect x="240" y="390" height="15" width="2.48" fill="#555"/>
+<text x="247.48" y="402" font-size="12">2.05</text>
+<text x="10" y="425" font-size="12" font-family="sans-serif">json / sift</text>
+<rect x="240" y="413" height="15" width="3.60" fill="#1565c0"/>
+<text x="248.60" y="425" font-size="12">2.98</text>
+<text x="10" y="448" font-size="12" font-family="sans-serif">json / rtk</text>
+<rect x="240" y="436" height="15" width="4.18" fill="#bd5d00"/>
+<text x="249.18" y="448" font-size="12">3.46</text>
+<text x="10" y="471" font-size="12" font-family="sans-serif">tests-diagnostics / native</text>
+<rect x="240" y="459" height="15" width="14.58" fill="#555"/>
+<text x="259.58" y="471" font-size="12">12.07</text>
+<text x="10" y="494" font-size="12" font-family="sans-serif">tests-diagnostics / sift</text>
+<rect x="240" y="482" height="15" width="15.45" fill="#1565c0"/>
+<text x="260.45" y="494" font-size="12">12.80</text>
+<text x="10" y="517" font-size="12" font-family="sans-serif">tests-diagnostics / rtk</text>
+<rect x="240" y="505" height="15" width="19.61" fill="#bd5d00"/>
+<text x="264.61" y="517" font-size="12">16.24</text>
+<text x="10" y="540" font-size="12" font-family="sans-serif">control-noop / native</text>
+<rect x="240" y="528" height="15" width="0.89" fill="#555"/>
+<text x="245.89" y="540" font-size="12">0.74</text>
+<text x="10" y="563" font-size="12" font-family="sans-serif">control-noop / sift</text>
+<rect x="240" y="551" height="15" width="1.46" fill="#1565c0"/>
+<text x="246.46" y="563" font-size="12">1.21</text>
+<text x="10" y="586" font-size="12" font-family="sans-serif">control-noop / rtk</text>
+<rect x="240" y="574" height="15" width="4.93" fill="#bd5d00"/>
+<text x="249.93" y="586" font-size="12">4.09</text>
+<text x="10" y="609" font-size="12" font-family="sans-serif">control-short / native</text>
+<rect x="240" y="597" height="15" width="2.44" fill="#555"/>
+<text x="247.44" y="609" font-size="12">2.02</text>
+<text x="10" y="632" font-size="12" font-family="sans-serif">control-short / sift</text>
+<rect x="240" y="620" height="15" width="1.99" fill="#1565c0"/>
+<text x="246.99" y="632" font-size="12">1.65</text>
+<text x="10" y="655" font-size="12" font-family="sans-serif">control-short / rtk</text>
+<rect x="240" y="643" height="15" width="5.32" fill="#bd5d00"/>
+<text x="250.32" y="655" font-size="12">4.41</text>
+<text x="10" y="678" font-size="12" font-family="sans-serif">control-progress / native</text>
+<rect x="240" y="666" height="15" width="596.27" fill="#555"/>
+<text x="841.27" y="678" font-size="12">493.90</text>
+<text x="10" y="701" font-size="12" font-family="sans-serif">control-progress / sift</text>
+<rect x="240" y="689" height="15" width="595.88" fill="#1565c0"/>
+<text x="840.88" y="701" font-size="12">493.58</text>
+<text x="10" y="724" font-size="12" font-family="sans-serif">control-progress / rtk</text>
+<rect x="240" y="712" height="15" width="600.00" fill="#bd5d00"/>
+<text x="845.00" y="724" font-size="12">496.99</text>
+</svg>
