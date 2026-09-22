@@ -1,4 +1,4 @@
-<img src="docs/assets/sift-readme-banner.svg" alt="sift cuts noisy tool output before your agent sees it" width="100%">
+<img src="docs/assets/sift-readme-banner.svg" alt="47% of tool output is unhelpful noise. sift uses Jev to remove it safely." width="100%">
 
 Sift uses deterministic local compaction to cut noisy tool output before it
 reaches your coding agent. An optional Jev selector can reduce eligible Pi
