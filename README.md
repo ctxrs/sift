@@ -1,28 +1,26 @@
-# Sift
+<img src="docs/assets/sift-readme-banner.svg" alt="sift cuts noisy tool output before your agent sees it" width="100%">
 
-**Sift cuts noisy tool output before it reaches your coding agent.**
+Sift uses deterministic local compaction to cut noisy tool output before it
+reaches your coding agent. An optional Jev selector can reduce eligible Pi
+`grep` results further.
 
-Build logs, repeated paths, JSON, test output, and command results can consume a
-large part of an agent's context. Sift makes that output smaller while keeping
-the information the agent needs.
-
-Generic compaction is reversible. Command-aware views keep failures,
-diagnostics, totals, and important state while removing repetition such as
-passing test rows. If Sift cannot safely improve an output, it leaves it alone.
+Sift's runner preserves the requested command arguments and executes the command
+once. Generic compaction is reversible. For shorter command views, enable
+original retention to recover the complete captured output.
 
 ## Why Sift
 
-- **Use less context.** Spend tokens on the task instead of repeated paths, logs,
-  and formatting.
-- **Keep the useful information.** Generic text and JSON compaction can be
-  restored; Git and test views retain the details needed to act on failures.
-- **Stay close to native speed.** Sift is one native binary with no language
-  runtime, daemon, or background service.
-- **Run locally by default.** Ordinary compaction makes no network calls and
-  Sift has no telemetry.
-- **See the result.** `sift gain` reports measured local token savings. Optional
-  original retention lets you recover complete captured output with
-  `sift recall`.
+* **Use less context.** Spend tokens on the task instead of repeated paths, logs,
+    and formatting.
+* **Keep the useful information.** Generic text and JSON compaction can be
+    restored. Git and test views retain the details needed to act on failures.
+* **Stay close to native speed.** Sift is one native binary with no language
+    runtime, daemon, or background service.
+* **Run locally by default.** Ordinary compaction makes no network calls and
+    Sift has no telemetry.
+* **See the result.** `sift gain` reports measured local token savings. Optional
+    original retention lets you recover complete captured output with
+    `sift recall`.
 
 ## Install
 
@@ -82,15 +80,15 @@ one-command migration for recognized RTK integrations.
 In the [v0.4.0 release benchmark](benchmarks/results/2026-09-21-release-v0.4.0/README.md),
 Sift was faster than RTK 0.49 on all ten synthetic workloads and stayed within
 1.35 ms of running the command directly. Across the seven substantive workloads,
-Sift reduced output from 2,662 to 1,518 tokens, or 43%. RTK produced smaller
-output on five narrow command-specific cases and tied on two, so neither tool
-wins every workload.
+Sift reduced output from 2,662 to 1,518 tokens, or 43%. RTK emitted fewer
+tokens on five command-specific cases and tied on two. This benchmark used local
+compaction and command views; Jev was off.
 
 ## How it works
 
 Sift tries several compact representations for complete output and counts the
 full result with its embedded tokenizer. It uses the smallest result only when
-it beats the original. Text stays byte-exact after restoration; supported JSON
+it beats the original. Text stays byte-exact after restoration. Supported JSON
 keeps values, types, and number spellings.
 
 For recognized Git status and test output, Sift can use a shorter presentation.
@@ -105,11 +103,11 @@ passages to an external service. See the reference before enabling it.
 
 ## Learn more
 
-- Run `sift --help` or read the [command reference](docs/reference.md)
-- [Agent setup and supported integrations](INTEGRATIONS.md)
-- [RTK migration and workflow differences](COMPATIBILITY.md)
-- [Benchmark method and results](benchmarks/README.md)
-- [Releases and manual downloads](https://github.com/ctxrs/sift/releases)
+* Run `sift --help` or read the [command reference](docs/reference.md)
+* [Agent setup and supported integrations](INTEGRATIONS.md)
+* [RTK migration and workflow differences](COMPATIBILITY.md)
+* [Benchmark method and results](benchmarks/README.md)
+* [Releases and manual downloads](https://github.com/ctxrs/sift/releases)
 
 ## Build from source
 
