@@ -1,8 +1,7 @@
-<img src="docs/assets/sift-readme-banner-v3.svg" alt="There's no such thing as a free lunch. Except with sift. Which safely cleans up tool output before it reaches your agent. Instantly shave 5% off total usage with a single binary." width="100%">
+<img src="docs/assets/sift-readme-banner-v4.svg" alt="There's no such thing as a free lunch. Except with sift. Which safely cleans up tool output before it reaches your agent. Instantly shave 5% off total usage with a single binary." width="100%">
 
 Sift uses deterministic local compaction to cut noisy tool output before it
-reaches your coding agent. An optional Jev selector can reduce eligible Pi
-`grep` results further.
+reaches your coding agent.
 
 Sift's runner preserves the requested command arguments and executes the command
 once. Generic compaction is reversible. For shorter command views, enable
@@ -81,8 +80,8 @@ In the [v0.4.0 release benchmark](benchmarks/results/2026-09-21-release-v0.4.0/R
 Sift was faster than RTK 0.49 on all ten synthetic workloads and stayed within
 1.35 ms of running the command directly. Across the seven substantive workloads,
 Sift reduced output from 2,662 to 1,518 tokens, or 43%. RTK emitted fewer
-tokens on five command-specific cases and tied on two. This benchmark used local
-compaction and command views; Jev was off.
+tokens on five command-specific cases and tied on two. This benchmark measured
+local compaction and command views.
 
 ## How it works
 
@@ -95,11 +94,6 @@ For recognized Git status and test output, Sift can use a shorter presentation.
 Failures, diagnostics, ignored tests, totals, paths, and repository state remain.
 You can also ask explicitly for line, JSON-field, summary, error, or test views
 when omission is what you want.
-
-An optional semantic selector can reduce large Pi `grep` results further. It is
-off by default, limited to explicitly allowed projects, and saves the complete
-original for `sift recall`. It uses TypeSafe Jev and therefore sends eligible
-passages to an external service. See the reference before enabling it.
 
 ## Learn more
 
